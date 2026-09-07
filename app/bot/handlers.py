@@ -204,11 +204,12 @@ async def _handle_question(
     limiter: RateLimiter,
     stats: Stats,
     chat_locks: _ChatLocks,
-    media_loader: TelegramMediaLoader,
+    media_loader: TelegramMediaLoader | None = None,
 ) -> None:
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id
     bot: Bot = message.bot
+    active_media_loader = media_loader or TelegramMediaLoader(settings)
 
     allowed, _wait = limiter.allow(user_id)
     if not allowed:
@@ -222,7 +223,7 @@ async def _handle_question(
             lock = await chat_locks.get(chat_id)
             async with lock:
                 try:
-                    images = await media_loader.load(message)
+                    images = await active_media_loader.load(message)
                 except UnsupportedImageFormat:
                     await message.reply("Hiện mình chỉ đọc JPEG, PNG hoặc WebP.")
                     return
