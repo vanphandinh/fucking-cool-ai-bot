@@ -33,8 +33,9 @@ class TelegramMediaLoader:
         current = await self._from_message(message, "current")
         if current is not None:
             images.append(current)
-        if message.reply_to_message is not None:
-            replied = await self._from_message(message.reply_to_message, "reply")
+        reply = getattr(message, "reply_to_message", None)
+        if reply is not None:
+            replied = await self._from_message(reply, "reply")
             if replied is not None:
                 images.append(replied)
 
@@ -49,22 +50,24 @@ class TelegramMediaLoader:
         file_id: str | None = None
         mime_type: str | None = None
         declared_size: int | None = None
+        photos = getattr(message, "photo", None)
+        document = getattr(message, "document", None)
 
-        if message.photo:
-            photo = message.photo[-1]
+        if photos:
+            photo = photos[-1]
             file_id = photo.file_id
             mime_type = "image/jpeg"
             declared_size = photo.file_size
-        elif message.document:
-            mime_type = message.document.mime_type
+        elif document:
+            mime_type = document.mime_type
             if mime_type is None:
                 return None
             if mime_type not in _ALLOWED_MIME:
                 if mime_type.startswith("image/"):
                     raise UnsupportedImageFormat(mime_type)
                 return None
-            file_id = message.document.file_id
-            declared_size = message.document.file_size
+            file_id = document.file_id
+            declared_size = document.file_size
         else:
             return None
 
