@@ -67,7 +67,10 @@ def build_message_router(
     @router.message(Command("help", "start", ignore_case=True))
     async def help_handler(message: Message) -> None:
         await message.reply(
-            _HELP_TEXT.format(bot=settings.bot_username, limit=settings.max_questions_per_min_per_user)
+            _HELP_TEXT.format(
+                bot=settings.bot_username,
+                limit=settings.max_questions_per_min_per_user,
+            )
         )
 
     @router.message(Command("status", ignore_case=True))
@@ -79,8 +82,17 @@ def build_message_router(
         cooling = []
         for provider in orchestrator.router.providers:
             if not provider.health.available():
-                state = "disabled" if provider.health.disabled else f"{provider.health.cooldown_seconds()}s"
+                state = (
+                    "disabled"
+                    if provider.health.disabled
+                    else f"{provider.health.cooldown_seconds()}s"
+                )
                 cooling.append(f"{provider.name}={state}")
+        distribution = (
+            ", ".join(f"{k}: {v}" for k, v in stats.by_provider.items())
+            or "chưa có"
+        )
+        vision_names = ", ".join(settings.configured_vision_provider_names) or "disabled"
         lines = [
             "📊 Trạng thái bot",
             f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
@@ -88,11 +100,14 @@ def build_message_router(
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
-            "- Phân bổ: " + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
+            f"- Phân bổ: {distribution}",
             f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
-            f"- Text providers: {', '.join(settings.configured_provider_names) or 'CHƯA CÓ KEY'}",
-            f"- Vision providers: {', '.join(settings.configured_vision_provider_names) or 'disabled'}",
+            (
+                "- Text providers: "
+                + (", ".join(settings.configured_provider_names) or "CHƯA CÓ KEY")
+            ),
+            f"- Vision providers: {vision_names}",
             f"- Vision enabled: {'yes' if settings.configured_vision_provider_names else 'no'}",
             f"- Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
             f"- Search backend: {settings.search_backend}",
@@ -164,7 +179,8 @@ def build_lifecycle_router(settings: Settings) -> Router:
             return
         if settings.learn_group_id_mode:
             logger.warning(
-                "GROUP_ID_LEARN: chat_id=%s title=%s username=%s type=%s — KHÔNG rời chat vì LEARN_GROUP_ID_MODE=1.",
+                "GROUP_ID_LEARN: chat_id=%s title=%s username=%s type=%s — "
+                "KHÔNG rời chat vì LEARN_GROUP_ID_MODE=1.",
                 chat_id,
                 title,
                 update.chat.username or "-",
@@ -234,7 +250,9 @@ async def _handle_question(
                     stats.record_error(str(exc), fallback=True)
                     logger.error("Tất cả AI provider thất bại: %s", exc)
                     await message.reply(
-                        "❌ Xin lỗi, hiện tại mình không thể trả lời (các nguồn AI đều đang lỗi/quá tải). Bạn thử lại sau vài phút nhé."
+                        "❌ Xin lỗi, hiện tại mình không thể trả lời "
+                        "(các nguồn AI đều đang lỗi/quá tải). "
+                        "Bạn thử lại sau vài phút nhé."
                     )
                     return
                 except Exception as exc:  # noqa: BLE001
