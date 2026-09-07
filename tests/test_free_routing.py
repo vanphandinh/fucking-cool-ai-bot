@@ -103,7 +103,7 @@ class FreeFirstRouterTests(unittest.TestCase):
             asyncio.run(_close_router(router))
 
 
-class GeminiThoughtSignatureTests(unittest.IsolatedAsyncioTestCase):
+class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_call_replays_gemini_thought_signature_verbatim(self) -> None:
         signature = "opaque-signature"
         requests: list[dict] = []
@@ -174,15 +174,7 @@ class GeminiThoughtSignatureTests(unittest.IsolatedAsyncioTestCase):
         try:
             text, name = await router.complete(
                 [{"role": "user", "content": "latest?"}],
-                [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "web_search",
-                            "parameters": {"type": "object", "properties": {}},
-                        },
-                    }
-                ],
+                [_search_tool()],
                 execute,
             )
         finally:
@@ -190,6 +182,99 @@ class GeminiThoughtSignatureTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual((text, name), ("done", "gemini"))
         self.assertEqual(len(requests), 2)
+
+    async def test_provider_specific_metadata_is_removed_before_cross_provider_fallback(self) -> None:
+        signature = "gemini-only"
+        first_requests: list[dict] = []
+        second_requests: list[dict] = []
+
+        def first_respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            first_requests.append(payload)
+            if len(first_requests) == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [
+                                        {
+                                            "id": "call_search",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "web_search",
+                                                "arguments": '{"query":"latest"}',
+                                            },
+                                            "extra_content": {
+                                                "google": {"thought_signature": signature}
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    },
+                    request=request,
+                )
+            return httpx.Response(500, json={"error": {"message": "upstream failed"}}, request=request)
+
+        def second_respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            second_requests.append(payload)
+            for message in payload["messages"]:
+                for tool_call in message.get("tool_calls") or []:
+                    if "extra_content" in tool_call:
+                        return httpx.Response(
+                            400,
+                            json={"error": {"message": "unknown field extra_content"}},
+                            request=request,
+                        )
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "fallback done"}}]},
+                request=request,
+            )
+
+        first = OpenAICompatProvider("gemini", "https://first.example/v1", "fake", "gemini-3.8-flash")
+        second = OpenAICompatProvider("groq", "https://second.example/v1", "fake", "openai/gpt-oss-120b")
+        await first.aclose()
+        await second.aclose()
+        first._client = httpx.AsyncClient(
+            base_url="https://first.example/v1/", transport=httpx.MockTransport(first_respond)
+        )
+        second._client = httpx.AsyncClient(
+            base_url="https://second.example/v1/", transport=httpx.MockTransport(second_respond)
+        )
+        router = AIProviderRouter([first, second], max_tool_rounds=2)
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "search result"
+
+        try:
+            text, name = await router.complete(
+                [{"role": "user", "content": "latest?"}],
+                [_search_tool()],
+                execute,
+            )
+        finally:
+            await first.aclose()
+            await second.aclose()
+
+        self.assertEqual((text, name), ("fallback done", "groq"))
+        self.assertEqual(len(second_requests), 1)
+
+
+def _search_tool() -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
 
 
 async def _close_router(router) -> None:
