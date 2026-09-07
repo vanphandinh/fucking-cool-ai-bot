@@ -2,7 +2,7 @@
 
 > **Trạng thái:** Kế hoạch đã được chốt theo các quyết định ở mục 0 & 16.
 > ✅ **Triển khai code Phase P1–P2 đã hoàn tất (2026-09-07)** — cấu trúc repo theo mục 6, chạy bằng `docker compose up -d --build` (xem README.md).
-> ✅ **Audit toàn diện đã thực hiện (2026-09-07)** — sửa lỗi nghiêm trọng (my_chat_member, caption, username động, đóng tài nguyên, SSRF guard…) + 39/39 kiểm thử tự động offline (`python tests/run_tests.py`).
+> ✅ **Audit toàn diện đã thực hiện (2026-09-07)** — sửa lỗi nghiêm trọng (my_chat_member, caption, username động, đóng tài nguyên, SSRF guard…) + 92/92 kiểm thử tự động offline (`python tests/run_tests.py`). Đợt audit sâu lần 2 bổ sung: vá **SSRF** qua IP viết tắt (127.1/2130706433/0x7f…), IPv6 zone index & IPv4-mapped, **DNS-rebinding** (nip.io…) và **kiểm tra lại từng chặng redirect**; sửa **vòng lặp tool bị kẹt** (retry không-tools đúng số vòng, không tắt tools vĩnh viễn); trigger mention theo đúng ranh giới username; `/ask@BotKhác` bị bỏ qua; **graceful shutdown** SIGTERM/SIGINT; fail-fast khi gõ sai `SEARCH_BACKEND`; dọn dead code (ChatMemory.clear, hằng số UA chết, giá trị trả về thừa trong router).
 > ⏳ **Còn lại:** cấu hình `.env` trên VPS + chạy thử nghiệm theo checklist mục 15.
 
 ---

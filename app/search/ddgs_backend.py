@@ -8,11 +8,6 @@ from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
-_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-)
-
 
 def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
     from ddgs import DDGS

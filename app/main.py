@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -47,6 +48,16 @@ async def _amain(settings: Settings) -> None:
             "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> bot sẽ không trả lời "
             "ở bất kỳ đâu. Bật LEARN_GROUP_ID_MODE=1 (lần đầu) để học chat_id group."
         )
+    if settings.search_backend == "searxng" and not settings.searxng_url.strip():
+        logger.warning(
+            "SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG — tìm kiếm web sẽ lỗi "
+            "khi được gọi. Khởi động SearXNG (docker compose --profile searxng) và điền URL."
+        )
+    if settings.search_backend == "tavily" and not settings.tavily_api_key.strip():
+        logger.warning(
+            "SEARCH_BACKEND=tavily nhưng TAVILY_API_KEY đang TRỐNG — tìm kiếm web sẽ lỗi "
+            "khi được gọi. Điền key Tavily vào .env."
+        )
 
     provider_router = build_provider_router(settings)
     stats = Stats()
@@ -82,15 +93,54 @@ async def _amain(settings: Settings) -> None:
         settings.learn_group_id_mode,
     )
 
-    await bot.delete_webhook(drop_pending_updates=True)
     try:
-        await dp.start_polling(
+        # Xoá webhook cũ (nếu có) trước khi polling — nếu lỗi thì polling sẽ báo 409
+        # và tiến trình khởi động lại, nên không cần coi đây là lỗi chí mạng.
+        await bot.delete_webhook(drop_pending_updates=True)
+    except TelegramAPIError as exc:
+        logger.warning("Không xoá được webhook cũ: %s", exc)
+
+    # Dừng sạch sẽ khi nhận SIGINT/SIGTERM (Ctrl+C, docker stop) — đóng session
+    # và provider thay vì để tiến trình bị kill giữa chừng.
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+    installed_signals: list[int] = []
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+            installed_signals.append(sig)
+        except NotImplementedError:  # nền tảng không hỗ trợ (vd Windows)
+            pass
+
+    polling_task = asyncio.create_task(
+        dp.start_polling(
             bot,
-            allowed_updates=["message", "chat_member", "my_chat_member"],
+            # my_chat_member là sự kiện bot bị thêm/gỡ khỏi chat (dùng để tự rời
+            # group lạ); chat_member (thành viên khác) không dùng tới nên không nhận.
+            allowed_updates=["message", "my_chat_member"],
         )
+    )
+    stop_task = asyncio.create_task(stop_event.wait())
+    try:
+        await asyncio.wait(
+            {polling_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not polling_task.done():
+            logger.info("Nhận tín hiệu dừng — đang tắt bot...")
+            polling_task.cancel()
+        stop_task.cancel()  # luôn huỷ — tránh gather chờ vô hạn nếu polling lỗi trước
+        await asyncio.gather(polling_task, stop_task, return_exceptions=True)
     finally:
+        for sig in installed_signals:
+            loop.remove_signal_handler(sig)
         await bot.session.close()
         await _close_providers(provider_router)
+
+    # Polling tự kết thúc do lỗi (không phải tín hiệu dừng) -> ném lại để log rõ.
+    if polling_task.done() and not polling_task.cancelled():
+        poll_error = polling_task.exception()
+        if poll_error:
+            raise poll_error
 
 
 def main() -> None:

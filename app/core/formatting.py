@@ -7,11 +7,14 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def clean_question(text: str, username: str) -> str:
-    """Bỏ mention @username khỏi câu hỏi, dồn khoảng trắng, trim."""
+    """Bỏ mention @username khỏi câu hỏi, dồn khoảng trắng, trim.
+
+    Vd: "giá vàng @bot?" -> "giá vàng" (dấu câu thừa quanh mention bị bỏ).
+    """
     username = username.lower().lstrip("@")
     result = re.sub(rf"@\b{re.escape(username)}\b", " ", text, flags=re.IGNORECASE)
     result = _WHITESPACE_RE.sub(" ", result).strip()
-    result = result.strip(" ,;:-")
+    result = result.strip(" \t,;:!?.-…")
     return result
 
 

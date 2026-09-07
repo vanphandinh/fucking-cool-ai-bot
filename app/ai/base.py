@@ -8,11 +8,26 @@ import httpx
 
 
 class ProviderError(Exception):
-    """Lỗi khi gọi một provider cụ thể."""
+    """Lỗi khi gọi một provider cụ thể.
 
-    def __init__(self, message: str, *, unsupported_tools: bool = False) -> None:
+    - ``unsupported_tools=True``: provider/model không hỗ trợ tool-calling
+      (thường là HTTP 400 kèm chữ tool/function) — router sẽ tắt tools vĩnh viễn
+      cho provider này rồi thử lại.
+    - ``retry_without_tools=True``: lỗi chỉ xảy ra *trong quá trình* tool-calling
+      (vd: model kẹt vòng lặp gọi tool) — router thử lại 1 lần không kèm tools,
+      KHÔNG tắt tools vĩnh viễn.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        unsupported_tools: bool = False,
+        retry_without_tools: bool = False,
+    ) -> None:
         super().__init__(message)
         self.unsupported_tools = unsupported_tools
+        self.retry_without_tools = retry_without_tools
 
 
 class AllProvidersFailed(Exception):

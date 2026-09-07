@@ -27,6 +27,3 @@ class ChatMemory:
         if limit > 0 and len(entries) > limit * 2:
             entries = entries[-(limit * 2):]
         return entries
-
-    def clear(self, chat_id: int) -> None:
-        self._store.pop(chat_id, None)

@@ -5,7 +5,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import ChatMemberUpdated, Message
 
 from ..config import Settings
@@ -58,13 +58,18 @@ def build_message_router(
     router.message.filter(AllowedChat(settings))
     chat_locks = _ChatLocks()
 
-    @router.message(Command("help", "start", ignore_mention=True))
+    # ignore_mention mặc định False: "/help@BotKhác" sẽ bị aiogram từ chối
+    # (mention không khớp username bot), tránh trả lời lệnh nhắm bot khác.
+    @router.message(Command("help", "start"))
     async def help_handler(message: Message) -> None:
         await message.reply(
-            _HELP_TEXT.format(bot=settings.bot_username, limit=settings.max_questions_per_min_per_user)
+            _HELP_TEXT.format(
+                bot=settings.bot_username,
+                limit=settings.max_questions_per_min_per_user,
+            )
         )
 
-    @router.message(Command("status", ignore_mention=True))
+    @router.message(Command("status"))
     async def status_handler(message: Message) -> None:
         if message.from_user and message.from_user.id not in settings.admin_ids_list:
             return  # im lặng với người không phải admin
@@ -83,9 +88,9 @@ def build_message_router(
         ]
         await message.reply("\n".join(lines))
 
-    @router.message(Command("ask", ignore_mention=True))
-    async def ask_command(message: Message) -> None:
-        question = _strip_command_args(message.text or message.caption or "", "ask")
+    @router.message(Command("ask"))
+    async def ask_command(message: Message, command: CommandObject) -> None:
+        question = (command.args or "").strip()
         if not question:
             await message.reply(
                 "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
@@ -199,7 +204,8 @@ async def _handle_question(
                 "Bạn thử lại sau vài phút nhé."
             )
             return
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            stats.record_error(str(exc))
             logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
             await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
             return
@@ -229,25 +235,16 @@ async def _handle_question(
         try:
             first = parts[0]
             await message.reply(first)
+            # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
+            # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
+            extra_kwargs = {}
+            if message.message_thread_id:
+                extra_kwargs["message_thread_id"] = message.message_thread_id
             for part in parts[1:]:
-                await bot.send_message(chat_id=chat_id, text=part)
+                await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                 await asyncio.sleep(0.15)
         except Exception:  # noqa: BLE001
             logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
-
-
-def _strip_command_args(text: str, command_name: str) -> str:
-    """Lấy phần sau /ask (hỗ trợ /ask@Bot)."""
-    body = text
-    rest = ""
-    if " " in body:
-        body, rest = body.split(" ", 1)
-    token = body[1:]  # bỏ dấu '/'
-    if "@" in token:
-        token = token.split("@", 1)[0]
-    if token.lower() != command_name.lower():
-        return ""
-    return (rest or "").strip()
 
 
 async def _typing_loop(bot: Bot, chat_id: int) -> None:

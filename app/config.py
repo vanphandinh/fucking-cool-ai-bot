@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_SEARCH_BACKENDS = ("ddgs", "searxng", "tavily")
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -58,6 +61,18 @@ class Settings(BaseSettings):
     request_timeout_sec: float = 60.0
 
     log_level: str = "INFO"
+
+    # ---------- Validate cấu hình (fail-fast khi gõ sai) ----------
+    @field_validator("search_backend")
+    @classmethod
+    def _check_search_backend(cls, value: str) -> str:
+        backend = (value or "").strip().lower()
+        if backend not in _SEARCH_BACKENDS:
+            allowed = " | ".join(_SEARCH_BACKENDS)
+            raise ValueError(
+                f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})"
+            )
+        return backend
 
     # ---------- Các tiện ích ----------
     @property

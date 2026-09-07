@@ -1,6 +1,8 @@
 """Filters aiogram: allowlist group + trigger (mention / reply-to-bot)."""
 from __future__ import annotations
 
+import re
+
 from aiogram.filters import Filter
 from aiogram.types import Message
 
@@ -24,6 +26,20 @@ class AllowedChat(Filter):
         return chat.id in self._settings.allowed_group_ids_list
 
 
+def _has_mention(text: str, username: str) -> bool:
+    """Text có chứa @username đứng độc lập (không phải tiền tố của handle dài hơn)?"""
+    # (?![A-Za-z0-9_]) = không theo sau bởi ký tự word nữa, tránh khớp nhầm
+    # "@usernameABC" hay "@username_extra"
+    return (
+        re.search(
+            rf"@{re.escape(username)}(?![A-Za-z0-9_])",
+            text,
+            flags=re.IGNORECASE,
+        )
+        is not None
+    )
+
+
 class TriggeredMessage(Filter):
     """Tin nhắn được "gọi" bot: có @username, hoặc reply vào tin của bot.
 
@@ -43,7 +59,7 @@ class TriggeredMessage(Filter):
             return False
         if text.startswith("/"):
             return False  # lệnh / sẽ do handler riêng xử lý
-        if f"@{username}" in text.lower():
+        if _has_mention(text, username):
             return True
         replied = message.reply_to_message
         if replied and replied.from_user and replied.from_user.is_bot:
