@@ -1,4 +1,5 @@
 """Hàm định dạng văn bản & trợ giúp message."""
+
 from __future__ import annotations
 
 import re

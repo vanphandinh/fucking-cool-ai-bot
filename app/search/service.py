@@ -1,4 +1,5 @@
 """Web search service — backend ddgs | searxng | tavily."""
+
 from __future__ import annotations
 
 import logging

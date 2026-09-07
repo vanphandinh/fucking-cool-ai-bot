@@ -1,4 +1,5 @@
 """Điểm khởi động bot."""
+
 from __future__ import annotations
 
 import asyncio
@@ -84,7 +85,8 @@ async def _amain(settings: Settings) -> None:
         return
 
     logger.info(
-        "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | Context turns: %s | Learn-mode: %s",
+        "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | "
+        "Context turns: %s | Learn-mode: %s",
         ", ".join(settings.configured_provider_names) or "-",
         settings.search_backend,
         settings.allowed_group_ids_list or "-",
@@ -122,9 +124,7 @@ async def _amain(settings: Settings) -> None:
     )
     stop_task = asyncio.create_task(stop_event.wait())
     try:
-        await asyncio.wait(
-            {polling_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        await asyncio.wait({polling_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
         if not polling_task.done():
             logger.info("Nhận tín hiệu dừng — đang tắt bot...")
             polling_task.cancel()

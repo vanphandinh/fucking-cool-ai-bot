@@ -1,4 +1,5 @@
 """Router AI: chạy vòng tool-calling + tự fallback giữa các provider."""
+
 from __future__ import annotations
 
 import logging
@@ -95,9 +96,7 @@ class AIProviderRouter:
                     output = await tool_executor(tc.name, tc.arguments)
                 except Exception as exc:  # noqa: BLE001 — lỗi tool không được làm sập bot
                     output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
-                messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": output[:6000]}
-                )
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": output[:6000]})
 
         # Không thể chạm tới — vòng lặp luôn return/raise phía trên.
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")

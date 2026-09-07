@@ -1,4 +1,5 @@
 """Lớp AI provider — OpenAI-compatible, tool-calling, fallback."""
+
 from __future__ import annotations
 
 import json
@@ -80,9 +81,8 @@ class OpenAICompatProvider:
         resp = await self._client.post("chat/completions", json=payload)
         if resp.status_code >= 400:
             body = resp.text[:500]
-            unsupported = (
-                resp.status_code == 400
-                and ("tool" in body.lower() or "function" in body.lower())
+            unsupported = resp.status_code == 400 and (
+                "tool" in body.lower() or "function" in body.lower()
             )
             raise ProviderError(
                 f"{self.name} HTTP {resp.status_code}: {body}",

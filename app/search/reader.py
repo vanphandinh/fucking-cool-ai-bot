@@ -1,18 +1,21 @@
-"""Đọc nội dung trang web (Jina Reader trước, fallback tự parse HTML).
+"""Mạng + chống SSRF khi đọc trang web.
 
-An toàn: mọi URL (kể cả URL sau chuyển hướng) đều phải qua validate_public_url
-(chống SSRF: IP literal nội bộ, dạng viết tắt, IPv4-mapped, zone index...),
-hostname phải resolve ra ít nhất 1 IP public (chống DNS-rebinding qua nip.io/sslip.io),
-và nội dung tải về bị giới hạn dung lượng để tránh lạm dụng băng thông.
+Chống SSRF 3 lớp, trong đó lớp "IP pinning" (resolve trước -> chỉ kết nối tới IP
+công khai đã kiểm tra, không dùng DNS lần 2 của thư viện) đóng kẽ hở
+DNS-rebinding/TOCTOU: dù DNS đổi sang IP nội bộ ở lần resolve thứ 2 (lúc httpx
+kết nối thật), bước kết nối vẫn bị chặn.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
 import socket
 import time
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -24,21 +27,233 @@ _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 )
-MAX_CHARS = 8000          # số ký tự văn bản trả về cho model
+MAX_CHARS = 8000  # số ký tự văn bản trả về cho model
 MAX_BYTES = 2 * 1024 * 1024  # dung lượng tối đa tải về (tránh tải file khổng lồ)
 _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _RE_NEWLINES = re.compile(r"\n{3,}")
 
-# Cache kết quả "hostname có resolve ra IP public không" (host hiếm khi đổi IP)
-_RESOLVE_TTL = 600.0
-_resolve_cache: dict[str, tuple[float, bool]] = {}
+
+class SSRFBlocked(Exception):
+    """Kết nối bị chặn vì không phải IP công khai."""
 
 
-class _FetchError(Exception):
-    """Lỗi khi tải (kèm lý do tiếng Việt, hiển thị được cho model)."""
+def _is_public_ip(ip_str: str) -> bool:
+    """IP literal có phải địa chỉ công khai (is_global) không?"""
+    try:
+        return ipaddress.ip_address(ip_str.split("%")[0]).is_global
+    except ValueError:
+        return False
 
 
+# ---------------------------------------------------------------------------
+# IP pinning: resolve host -> chỉ giữ IP công khai; kết nối thẳng tới IP đó
+# ---------------------------------------------------------------------------
+async def _resolve_all(host: str) -> list[str]:
+    """Resolve host -> danh sách IP CHỈ công khai.
+
+    Trả về rỗng nếu không có IP công khai nào (kể cả DNS lỗi) — fail-closed:
+    không tự resolve được IP public thì không kết nối bằng DNS lần 2.
+    """
+
+    def _res() -> list[str]:
+        try:
+            infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for info in infos:
+            key = info[4][0].split("%")[0]
+            if key in seen:
+                continue
+            seen.add(key)
+            if _is_public_ip(key):
+                out.append(key)
+        return out
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _res)
+
+
+async def _connect_first_ip(ips: list[str], port: int, timeout: float | None):
+    """Mở TCP tới IP ĐÃ PIN (không resolve) qua anyio — trả stream đầu tiên kết
+    nối được, hoặc None nếu tất cả thất bại."""
+    import anyio
+
+    last_exc: BaseException | None = None
+    for ip_str in ips:
+        # anyio.connect_tcp nhận IP literal (bỏ qua DNS) — httpcore tự start_tls
+        # với server_hostname = hostname gốc (SNI đúng, xác thực chứng chỉ OK).
+        try:
+            with anyio.fail_after(timeout):
+                stream = await anyio.connect_tcp(remote_host=ip_str, remote_port=port)
+            return stream
+        except BaseException as exc:
+            last_exc = exc
+            continue
+    if last_exc is not None:
+        raise last_exc  # type: ignore[misc]
+    return None
+
+
+class SSRFCheckBackend:  # đủ interface AsyncNetworkBackend
+    """Bọc backend mặc định: mọi kết nối TCP đều tới IP công khai.
+
+    - Host là IP literal: kiểm tra public rồi ủy quyền backend.
+    - Host là hostname: tự resolve trước (lọc IP public, cache ngắn), mở TCP/SSL
+      tới đúng IP đã pin qua anyio, KHÔNG để thư viện resolve DNS lần 2 (nơi
+      DNS-rebinding có thể chen vào).
+    """
+
+    def __init__(self, backend) -> None:
+        self._backend = backend
+        self._pin_ttl = 300.0
+        self._pinned: dict[str, tuple[float, list[str]]] = {}
+        self._pin_lock = asyncio.Lock()
+
+    async def _resolve_pinned(self, host: str) -> list[str]:
+        now = time.monotonic()
+        hit = self._pinned.get(host)
+        if hit and now - hit[0] < self._pin_ttl:
+            return hit[1]
+        async with self._pin_lock:
+            hit = self._pinned.get(host)
+            if hit and time.monotonic() - hit[0] < self._pin_ttl:
+                return hit[1]
+            ips = await _resolve_all(host)
+            self._pinned[host] = (time.monotonic(), ips)
+            return ips
+
+    # --- triển khai AsyncNetworkBackend ---
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        # Host là IP literal -> kiểm tra public rồi ủy quyền backend
+        host_clean = host.lower().rstrip(".")
+        try:
+            ip = ipaddress.ip_address(host_clean)
+            if not ip.is_global:
+                raise SSRFBlocked("địa chỉ IP không công khai — chặn kết nối")
+            return await self._backend.connect_tcp(
+                host,
+                port,
+                timeout=timeout,
+                local_address=local_address,
+                socket_options=socket_options,
+            )
+        except ValueError:
+            pass  # hostname — xử lý bên dưới
+
+        # Hostname: nối TCP tới IP đã pin (đã lọc public) — KHÔNG resolve lần 2.
+        # TLS (nếu scheme https) sẽ do httpcore gọi `start_tls` trên stream này,
+        # với server_hostname = hostname thật (SNI đúng, xác thực chứng chỉ OK).
+        ips = await self._resolve_pinned(host)
+        if not ips:
+            raise SSRFBlocked(f"host '{host}' không resolve ra IP công khai nào — chặn kết nối")
+        try:
+            stream = await _connect_first_ip(ips, port, timeout)
+        except Exception as exc:
+            raise SSRFBlocked(f"kết nối tới {host} thất bại: {exc}") from exc
+        if stream is None:
+            raise SSRFBlocked(f"kết nối tới {host} thất bại (mọi IP đều lỗi)")
+        return _WrappedStream(stream)
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        # Không dùng unix socket cho URL public — chặn luôn cho chắc
+        raise SSRFBlocked("unix socket không được phép")
+
+    async def sleep(self, seconds: float) -> None:
+        return await self._backend.sleep(seconds)
+
+
+class _WrappedStream:
+    """Bọc anyio stream thành httpcore AsyncNetworkStream.
+
+    `start_tls` bọc TLS (SNI = server_hostname) qua anyio TLSStream — httpcore
+    gọi tới khi scheme là https, đúng chuẩn giao diện AsyncNetworkStream.
+    """
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        import anyio
+
+        try:
+            with anyio.fail_after(timeout):
+                return await self._stream.receive(max_bytes)
+        except TimeoutError:
+            return b""  # hết hạn chờ dữ liệu — httpcore tự quyết định timeout
+        except anyio.EndOfStream:
+            return b""
+        except Exception as exc:
+            raise httpx.ReadError(str(exc)) from exc
+
+    async def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        import anyio
+
+        if not buffer:
+            return
+        try:
+            with anyio.fail_after(timeout):
+                await self._stream.send(buffer)
+        except TimeoutError:
+            raise httpx.WriteTimeout from None
+        except Exception as exc:
+            raise httpx.WriteError(str(exc)) from exc
+
+    async def aclose(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._stream.aclose()
+
+    async def start_tls(
+        self,
+        ssl_context,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ):
+        import anyio
+        from anyio.streams.tls import TLSStream
+
+        try:
+            with anyio.fail_after(timeout):
+                tls = await TLSStream.wrap(
+                    self._stream,
+                    ssl_context=ssl_context,
+                    hostname=server_hostname,
+                    standard_compatible=False,
+                    server_side=False,
+                )
+        except Exception:
+            with contextlib.suppress(Exception):
+                await self._stream.aclose()
+            raise
+        self._stream = tls
+        return self
+
+    def get_extra_info(self, info: str):
+        """httpcore hỏi 'ssl_object' / 'socket'... — stream anyio lưu qua extra()."""
+        import anyio
+        import anyio.abc
+        import anyio.streams.tls
+
+        attrs = {
+            "ssl_object": anyio.streams.tls.TLSAttribute.ssl_object,
+            "socket": anyio.abc.SocketAttribute.raw_socket,
+            "client_addr": anyio.abc.SocketAttribute.local_address,
+            "server_addr": anyio.abc.SocketAttribute.remote_address,
+        }
+        attr = attrs.get(info)
+        if attr is None:
+            return None
+        try:
+            return self._stream.extra(attr, None)
+        except Exception:
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Validate URL + đọc trang
+# ---------------------------------------------------------------------------
 def _is_numeric_host(host: str) -> bool:
     """Host có dạng thuần số theo luật 'numbers-and-dots' của glibc không?
 
@@ -138,60 +353,25 @@ def validate_public_url(url: str) -> str | None:
     return None
 
 
-async def _host_resolves_public(host: str) -> bool:
-    """Hostname có resolve ra ít nhất 1 IP public không? (chống DNS-rebinding)
+class _FetchError(Exception):
+    """Lỗi khi tải (kèm lý do tiếng Việt, hiển thị được cho model)."""
 
-    Trả về True nếu: resolve thành công và có IP global; HOẶC không resolve được
-    (mạng lỗi/offline — lúc đó chính bước kết nối sẽ tự fail, không mở lỗ hổng).
-    Chỉ trả về False khi resolve THÀNH CÔNG mà toàn bộ IP đều không public.
-    """
-    now = time.monotonic()
-    cached = _resolve_cache.get(host)
-    if cached and now - cached[0] < _RESOLVE_TTL:
-        return cached[1]
 
-    def _resolve() -> bool:
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except socket.gaierror:
-            return True  # không resolve được (NXDOMAIN/mất mạng) -> để httpx tự xử lý
-        ips = {info[4][0] for info in infos}
-        if not ips:
-            return True
-        for ip_str in ips:
-            try:
-                ip = ipaddress.ip_address(ip_str.split("%")[0])
-            except ValueError:
-                continue
-            if ip.is_global:
-                return True
-        return False  # resolve được nhưng toàn bộ đều private/loopback/...
-
-    try:
-        ok = await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=3.0)
-    except asyncio.TimeoutError:
-        ok = True  # DNS chậm bất thường — bước kết nối thực tế sẽ tự fail nếu không tới được
-    _resolve_cache[host] = (now, ok)
-    return ok
+@dataclass
+class _FetchResult:
+    body: bytes
 
 
 async def _fetch_limited(
     client: httpx.AsyncClient, url: str, max_bytes: int = MAX_BYTES
-) -> bytes:
+) -> _FetchResult:
     """GET url (kiểm tra an toàn ở MỌI bước chuyển hướng), giới hạn dung lượng."""
     current = url
     for _ in range(_MAX_REDIRECTS + 1):
         reason = validate_public_url(current)
         if reason:
             raise _FetchError(reason)
-        host = (urlparse(current).hostname or "").lower()
-        if host and not await _host_resolves_public(host):
-            raise _FetchError(
-                "trang resolve về địa chỉ không public (nghi chuyển hướng SSRF)"
-            )
-        async with client.stream(
-            "GET", current, headers={"User-Agent": _UA}
-        ) as resp:
+        async with client.stream("GET", current, headers={"User-Agent": _UA}) as resp:
             if resp.status_code in _REDIRECT_STATUSES:
                 location = resp.headers.get("location")
                 if not location:
@@ -207,8 +387,25 @@ async def _fetch_limited(
                 if size > max_bytes:
                     raise _FetchError(f"trang quá lớn (> {max_bytes // (1024 * 1024)}MB)")
                 chunks.append(chunk)
-            return b"".join(chunks)
+            return _FetchResult(body=b"".join(chunks))
     raise _FetchError("quá nhiều lần chuyển hướng")
+
+
+def _build_client(timeout: float) -> httpx.AsyncClient:
+    """Client có transport chống SSRF (IP pinning) — KHÔNG follow redirect tự động
+    (mỗi chặng redirect đều được validate lại trong _fetch_limited)."""
+    import httpcore
+
+    backend = SSRFCheckBackend(httpcore.AsyncNetworkBackend())
+    pool = httpcore.AsyncConnectionPool(
+        ssl_context=httpx.create_ssl_context(),
+        http1=True,
+        http2=False,
+        network_backend=backend,
+    )
+    transport = httpx.AsyncHTTPTransport()
+    transport._pool = pool  # noqa: SLF001 — lắp pool tuỳ biến (network_backend)
+    return httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False)
 
 
 async def read_page(
@@ -223,12 +420,12 @@ async def read_page(
         return f"Không tải được trang: {reason}"
 
     own_client = client is None
-    http = client or httpx.AsyncClient(timeout=timeout, follow_redirects=False)
+    http = client or _build_client(timeout)
     try:
         # 1) Jina Reader — không cần key, trả text sạch (Jina tự tải hộ nên an toàn)
         try:
-            body = await _fetch_limited(http, f"https://r.jina.ai/{url}")
-            text = body.decode("utf-8", errors="replace").strip()
+            result = await _fetch_limited(http, f"https://r.jina.ai/{url}")
+            text = result.body.decode("utf-8", errors="replace").strip()
             if text:
                 return text[:MAX_CHARS]
         except (_FetchError, httpx.HTTPError) as exc:
@@ -236,9 +433,10 @@ async def read_page(
 
         # 2) Fallback: tải HTML trực tiếp và parse văn bản
         try:
-            body = await _fetch_limited(http, url)
+            result = await _fetch_limited(http, url)
         except (_FetchError, httpx.HTTPError) as exc:
             return f"Không tải được trang: {exc}"
+        body = result.body
         soup = BeautifulSoup(body, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
             tag.decompose()

@@ -1,4 +1,5 @@
 """Backend DuckDuckGo qua thư viện ddgs (không cần key)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -20,9 +21,7 @@ def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
         url = item.get("href") or item.get("url") or ""
         snippet = item.get("body") or item.get("content") or item.get("description") or ""
         if url:
-            results.append(
-                {"title": title[:300], "url": url, "snippet": snippet[:400]}
-            )
+            results.append({"title": title[:300], "url": url, "snippet": snippet[:400]})
     return results
 
 

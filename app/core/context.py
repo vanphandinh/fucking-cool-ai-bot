@@ -1,4 +1,5 @@
 """Bộ nhớ hội thoại ngắn hạn (LRU) cho từng group."""
+
 from __future__ import annotations
 
 from collections import defaultdict, deque
@@ -25,5 +26,5 @@ class ChatMemory:
         entries = list(self._store.get(chat_id, []))
         # Tối đa `limit` cặp -> 2*limit bản ghi
         if limit > 0 and len(entries) > limit * 2:
-            entries = entries[-(limit * 2):]
+            entries = entries[-(limit * 2) :]
         return entries

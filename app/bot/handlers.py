@@ -1,4 +1,5 @@
 """Handlers tin nhắn + lifecycle (tự rời group lạ)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,8 @@ _HELP_TEXT = (
     "🤖 Mình là trợ lý AI của group (chạy bằng AI miễn phí + tìm kiếm web).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi, ví dụ: @{bot} giải thích blockchain là gì?\n"
-    "- Hoặc reply vào tin của mình (hoặc tin của thành viên khác) và tag @{bot} để hỏi tiếp theo ngữ cảnh.\n"
+    "- Hoặc reply vào tin của mình (hoặc tin của thành viên khác) và tag @{bot}\n"
+    "  để hỏi tiếp theo ngữ cảnh.\n"
     "- Lệnh: /ask <câu hỏi>, /help, /status (admin).\n\n"
     "Mẹo:\n"
     "- Hỏi tiếng Việt, mình trả lời tiếng Việt.\n"
@@ -73,14 +75,16 @@ def build_message_router(
     async def status_handler(message: Message) -> None:
         if message.from_user and message.from_user.id not in settings.admin_ids_list:
             return  # im lặng với người không phải admin
+        allowed_text = settings.allowed_group_ids_list or "TRỐNG"
         lines = [
             "📊 Trạng thái bot",
-            f"- Chat hiện tại: {message.chat.id} (cho phép: {settings.allowed_group_ids_list or 'TRỐNG'})",
+            f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.questions_today})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
-            "- Phân bổ: " + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
+            "- Phân bổ: "
+            + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
             f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
             f"- Cấu hình AI: {', '.join(settings.configured_provider_names) or 'CHƯA CÓ KEY'}",
@@ -96,9 +100,17 @@ def build_message_router(
                 "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
             )
             return
-        await _handle_question(message, question, quoted=None, settings=settings,
-                               orchestrator=orchestrator, memory=memory,
-                               limiter=limiter, stats=stats, chat_locks=chat_locks)
+        await _handle_question(
+            message,
+            question,
+            quoted=None,
+            settings=settings,
+            orchestrator=orchestrator,
+            memory=memory,
+            limiter=limiter,
+            stats=stats,
+            chat_locks=chat_locks,
+        )
 
     @router.message(TriggeredMessage(settings))
     async def triggered_message(message: Message) -> None:
@@ -111,9 +123,17 @@ def build_message_router(
         if not question:
             await message.reply("Mình đây! Bạn muốn hỏi gì? 🤔")
             return
-        await _handle_question(message, question, quoted=quoted, settings=settings,
-                               orchestrator=orchestrator, memory=memory,
-                               limiter=limiter, stats=stats, chat_locks=chat_locks)
+        await _handle_question(
+            message,
+            question,
+            quoted=quoted,
+            settings=settings,
+            orchestrator=orchestrator,
+            memory=memory,
+            limiter=limiter,
+            stats=stats,
+            chat_locks=chat_locks,
+        )
 
     return router
 
@@ -159,8 +179,12 @@ def build_lifecycle_router(settings: Settings) -> Router:
 
         try:
             await bot.leave_chat(chat_id)
-            logger.info("Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s type=%s",
-                        chat_id, title, update.chat.type)
+            logger.info(
+                "Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s type=%s",
+                chat_id,
+                title,
+                update.chat.type,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Không tự rời chat %s được: %s", chat_id, exc)
 

@@ -1,4 +1,5 @@
 """Filters aiogram: allowlist group + trigger (mention / reply-to-bot)."""
+
 from __future__ import annotations
 
 import re

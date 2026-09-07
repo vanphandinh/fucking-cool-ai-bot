@@ -1,4 +1,5 @@
 """Cấu hình ứng dụng — đọc biến môi trường từ .env."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -69,9 +70,7 @@ class Settings(BaseSettings):
         backend = (value or "").strip().lower()
         if backend not in _SEARCH_BACKENDS:
             allowed = " | ".join(_SEARCH_BACKENDS)
-            raise ValueError(
-                f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})"
-            )
+            raise ValueError(f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})")
         return backend
 
     # ---------- Các tiện ích ----------
