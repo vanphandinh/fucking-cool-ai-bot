@@ -19,10 +19,12 @@ def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
     for item in raw or []:
         if not isinstance(item, dict):
             continue
-        title = item.get("title") or ""
-        url = item.get("href") or item.get("url") or ""
-        snippet = item.get("body") or item.get("content") or item.get("description") or ""
-        if url:
+        title = str(item.get("title") or "")
+        url = str(item.get("href") or item.get("url") or "").strip()
+        snippet = str(
+            item.get("body") or item.get("content") or item.get("description") or ""
+        )
+        if url.startswith(("http://", "https://")):
             results.append({"title": title[:300], "url": url, "snippet": snippet[:400]})
     return results
 

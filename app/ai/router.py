@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 
+# Một phản hồi model có thể chứa rất nhiều tool call trong cùng một lượt. Nếu
+# không chặn, một câu hỏi duy nhất có thể đốt quota search/reader và giữ chat
+# lock hàng phút dù MAX_TOOL_ROUNDS đã nhỏ (giới hạn đó chỉ đếm số *lượt*).
+_MAX_TOOL_CALLS_TOTAL = 8
+
 
 class AIProviderRouter:
     def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
@@ -87,7 +92,9 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
     ) -> str:
         # Vòng 0 là lượt trả lời đầu tiên; mỗi vòng sau tương ứng 1 lượt thực thi
-        # tool-call. Cho phép tối đa max_tool_rounds lượt thực thi tool.
+        # tool-call. Cho phép tối đa max_tool_rounds lượt và một trần tổng số call
+        # riêng để chống phản hồi fan-out bất thường từ model.
+        executed_tool_calls = 0
         for _round in range(self.max_tool_rounds + 1):
             resp = await provider.chat(messages, tools)
             if not resp.tool_calls:
@@ -101,6 +108,12 @@ class AIProviderRouter:
                     "vòng — dừng để tránh kẹt vòng lặp",
                     retry_without_tools=True,
                 )
+            if executed_tool_calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
+                raise ProviderError(
+                    f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call "
+                    "trong một câu hỏi — dừng để bảo vệ quota",
+                    retry_without_tools=True,
+                )
 
             # Thực thi tool-calls
             messages.append(_assistant_tool_message(resp))
@@ -109,7 +122,14 @@ class AIProviderRouter:
                     output = await tool_executor(tc.name, tc.arguments)
                 except Exception as exc:  # noqa: BLE001 — lỗi tool không được làm sập bot
                     output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": output[:6000]})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": str(output)[:6000],
+                    }
+                )
+            executed_tool_calls += len(resp.tool_calls)
 
         # Không thể chạm tới — vòng lặp luôn return/raise phía trên.
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")

@@ -144,6 +144,19 @@ def t_config_formatting():
         "A &lt;B&gt; &amp; C" in esc_footer and "<B>" not in esc_footer,
         esc_footer,
     )
+    bounded_footer = format_sources(
+        [
+            {"title": "quá dài", "url": "https://example.com/" + "x" * 5000},
+            {"title": "nguồn hợp lệ", "url": "https://example.org/ok"},
+        ]
+    )
+    check(
+        "format_sources bỏ URL quá dài, vẫn giữ nguồn sau",
+        _utf16_len(bounded_footer) <= 3900
+        and "example.org/ok" in bounded_footer
+        and "x" * 100 not in bounded_footer,
+        str(_utf16_len(bounded_footer)),
+    )
     host_footer = format_sources(
         [
             {
@@ -229,6 +242,26 @@ def t_reader_guard():
     check("chặn rỗng", validate_public_url("") is not None)
     check("IPv6 cụt không nổ", validate_public_url("http://[::1") is not None)
     check("host khoảng trắng bị từ chối", validate_public_url("http:// ") is not None)
+    check(
+        "port ngoài dải bị từ chối",
+        validate_public_url("http://example.com:99999") is not None,
+    )
+    check(
+        "port không phải số bị từ chối",
+        validate_public_url("http://example.com:abc") is not None,
+    )
+    check(
+        "khoảng trắng trong host bị từ chối",
+        validate_public_url("http://exam ple.com") is not None,
+    )
+    check(
+        "NUL trong host bị từ chối",
+        validate_public_url("http://example.com\x00.evil") is not None,
+    )
+    check(
+        "backslash parser-confusion bị từ chối",
+        validate_public_url("http://a.com\\@127.0.0.1") is not None,
+    )
 
     # --- Dạng IP viết tắt mà ipaddress không parse nhưng glibc resolve về nội bộ
     for bad in [
@@ -1311,7 +1344,7 @@ def t_ai_router_mock():
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        from app.ai.base import AllProvidersFailed, OpenAICompatProvider
+        from app.ai.base import AllProvidersFailed, ChatResponse, OpenAICompatProvider, ToolCall
         from app.ai.router import AIProviderRouter
 
         base = f"http://127.0.0.1:{port}"
@@ -1326,6 +1359,39 @@ def t_ai_router_mock():
             return "Kết quả tìm kiếm: 1. A"
 
         async def run():
+            # Một lượt fan-out bất thường không được phép chạy hàng loạt tool và
+            # đốt quota; router phải chuyển sang retry plain ngay lập tức.
+            class FanOutProvider:
+                name = "fanout"
+                supports_tools = True
+
+                async def chat(self, messages, request_tools):
+                    if request_tools:
+                        return ChatResponse(
+                            tool_calls=[
+                                ToolCall(id=f"c{i}", name="web_search", arguments={"query": "x"})
+                                for i in range(9)
+                            ]
+                        )
+                    return ChatResponse(content="fanout-plain-answer")
+
+            fanout_executed = 0
+
+            async def fanout_executor(name, args):
+                nonlocal fanout_executed
+                fanout_executed += 1
+                return "không được chạy"
+
+            fanout_router = AIProviderRouter([FanOutProvider()])  # type: ignore[list-item]
+            fanout_text, _ = await fanout_router.complete(
+                [{"role": "user", "content": "hi"}], tools, fanout_executor
+            )
+            check(
+                "tool fan-out: chặn trước khi đốt quota và retry plain",
+                fanout_text == "fanout-plain-answer" and fanout_executed == 0,
+                f"text={fanout_text} calls={fanout_executed}",
+            )
+
             # fallback 429 -> tool-loop -> FINAL
             r1 = AIProviderRouter(
                 [
@@ -1610,6 +1676,12 @@ def t_main_startup():
     s2 = Settings(bot_token="123:test", gemini_api_key="", groq_api_key="", openrouter_api_key="")
     code2 = asyncio.run(m_main._amain(s2))
     check("thiếu mọi AI key -> exit 1 (fail-fast)", code2 == 1, str(code2))
+
+    # Token sai cú pháp làm Bot() ném lỗi trước get_me: vẫn phải trả code 1 sạch,
+    # không tạo provider client rồi rò session và không gọi mạng.
+    s3 = Settings(bot_token="garbage", gemini_api_key="gk")
+    code3 = asyncio.run(m_main._amain(s3))
+    check("BOT_TOKEN sai cú pháp -> exit 1 (fail-fast)", code3 == 1, str(code3))
 
 
 if __name__ == "__main__":

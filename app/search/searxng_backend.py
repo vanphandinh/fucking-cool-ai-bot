@@ -36,12 +36,15 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
     if unresponsive := data.get("unresponsive_engines"):
         logger.warning("SearXNG có engine lỗi (unresponsive_engines=%s)", unresponsive)
     results: list[dict] = []
-    for item in (data.get("results") or [])[:limit]:
+    raw_results = data.get("results") or []
+    if not isinstance(raw_results, list):
+        raise RuntimeError("SearXNG trả trường results không phải list")
+    for item in raw_results[:limit]:
         if not isinstance(item, dict):
             continue
-        url_item = item.get("url") or ""
-        title = item.get("title") or ""
-        content = item.get("content") or item.get("snippet") or ""
-        if url_item:
+        url_item = str(item.get("url") or "").strip()
+        title = str(item.get("title") or "")
+        content = str(item.get("content") or item.get("snippet") or "")
+        if url_item.startswith(("http://", "https://")):
             results.append({"title": title[:300], "url": url_item, "snippet": content[:400]})
     return results
