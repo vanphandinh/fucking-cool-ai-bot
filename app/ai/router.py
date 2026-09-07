@@ -25,6 +25,7 @@ from .openrouter import make_openrouter_provider
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
+_PROVIDER_MESSAGE_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 
 
 @dataclass
@@ -203,17 +204,21 @@ def _tool_call_message(tc: ToolCall) -> dict:
 
 
 def _assistant_tool_message(resp: ChatResponse) -> dict:
-    return {
+    out = {
         "role": "assistant",
         "content": resp.content or "",
         "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
     }
+    out.update(deepcopy(resp.assistant_metadata))
+    return out
 
 
 def _portable_messages(messages: list[dict]) -> list[dict]:
-    """Strip provider-specific tool metadata before cross-provider fallback."""
+    """Strip provider-specific metadata before cross-provider fallback."""
     out = deepcopy(messages)
     for message in out:
+        for field_name in _PROVIDER_MESSAGE_FIELDS:
+            message.pop(field_name, None)
         tool_calls = message.get("tool_calls")
         if not isinstance(tool_calls, list):
             continue
