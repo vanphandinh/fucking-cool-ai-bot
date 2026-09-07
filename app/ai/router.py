@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
@@ -27,6 +28,12 @@ ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
 
 
+@dataclass
+class _ToolBudget:
+    calls: int = 0
+    rounds: int = 0
+
+
 class AIProviderRouter:
     def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
         self.providers = providers
@@ -43,6 +50,8 @@ class AIProviderRouter:
         Trả về (text, provider_name). Ném AllProvidersFailed khi tất cả lỗi.
         """
         last_error: ProviderError | None = None
+        # Budget belongs to the question, including plain retries and fallbacks.
+        budget = _ToolBudget()
 
         for provider in self.providers:
             # pass 0: có tools; pass 1 (chỉ khi pass 0 lỗi vì tools): không kèm tools
@@ -56,7 +65,7 @@ class AIProviderRouter:
                     already_plain = True
                 try:
                     text = await self._complete_with_provider(
-                        provider, local_msgs, use_tools, tool_executor
+                        provider, local_msgs, use_tools, tool_executor, budget
                     )
                     return text, provider.name
                 except ProviderError as exc:
@@ -90,11 +99,11 @@ class AIProviderRouter:
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
+        budget: _ToolBudget,
     ) -> str:
         # Vòng 0 là lượt trả lời đầu tiên; mỗi vòng sau tương ứng 1 lượt thực thi
         # tool-call. Cho phép tối đa max_tool_rounds lượt và một trần tổng số call
         # riêng để chống phản hồi fan-out bất thường từ model.
-        executed_tool_calls = 0
         for _round in range(self.max_tool_rounds + 1):
             resp = await provider.chat(messages, tools)
             if not resp.tool_calls:
@@ -102,13 +111,15 @@ class AIProviderRouter:
                 if not text:
                     raise ProviderError(f"{provider.name}: model trả về nội dung rỗng")
                 return text
-            if _round >= self.max_tool_rounds:
+            if not tools:
+                raise ProviderError(f"{provider.name}: model gọi tool khi tools đã tắt")
+            if budget.rounds >= self.max_tool_rounds:
                 raise ProviderError(
                     f"{provider.name}: model gọi tool quá {self.max_tool_rounds} "
                     "vòng — dừng để tránh kẹt vòng lặp",
                     retry_without_tools=True,
                 )
-            if executed_tool_calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
+            if budget.calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
                 raise ProviderError(
                     f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call "
                     "trong một câu hỏi — dừng để bảo vệ quota",
@@ -116,6 +127,8 @@ class AIProviderRouter:
                 )
 
             # Thực thi tool-calls
+            budget.rounds += 1
+            budget.calls += len(resp.tool_calls)
             messages.append(_assistant_tool_message(resp))
             for tc in resp.tool_calls:
                 try:
@@ -129,7 +142,6 @@ class AIProviderRouter:
                         "content": str(output)[:6000],
                     }
                 )
-            executed_tool_calls += len(resp.tool_calls)
 
         # Không thể chạm tới — vòng lặp luôn return/raise phía trên.
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")

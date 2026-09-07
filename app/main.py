@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
 import sys
 
 from aiogram import Bot, Dispatcher
@@ -71,87 +70,70 @@ async def _amain(settings: Settings) -> int:
         logger.error("BOT_TOKEN không đúng định dạng: %s", exc)
         return 1
 
-    provider_router = build_provider_router(settings)
-    stats = Stats()
-    memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
-    limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
-    orchestrator = Orchestrator(settings, provider_router)
-
-    dp = Dispatcher()
-
-    dp.include_router(build_message_router(settings, orchestrator, memory, limiter, stats))
-    dp.include_router(build_lifecycle_router(settings))
-
+    provider_router = None
+    dp = None
     try:
-        me = await bot.get_me()
-        logger.info("Kết nối Telegram OK — bot @%s (%s)", me.username, me.first_name)
-        # Luôn lấy username THẬT từ Telegram làm nguồn chuẩn cho @mention
-        # (BOT_USERNAME trong .env chỉ là fallback, tránh sai typo làm hỏng trigger).
-        settings.bot_username = me.username or settings.bot_username
-    except TelegramAPIError as exc:
-        logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
-        await bot.session.close()
-        await _close_providers(provider_router)
-        return 1
+        provider_router = build_provider_router(settings)
+        stats = Stats()
+        memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
+        limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
+        orchestrator = Orchestrator(settings, provider_router)
 
-    logger.info(
-        "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | "
-        "Context turns: %s | Learn-mode: %s",
-        ", ".join(settings.configured_provider_names) or "-",
-        settings.search_backend,
-        settings.allowed_group_ids_list or "-",
-        settings.admin_ids_list or "-",
-        settings.max_context_turns,
-        settings.learn_group_id_mode,
-    )
+        dp = Dispatcher()
 
-    try:
-        # Xoá webhook cũ (nếu có) trước khi polling — nếu lỗi thì polling sẽ báo 409
-        # và tiến trình khởi động lại, nên không cần coi đây là lỗi chí mạng.
-        await bot.delete_webhook(drop_pending_updates=True)
-    except TelegramAPIError as exc:
-        logger.warning("Không xoá được webhook cũ: %s", exc)
+        dp.include_router(build_message_router(settings, orchestrator, memory, limiter, stats))
+        dp.include_router(build_lifecycle_router(settings))
 
-    # Dừng sạch sẽ khi nhận SIGINT/SIGTERM (Ctrl+C, docker stop) — đóng session
-    # và provider thay vì để tiến trình bị kill giữa chừng.
-    loop = asyncio.get_running_loop()
-    stop_event = asyncio.Event()
-    installed_signals: list[int] = []
-    for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(sig, stop_event.set)
-            installed_signals.append(sig)
-        except NotImplementedError:  # nền tảng không hỗ trợ (vd Windows)
-            pass
+            me = await bot.get_me()
+            logger.info("Kết nối Telegram OK — bot @%s (%s)", me.username, me.first_name)
+            # Luôn lấy username THẬT từ Telegram làm nguồn chuẩn cho @mention
+            # (BOT_USERNAME trong .env chỉ là fallback, tránh sai typo làm hỏng trigger).
+            settings.bot_username = me.username or settings.bot_username
+        except TelegramAPIError as exc:
+            logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
+            return 1
 
-    polling_task = asyncio.create_task(
-        dp.start_polling(
-            bot,
-            # my_chat_member là sự kiện bot bị thêm/gỡ khỏi chat (dùng để tự rời
-            # group lạ); chat_member (thành viên khác) không dùng tới nên không nhận.
-            allowed_updates=["message", "my_chat_member"],
+        logger.info(
+            "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | "
+            "Context turns: %s | Learn-mode: %s",
+            ", ".join(settings.configured_provider_names) or "-",
+            settings.search_backend,
+            settings.allowed_group_ids_list or "-",
+            settings.admin_ids_list or "-",
+            settings.max_context_turns,
+            settings.learn_group_id_mode,
         )
-    )
-    stop_task = asyncio.create_task(stop_event.wait())
-    try:
-        await asyncio.wait({polling_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
-        if not polling_task.done():
-            logger.info("Nhận tín hiệu dừng — đang tắt bot...")
-            polling_task.cancel()
-        stop_task.cancel()  # luôn huỷ — tránh gather chờ vô hạn nếu polling lỗi trước
-        await asyncio.gather(polling_task, stop_task, return_exceptions=True)
-    finally:
-        for sig in installed_signals:
-            loop.remove_signal_handler(sig)
-        await bot.session.close()
-        await _close_providers(provider_router)
 
-    # Polling tự kết thúc do lỗi (không phải tín hiệu dừng) -> ném lại để log rõ.
-    if polling_task.done() and not polling_task.cancelled():
-        poll_error = polling_task.exception()
-        if poll_error:
-            raise poll_error
-    return 0
+        try:
+            # Xoá webhook cũ (nếu có) trước khi polling — nếu lỗi thì polling sẽ báo 409
+            # và tiến trình khởi động lại, nên không cần coi đây là lỗi chí mạng.
+            await bot.delete_webhook(drop_pending_updates=False)
+        except TelegramAPIError as exc:
+            logger.warning("Không xoá được webhook cũ: %s", exc)
+
+        # Aiogram owns signal handling and polling shutdown. Do not install a
+        # second competing signal handler or close the bot session twice.
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "my_chat_member"],
+            close_bot_session=False,
+        )
+        return 0
+    finally:
+        # Aiogram stops polling but leaves handle_as_tasks update handlers alive.
+        # Cancel and join them before closing clients they may still be using.
+        if dp is not None:
+            pending = tuple(dp._handle_update_tasks)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        try:
+            await bot.session.close()
+        finally:
+            if provider_router is not None:
+                await _close_providers(provider_router)
 
 
 def main() -> None:

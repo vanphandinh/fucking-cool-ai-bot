@@ -87,6 +87,8 @@ của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Đi�
 | `GRANIAN_BACKPRESSURE` | | Giới hạn request đồng thời/worker SearXNG (mặc định `2`; giữ 1 worker) |
 | `TAVILY_API_KEY` | khi dùng tavily | app.tavily.com (free ~1.000 credit/tháng) |
 | `MAX_QUESTIONS_PER_MIN_PER_USER` | | Chống spam (mặc định 3) |
+| `REQUEST_TIMEOUT_SEC` | | Timeout HTTP; reader áp dụng cho toàn bộ lần đọc trang (mặc định 60 giây) |
+| `QUESTION_TIMEOUT_SEC` | | Tổng thời gian chờ/xử lý một câu hỏi, gồm xếp hàng và fallback (mặc định 180 giây) |
 | `LOG_LEVEL` | | `INFO` mặc định |
 
 ---
@@ -206,7 +208,7 @@ app/
 ├── bot/                 # filters (allowlist, trigger) + handlers + lifecycle (tự rời group lạ)
 ├── core/                # orchestrator (tool-calling), context, rate-limit, stats, formatting
 ├── ai/                  # provider Gemini/Groq/OpenRouter + router fallback
-└── search/              # backend ddgs/searxng/tavily + reader (Jina/BS4)
+└── search/              # backend ddgs/searxng/tavily + reader (Jina/HTMLParser)
 Dockerfile · docker-compose.yml · requirements.txt · .env.example
 searxng/settings.example.yml · searxng/limiter.toml
 DEPLOY_SEARXNG_VPS.md
@@ -221,6 +223,7 @@ Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KH
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python tests/run_tests.py     # kỳ vọng: 194 passed, 0 failed
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·
@@ -240,3 +243,14 @@ backends** (Tavily `Authorization: Bearer`, SearXNG JSON API, metadata lỗi
 `unresponsive_engines` không làm mất kết quả tốt, không giả IP forwarded,
 HTTP 403/JSON không hợp lệ vẫn báo lỗi) · **main
 fail-fast** (thiếu BOT_TOKEN/AI key dừng ngay, không gọi mạng).
+
+Các regression test bổ sung kiểm tra quota tool dùng chung qua retry/fallback,
+không chạy tool khi đã tắt, lỗi sinh tool không làm mất khả năng tìm web vĩnh viễn,
+deadline gồm cả xếp hàng, giữ pending updates khi restart và đóng handler trước client.
+Reader yêu cầu `Accept-Encoding: identity`, từ chối trang vẫn gửi dữ liệu nén để
+chặn decompression bomb; các địa chỉ IPv6 chuyển đổi/tunnel không được hỗ trợ.
+
+Workflow [Audit checks](.github/workflows/audit.yml) chạy test trên Python 3.11/3.12,
+Ruff, kiểm tra dependency, `pip-audit` và build image khi push/PR. Có thể chạy lại
+từ GitHub Actions bằng `workflow_dispatch`. Test ứng dụng dùng dữ liệu giả;
+cài dependency, tra advisory và Docker build cần mạng.

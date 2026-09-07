@@ -9,7 +9,8 @@ WORKDIR /app
 
 # Cài dependencies trước để tận dụng layer cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2' \
+    && python -m pip install --no-cache-dir -r requirements.txt
 
 # Copy mã nguồn
 COPY app ./app
