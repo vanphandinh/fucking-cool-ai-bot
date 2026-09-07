@@ -9,39 +9,42 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from .capabilities import ProviderCapabilities
+from .health import ProviderHealth
+
 
 class ProviderError(Exception):
-    """Lỗi khi gọi một provider cụ thể.
-
-    - ``unsupported_tools=True``: provider/model không hỗ trợ tool-calling
-      (thường là HTTP 400 kèm chữ tool/function) — router sẽ tắt tools vĩnh viễn
-      cho provider này rồi thử lại.
-    - ``retry_without_tools=True``: lỗi chỉ xảy ra *trong quá trình* tool-calling
-      (vd: model kẹt vòng lặp gọi tool) — router thử lại 1 lần không kèm tools,
-      KHÔNG tắt tools vĩnh viễn.
-    """
-
     def __init__(
         self,
         message: str,
         *,
         unsupported_tools: bool = False,
         retry_without_tools: bool = False,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+        transient: bool = True,
     ) -> None:
         super().__init__(message)
         self.unsupported_tools = unsupported_tools
         self.retry_without_tools = retry_without_tools
+        self.status_code = status_code
+        self.retry_after = retry_after
+        self.transient = transient
 
 
 class AllProvidersFailed(Exception):
-    """Tất cả provider trong chuỗi đều thất bại."""
+    pass
+
+
+class NoCapableProvider(Exception):
+    pass
 
 
 @dataclass
 class ToolCall:
     id: str
     name: str
-    arguments: dict  # đã parse từ JSON
+    arguments: dict
 
 
 @dataclass
@@ -51,8 +54,6 @@ class ChatResponse:
 
 
 class OpenAICompatProvider:
-    """Provider nói chung giao thức OpenAI chat/completions (HTTP trực tiếp)."""
-
     def __init__(
         self,
         name: str,
@@ -61,29 +62,28 @@ class OpenAICompatProvider:
         model: str,
         timeout: float = 60.0,
         extra_headers: dict[str, str] | None = None,
+        capabilities: ProviderCapabilities | None = None,
     ) -> None:
         self.name = name
         self.model = model
         self.supports_tools = True
+        self.capabilities = capabilities or ProviderCapabilities()
+        self.health = ProviderHealth()
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
-        # Dùng URL tương đối (không mở đầu '/') để giữ nguyên path prefix của base_url
         self._client = httpx.AsyncClient(
-            base_url=base_url.rstrip("/") + "/",
-            headers=headers,
-            timeout=timeout,
+            base_url=base_url.rstrip("/") + "/", headers=headers, timeout=timeout
         )
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
         payload: dict = {"model": self.model, "messages": messages}
         if tools and self.supports_tools:
             payload["tools"] = tools
-
         try:
             resp = await self._client.post("chat/completions", json=payload)
         except httpx.HTTPError as exc:
-            raise ProviderError(f"{self.name}: lỗi mạng ({exc})") from exc
+            raise ProviderError(f"{self.name}: lỗi mạng ({exc})", transient=True) from exc
         if resp.status_code >= 400:
             body = resp.text[:500]
             error_message = body
@@ -96,38 +96,39 @@ class OpenAICompatProvider:
                 error = error_data["error"]
                 error_message = str(error.get("message") or "")
                 generation_error = (
-                    error.get("code") == "tool_use_failed" or "failed_generation" in error
+                    error.get("code") == "tool_use_failed"
+                    or "failed_generation" in error
                 )
-            tool_error = (
-                resp.status_code == 400
-                and bool(tools)
-                and (
-                    generation_error
-                    or "tool" in error_message.lower()
-                    or "function" in error_message.lower()
+            tool_error = resp.status_code == 400 and bool(tools) and (
+                generation_error
+                or "tool" in error_message.lower()
+                or "function" in error_message.lower()
+            )
+            unsupported = tool_error and not generation_error and bool(
+                re.search(
+                    r"(?:does not support|do not support|not support|unsupported)"
+                    r"[^.\n]{0,60}(?:tool|function)"
+                    r"|(?:tool|function)[^.\n]{0,60}(?:not supported|unsupported)",
+                    error_message,
+                    flags=re.IGNORECASE,
                 )
             )
-            # Invalid generations/arguments are transient tool failures, not a
-            # statement that this model lacks tool support for all future chats.
-            unsupported = (
-                tool_error
-                and not generation_error
-                and bool(
-                    re.search(
-                        r"(?:does not support|do not support|not support|unsupported)"
-                        r"[^.\n]{0,60}(?:tool|function)"
-                        r"|(?:tool|function)[^.\n]{0,60}(?:not supported|unsupported)",
-                        error_message,
-                        flags=re.IGNORECASE,
-                    )
-                )
-            )
+            retry_after = None
+            raw_retry = resp.headers.get("retry-after")
+            if raw_retry:
+                try:
+                    retry_after = float(raw_retry)
+                except ValueError:
+                    retry_after = None
+            transient = resp.status_code == 429 or resp.status_code >= 500
             raise ProviderError(
                 f"{self.name} HTTP {resp.status_code}: {body}",
                 unsupported_tools=unsupported,
                 retry_without_tools=tool_error and not unsupported,
+                status_code=resp.status_code,
+                retry_after=retry_after,
+                transient=transient,
             )
-
         try:
             data = resp.json()
         except json.JSONDecodeError as exc:
@@ -140,7 +141,6 @@ class OpenAICompatProvider:
             raise ProviderError(f"{self.name}: phản hồi thiếu choices: {str(data)[:200]}") from exc
         if not isinstance(msg, dict):
             raise ProviderError(f"{self.name}: message không phải object: {str(msg)[:200]}")
-
         content = _normalize_content(msg.get("content"))
         tool_calls: list[ToolCall] = []
         for tc in msg.get("tool_calls") or []:
@@ -151,8 +151,6 @@ class OpenAICompatProvider:
                 fn = {}
             raw_args = fn.get("arguments")
             if isinstance(raw_args, dict):
-                # Một vài OpenAI-compatible API trả object trực tiếp thay vì
-                # chuỗi JSON theo đặc tả. Chấp nhận để không làm hỏng fallback.
                 args = raw_args
             else:
                 try:
@@ -161,11 +159,7 @@ class OpenAICompatProvider:
                     args = {}
             if not isinstance(args, dict):
                 args = {}
-            # Một số API để trống/bớt `id` của tool call; gửi lại tool_call_id rỗng
-            # sẽ bị API từ chối ở vòng kế tiếp -> tự sinh id thay thế.
-            call_id = str(tc.get("id") or "").strip()
-            if not call_id:
-                call_id = f"call_{uuid.uuid4().hex[:24]}"
+            call_id = str(tc.get("id") or "").strip() or f"call_{uuid.uuid4().hex[:24]}"
             tool_calls.append(ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args))
         return ChatResponse(content=content, tool_calls=tool_calls)
 
@@ -174,7 +168,6 @@ class OpenAICompatProvider:
 
 
 def _normalize_content(content: object) -> str | None:
-    """Chuẩn hoá ``message.content`` (string, list parts, hoặc None) thành str."""
     if content is None:
         return None
     if isinstance(content, str):
