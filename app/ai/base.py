@@ -95,13 +95,19 @@ class OpenAICompatProvider:
             if isinstance(error_data, dict) and isinstance(error_data.get("error"), dict):
                 error = error_data["error"]
                 error_message = str(error.get("message") or "")
-                generation_error = error.get("code") == "tool_use_failed" or "failed_generation" in error
+                generation_error = (
+                    error.get("code") == "tool_use_failed"
+                    or "failed_generation" in error
+                )
             tool_error = resp.status_code == 400 and bool(tools) and (
-                generation_error or "tool" in error_message.lower() or "function" in error_message.lower()
+                generation_error
+                or "tool" in error_message.lower()
+                or "function" in error_message.lower()
             )
             unsupported = tool_error and not generation_error and bool(
                 re.search(
-                    r"(?:does not support|do not support|not support|unsupported)[^.\n]{0,60}(?:tool|function)"
+                    r"(?:does not support|do not support|not support|unsupported)"
+                    r"[^.\n]{0,60}(?:tool|function)"
                     r"|(?:tool|function)[^.\n]{0,60}(?:not supported|unsupported)",
                     error_message,
                     flags=re.IGNORECASE,
@@ -126,7 +132,9 @@ class OpenAICompatProvider:
         try:
             data = resp.json()
         except json.JSONDecodeError as exc:
-            raise ProviderError(f"{self.name}: phản hồi không phải JSON: {resp.text[:200]}") from exc
+            raise ProviderError(
+                f"{self.name}: phản hồi không phải JSON: {resp.text[:200]}"
+            ) from exc
         try:
             msg = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
