@@ -14,6 +14,7 @@ from .base import (
     NoCapableProvider,
     OpenAICompatProvider,
     ProviderError,
+    ToolCall,
 )
 from .capabilities import ProviderCapabilities
 from .cloudflare import make_cloudflare_provider
@@ -188,18 +189,22 @@ class AIProviderRouter:
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")
 
 
+def _tool_call_message(tc: ToolCall) -> dict:
+    out = {
+        "id": tc.id,
+        "type": "function",
+        "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
+    }
+    if tc.extra_content is not None:
+        out["extra_content"] = deepcopy(tc.extra_content)
+    return out
+
+
 def _assistant_tool_message(resp: ChatResponse) -> dict:
     return {
         "role": "assistant",
         "content": resp.content or "",
-        "tool_calls": [
-            {
-                "id": tc.id,
-                "type": "function",
-                "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
-            }
-            for tc in resp.tool_calls
-        ],
+        "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
     }
 
 
