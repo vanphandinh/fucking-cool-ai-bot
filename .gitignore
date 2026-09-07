@@ -12,6 +12,8 @@ venv/
 
 # SearXNG config thật (chứa secret_key / local overrides) — dùng bản mẫu *.example.yml
 searxng/settings.yml
+# Backup file thật cũng chứa secret (hướng dẫn nâng cấp dùng settings.yml.bak)
+searxng/settings.yml.*
 
 # IDE / OS
 .idea/

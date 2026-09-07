@@ -31,6 +31,10 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
         data = resp.json()
     if not isinstance(data, dict):
         raise RuntimeError("SearXNG trả JSON không phải object")
+    # HTTP 200 có thể chứa lỗi của một vài engine, nhưng engine khác vẫn trả kết quả.
+    # Log metadata để chẩn đoán upstream; không bỏ kết quả tốt hay log câu hỏi người dùng.
+    if unresponsive := data.get("unresponsive_engines"):
+        logger.warning("SearXNG có engine lỗi (unresponsive_engines=%s)", unresponsive)
     results: list[dict] = []
     for item in (data.get("results") or [])[:limit]:
         if not isinstance(item, dict):

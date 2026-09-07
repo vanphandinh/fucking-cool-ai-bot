@@ -22,9 +22,16 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    environment:
+      # Image hiện tại dùng Granian (không phải uWSGI). Mặc định cho VPS nhỏ:
+      # 1 worker, 1 Python blocking thread, tối đa 2 request đồng thời/worker.
+      GRANIAN_WORKERS: "1"
+      GRANIAN_BLOCKING_THREADS: "${GRANIAN_BLOCKING_THREADS:-1}"
+      GRANIAN_BACKPRESSURE: "${GRANIAN_BACKPRESSURE:-2}"
     volumes:
-      # Chỉ mount file settings; không mount limiter.toml vì instance private không bật limiter.
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      # SearXNG vẫn đọc cấu hình botdetection kể cả khi server.limiter=false.
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
       - searxng-cache:/var/cache/searxng
     # Lưu ý: image SearXNG gốc Alpine (busybox wget) — chỉ dùng option chung busybox/GNU wget.
     healthcheck:

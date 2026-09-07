@@ -83,6 +83,8 @@ của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Đi�
 | `SEARCH_BACKEND` | | `ddgs` (mặc định) · `searxng` · `tavily` |
 | `SEARXNG_URL` | khi dùng searxng | URL nội bộ bot gọi tới SearXNG, mặc định `http://searxng:8080` (Docker network) |
 | `SEARXNG_IMAGE` | | tùy chọn: pin image SearXNG theo tag ngày khi production (mặc định `ghcr.io/searxng/searxng:latest`) |
+| `GRANIAN_BLOCKING_THREADS` | | Python blocking threads/worker của SearXNG (mặc định `1`, dành cho VPS nhỏ) |
+| `GRANIAN_BACKPRESSURE` | | Giới hạn request đồng thời/worker SearXNG (mặc định `2`; giữ 1 worker) |
 | `TAVILY_API_KEY` | khi dùng tavily | app.tavily.com (free ~1.000 credit/tháng) |
 | `MAX_QUESTIONS_PER_MIN_PER_USER` | | Chống spam (mặc định 3) |
 | `LOG_LEVEL` | | `INFO` mặc định |
@@ -94,17 +96,27 @@ của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Đi�
 Cấu hình SearXNG trong repo đã được dựng sẵn theo hướng **production, private**:
 
 - bot gọi nội bộ qua Docker network: `http://searxng:8080`
-- container SearXNG **không publish port ra host/Internet** → không ai ngoài bot
-  truy cập được; không cần limiter / Valkey / reverse proxy / domain
-- hướng dẫn đầy đủ: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md)
+- container SearXNG **không publish port ra host/Internet**; chỉ dành cho mạng tin cậy
+  (host/container cùng network vẫn có thể truy cập); không cần Valkey / reverse proxy / domain
+- đặt rõ `limiter: false`, `public_instance: false`; vẫn mount `limiter.toml` vì
+  SearXNG đọc cấu hình botdetection ngay cả khi limiter tắt
+- mẫu loại `ahmia`/`torch` (không dùng Tor), tạm loại `startpage`/`wikipedia` do lỗi
+  upstream đã báo; có thể bật lại hai engine sau khi cập nhật image và kiểm tra
+- giới hạn Granian cho VPS nhỏ, không dùng biến `UWSGI_*`
+- hướng dẫn đầy đủ và giải thích từng log: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md)
 
 ### 5.1. Tạo file config thật và đổi secret
 
 ```bash
-cp searxng/settings.example.yml searxng/settings.yml
-nano searxng/settings.yml       # đổi secret_key bằng kết quả lệnh dưới
+# Chỉ dành cho cài mới; không ghi đè file đang có secret thật
+cp -i searxng/settings.example.yml searxng/settings.yml
 openssl rand -hex 32
+nano searxng/settings.yml       # đổi secret_key bằng kết quả lệnh trên
 ```
+
+**Đã có `settings.yml`?** Merge thay đổi từ mẫu, giữ secret và recreate container;
+chỉ cập nhật file mẫu hoặc `restart` là chưa đủ để áp dụng mount/env mới.
+Xem mục 3.2 trong [hướng dẫn nâng cấp](DEPLOY_SEARXNG_VPS.md).
 
 ### 5.2. Điền trong `.env`
 
@@ -176,7 +188,10 @@ quota (log báo 429), bot tự chuyển sang Groq/OpenRouter nếu đã cấu h�
 | Log báo `BOT_TOKEN không hợp lệ` | Sai token; tạo lại ở @BotFather |
 | Log báo `Thiếu/Chưa cấu hình API key` | Điền `GEMINI_API_KEY` (hoặc Groq/OpenRouter) vào `.env` rồi restart |
 | Trả lời "không tìm kiếm được web" | Backend `ddgs` bị chặn tạm thời → bật SearXNG (mục 5) hoặc Tavily |
-| Log SearXNG báo `missing config file: /etc/searxng/limiter.toml` | Vô hại: instance private không bật limiter nên không cần file này — bỏ qua |
+| Granian cảnh báo `spawning up to 4 Python threads` | Compose mới dùng 1 blocking thread + backpressure 2 cho VPS nhỏ; cần recreate để nhận env mới |
+| Log SearXNG báo `missing config file: /etc/searxng/limiter.toml` | Botdetection vẫn đọc file dù limiter tắt; mount `searxng/limiter.toml` có sẵn rồi recreate |
+| Log SearXNG báo thiếu `X-Forwarded-For` / `X-Real-IP` | Có thể chấp nhận với kết nối trực tiếp private và limiter/public_instance đều tắt; không giả IP ở bot. Nếu dùng proxy/public phải cấu hình header đúng (xem tài liệu triển khai) |
+| `ahmia`/`torch` không load; Startpage parse JSON lỗi; Wikipedia HTTP 400 | Mẫu mới loại các engine này (hai engine sau là workaround). Phải merge vào **file thật** `settings.yml`; xem chẩn đoán `unresponsive_engines` ở tài liệu triển khai |
 | Log SearXNG báo `... settings.yml is not a valid file` | Chưa tạo `searxng/settings.yml` từ `settings.example.yml` (mục 5.1) |
 | Bị 429 khi nhóm dùng nhiều | Hết quota Gemini phút/ngày → tự fallback; bớt tần suất hoặc thêm key Groq/OpenRouter |
 
@@ -193,7 +208,7 @@ app/
 ├── ai/                  # provider Gemini/Groq/OpenRouter + router fallback
 └── search/              # backend ddgs/searxng/tavily + reader (Jina/BS4)
 Dockerfile · docker-compose.yml · requirements.txt · .env.example
-searxng/settings.example.yml
+searxng/settings.example.yml · searxng/limiter.toml
 DEPLOY_SEARXNG_VPS.md
 ```
 
@@ -205,7 +220,7 @@ Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KH
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/run_tests.py     # kỳ vọng: 166 passed, 0 failed
+.venv/bin/python tests/run_tests.py     # kỳ vọng: 177 passed, 0 failed
 ```
 
 Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·
@@ -221,5 +236,7 @@ chống spam, AllProvidersFailed/lỗi lạ/answer-rỗng) · **AI router** vớ
 OpenAI server (fallback 429, tool-calling loop, retry-không-tools, tool-loop
 kẹt vòng tự retry không-tools đúng giới hạn, unsupported-tools ở cả 2 pass,
 tool call thiếu `id` tự sinh id thay thế, AllProvidersFailed) · **search
-backends** (Tavily `Authorization: Bearer`, SearXNG JSON API) · **main
+backends** (Tavily `Authorization: Bearer`, SearXNG JSON API, metadata lỗi
+`unresponsive_engines` không làm mất kết quả tốt, không giả IP forwarded,
+HTTP 403/JSON không hợp lệ vẫn báo lỗi) · **main
 fail-fast** (thiếu BOT_TOKEN/AI key dừng ngay, không gọi mạng).

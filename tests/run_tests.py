@@ -1357,6 +1357,8 @@ def t_normalize_content():
 
 def t_search_backends():
     print("== Search backends (mock httpx, offline) ==")
+    from unittest.mock import patch
+
     import httpx
 
     import app.search.searxng_backend as sx
@@ -1374,18 +1376,18 @@ def t_search_backends():
             request=request,
         )
 
+    sx_payload = {
+        "results": [
+            {"title": "S", "url": "https://y.test/2", "content": "cc"},
+            {"url": ""},  # rác — phải bị bỏ qua
+        ]
+    }
+    sx_status = 200
+
     def searxng_handler(request: httpx.Request) -> httpx.Response:
         seen["sx_params"] = dict(request.url.params)
-        return httpx.Response(
-            200,
-            json={
-                "results": [
-                    {"title": "S", "url": "https://y.test/2", "content": "cc"},
-                    {"url": ""},  # rác — phải bị bỏ qua
-                ]
-            },
-            request=request,
-        )
+        seen["sx_headers"] = dict(request.headers)
+        return httpx.Response(sx_status, json=sx_payload, request=request)
 
     class _PatchedClient(httpx.AsyncClient):
         """Client mock: intercept mọi request, ghi lại vào `seen_handler`."""
@@ -1397,6 +1399,7 @@ def t_search_backends():
             super().__init__(transport=httpx.MockTransport(type(self)._handler), timeout=5)
 
     async def run():
+        nonlocal sx_payload, sx_status
         orig = httpx.AsyncClient
 
         # --- Tavily: key phải đi theo header Bearer (docs hiện hành)
@@ -1427,24 +1430,75 @@ def t_search_backends():
         except RuntimeError:
             check("tavily: thiếu key bị chặn sớm", True)
 
-        # --- SearXNG: phải gọi JSON API với format=json
+        # --- SearXNG: JSON API và lỗi từng engine, không cần proxy/IP giả
         seen.pop("auth", None)
         _PatchedClient._handler = searxng_handler
-        sx.httpx.AsyncClient = _PatchedClient
-        try:
-            res2 = await sx.search_searxng("q", Settings(searxng_url="http://sx.local"), 5)
-        finally:
-            sx.httpx.AsyncClient = orig
-        check(
-            "searxng: parse kết quả (bỏ item rác)",
-            len(res2) == 1 and res2[0]["url"] == "https://y.test/2",
-            str(res2),
-        )
-        check(
-            "searxng: dùng format=json",
-            (seen.get("sx_params") or {}).get("format") == "json",
-            str(seen.get("sx_params")),
-        )
+        sx_settings = Settings(searxng_url="http://sx.local")
+        with patch.object(sx.httpx, "AsyncClient", _PatchedClient):
+            with patch.object(sx.logger, "warning") as warn:
+                res2 = await sx.search_searxng("q", sx_settings, 5)
+            check(
+                "searxng: parse kết quả (bỏ item rác)",
+                len(res2) == 1 and res2[0]["url"] == "https://y.test/2",
+                str(res2),
+            )
+            check(
+                "searxng: dùng format=json",
+                (seen.get("sx_params") or {}).get("format") == "json",
+                str(seen.get("sx_params")),
+            )
+            check("searxng: không log warning khi thiếu metadata lỗi", not warn.called)
+            check(
+                "searxng: Accept JSON",
+                seen["sx_headers"].get("accept") == "application/json",
+            )
+            check(
+                "searxng: không giả forwarded IP cho client gọi trực tiếp",
+                not {"x-forwarded-for", "x-real-ip", "forwarded"}.intersection(seen["sx_headers"]),
+            )
+
+            for metadata in ([], None):
+                sx_payload["unresponsive_engines"] = metadata
+                with patch.object(sx.logger, "warning") as warn:
+                    res_ok = await sx.search_searxng("q", sx_settings, 5)
+                check(
+                    f"searxng: metadata lỗi {metadata!r} không cảnh báo/không mất kết quả",
+                    res_ok == res2 and not warn.called,
+                )
+
+            metadata = [["startpage", "unexpected crash"], ["wikipedia", "HTTP error"]]
+            sx_payload["unresponsive_engines"] = metadata
+            with patch.object(sx.logger, "warning") as warn:
+                partial = await sx.search_searxng("q", sx_settings, 5)
+            check("searxng: lỗi một phần vẫn giữ kết quả tốt", partial == res2)
+            check(
+                "searxng: log metadata engine lỗi, không log query",
+                warn.call_count == 1 and warn.call_args.args[1:] == (metadata,),
+            )
+
+            sx_payload["results"] = []
+            with patch.object(sx.logger, "warning") as warn:
+                empty = await sx.search_searxng("q", sx_settings, 5)
+            check("searxng: lỗi engine không có kết quả vẫn trả rỗng", empty == [])
+            check("searxng: rỗng vẫn log metadata để chẩn đoán", warn.call_count == 1)
+
+            sx_payload = []
+            try:
+                await sx.search_searxng("q", sx_settings, 5)
+                check("searxng: JSON không phải object bị từ chối", False)
+            except RuntimeError as exc:
+                check("searxng: JSON không phải object bị từ chối", "object" in str(exc))
+
+            sx_status = 403
+            sx_payload = {"error": "Forbidden"}
+            try:
+                await sx.search_searxng("q", sx_settings, 5)
+                check("searxng: HTTP 403 không bị coi là kết quả rỗng", False)
+            except httpx.HTTPStatusError as exc:
+                check(
+                    "searxng: HTTP 403 không bị coi là kết quả rỗng",
+                    exc.response.status_code == 403,
+                )
         try:
             await sx.search_searxng("q", Settings(searxng_url=""), 5)
             check("searxng: thiếu URL bị chặn sớm", False)
