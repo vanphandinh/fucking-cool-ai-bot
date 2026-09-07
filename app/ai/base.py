@@ -114,10 +114,16 @@ class OpenAICompatProvider:
             fn = tc.get("function") or {}
             if not isinstance(fn, dict):
                 fn = {}
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
+            raw_args = fn.get("arguments")
+            if isinstance(raw_args, dict):
+                # Một vài OpenAI-compatible API trả object trực tiếp thay vì
+                # chuỗi JSON theo đặc tả. Chấp nhận để không làm hỏng fallback.
+                args = raw_args
+            else:
+                try:
+                    args = json.loads(raw_args or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
             if not isinstance(args, dict):
                 args = {}
             # Một số API để trống/bớt `id` của tool call; gửi lại tool_call_id rỗng
@@ -126,7 +132,7 @@ class OpenAICompatProvider:
             if not call_id:
                 call_id = f"call_{uuid.uuid4().hex[:24]}"
             tool_calls.append(
-                ToolCall(id=call_id, name=fn.get("name") or "", arguments=args)
+                ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args)
             )
         return ChatResponse(content=content, tool_calls=tool_calls)
 

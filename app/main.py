@@ -10,6 +10,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
+from aiogram.utils.token import TokenValidationError
 
 from .ai.router import build_provider_router
 from .bot.handlers import build_lifecycle_router, build_message_router
@@ -61,13 +62,21 @@ async def _amain(settings: Settings) -> int:
             "khi được gọi. Điền key Tavily vào .env."
         )
 
+    # Bot() tự validate cú pháp token và có thể ném TokenValidationError ngay tại
+    # constructor (trước get_me). Bắt riêng để startup fail-fast sạch, không traceback
+    # và không tạo provider client rồi bỏ quên chưa đóng.
+    try:
+        bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
+    except TokenValidationError as exc:
+        logger.error("BOT_TOKEN không đúng định dạng: %s", exc)
+        return 1
+
     provider_router = build_provider_router(settings)
     stats = Stats()
     memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
     limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
     orchestrator = Orchestrator(settings, provider_router)
 
-    bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
     dp = Dispatcher()
 
     dp.include_router(build_message_router(settings, orchestrator, memory, limiter, stats))

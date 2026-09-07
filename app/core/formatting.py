@@ -112,15 +112,22 @@ def format_sources(sources: list[dict[str, str]]) -> str:
     seen: set[str] = set()
     n = 0
     for src in sources:
-        url = (src.get("url") or "").strip()
+        if not isinstance(src, dict):
+            continue
+        url = str(src.get("url") or "").strip()
         if not url.startswith(("http://", "https://")) or url in seen:
             continue
         seen.add(url)
-        n += 1
-        label = _source_label(src.get("title") or "", url)
+        label = _source_label(str(src.get("title") or ""), url)
         safe_label = html.escape(label, quote=False)
         safe_url = html.escape(url, quote=True)
-        lines.append(f'{n}. <a href="{safe_url}">{safe_label}</a>')
+        line = f'{n + 1}. <a href="{safe_url}">{safe_label}</a>'
+        # URL do search backend cung cấp có thể cực dài. Không để riêng footer
+        # vượt giới hạn 4096 UTF-16 của Telegram và làm mất toàn bộ danh sách nguồn.
+        if _utf16_len("\n".join([*lines, line])) > 3900:
+            continue
+        lines.append(line)
+        n += 1
         if n >= 6:
             break
     return "\n".join(lines) if n else ""

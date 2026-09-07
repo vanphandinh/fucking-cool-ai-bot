@@ -199,11 +199,18 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
     for src in sources:
         if not isinstance(src, dict):
             continue
-        url = (src.get("url") or "").strip()
+        url = str(src.get("url") or "").strip()
         if not url.startswith(("http://", "https://")) or url in seen:
             continue
         seen.add(url)
-        out.append(src)
+        # Chuẩn hoá dữ liệu upstream để formatter không gặp kiểu bất ngờ.
+        out.append(
+            {
+                "title": str(src.get("title") or ""),
+                "url": url,
+                "snippet": str(src.get("snippet") or ""),
+            }
+        )
         if len(out) >= 8:
             break
     return out

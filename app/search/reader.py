@@ -219,10 +219,17 @@ def validate_public_url(url: str) -> str | None:
     mọi địa chỉ IP không public (private/loopback/link-local/reserved/multicast/
     CGNAT...) kể cả dạng viết tắt (127.1, 0x7f000001...) và IPv4-mapped IPv6.
     """
+    if not isinstance(url, str) or not url or len(url) > 8192:
+        return "URL rỗng hoặc quá dài."
+    # Ký tự điều khiển/khoảng trắng/backslash khiến các parser HTTP có thể hiểu
+    # URL khác nhau; từ chối thay vì dựa vào chuẩn hoá ngầm của từng thư viện.
+    if "\\" in url or any(ord(char) < 33 or char.isspace() for char in url):
+        return "URL chứa ký tự không hợp lệ."
     try:
         parts = urlparse(url)
-        # .hostname có thể ném ValueError riêng (IPv6 cụt, port ngoài dải, …)
-        host = (parts.hostname or "").strip().lower().rstrip(".")
+        # .hostname/.port có thể ném ValueError riêng (IPv6 cụt, port ngoài dải, …).
+        host = (parts.hostname or "").lower().rstrip(".")
+        _ = parts.port  # buộc kiểm tra port ngay tại guard, trước khi gọi Jina/httpx
         userinfo = bool(parts.username or parts.password)
         scheme = parts.scheme
     except ValueError:
