@@ -1,0 +1,11 @@
+# SearXNG PRIVATE — file cố ý chỉ có comment (TOML rỗng hợp lệ).
+# SearXNG khởi tạo botdetection và đọc file này dù server.limiter=false.
+# Mount file để tránh warning "missing config file: /etc/searxng/limiter.toml";
+# không override mặc định upstream, không bật limiter và không cần Valkey.
+#
+# Bot kết nối trực tiếp qua Docker network, không có reverse proxy:
+# - Không thêm trusted_proxies=0.0.0.0/0, ::/0 hoặc pass_ip để che cảnh báo.
+# - Không giả X-Forwarded-For/X-Real-IP là 127.0.0.1 ở phía bot.
+# Cảnh báo thiếu header IP có thể vẫn xuất hiện một lần/worker; middleware
+# dùng REMOTE_ADDR từ kết nối thật. Chỉ chấp nhận trong mô hình private này.
+# Muốn public phải cấu hình proxy + HTTPS + limiter + Valkey riêng, xem tài liệu.

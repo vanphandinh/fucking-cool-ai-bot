@@ -4,30 +4,38 @@
 #   1) cp searxng/settings.example.yml searxng/settings.yml
 #   2) Sửa searxng/settings.yml -> đổi secret_key thành chuỗi ngẫu nhiên:
 #        openssl rand -hex 32
-#   3) docker compose --profile searxng up -d
+#   3) docker compose --profile searxng up -d --build
 #
-# Vì sao file này chỉ gọn như vậy (đã lược bỏ các setting thừa):
-# - Bot gọi JSON API nội bộ qua http://searxng:8080; container KHÔNG publish cổng ra
-#   host/Internet => instance không public => KHÔNG cần limiter / public_instance /
-#   image_proxy / valkey / trusted_proxies / base_url / reverse proxy (mặc định an toàn
-#   của SearXNG đã là false hết).
-# - Không cần bộ nhớ cache ngoài (Valkey): Valkey chỉ được SearXNG dùng cho limiter/
-#   botdetection khi bật public.
-# - Không disable engine nào: mặc định của từng bản SearXNG (use_default_settings) đã
-#   được upstream bảo trì, tránh danh sách engine cũ gây lỗi khi nâng cấp.
+# Nếu đã có settings.yml: merge các thay đổi bên dưới, GIỮ secret_key hiện tại.
+# Sửa file mẫu không tự cập nhật file thật đang được mount trong container.
+# Bot gọi JSON API qua http://searxng:8080; KHÔNG publish port, không cần
+# reverse proxy / Valkey. limiter.toml vẫn được đọc dù limiter tắt (xem file đó).
 
-use_default_settings: true
+use_default_settings:
+  engines:
+    remove:
+      # Engine onion cần Tor; instance này không cấu hình Tor.
+      # remove loại khỏi quá trình load, không chỉ bỏ chọn như disabled: true.
+      - ahmia
+      - torch
+      # Workaround cho log 2026-09-07: Startpage lỗi parse JSON, Wikipedia trả 400.
+      # Không phải sửa lỗi upstream. Sau khi cập nhật image và kiểm tra trên VPS,
+      # có thể xóa hai dòng này để bật lại; các engine còn lại vẫn dùng mặc định.
+      - startpage
+      - wikipedia
 
 server:
-  # BẮT BUỘC đổi thành chuỗi ngẫu nhiên:  openssl rand -hex 32
-  # (searxng/settings.yml đã nằm trong .gitignore nên secret không bị commit.
-  #  Muốn đặt qua biến môi trường thì thêm SEARXNG_SECRET cho service searxng — giá trị
-  #  env sẽ override dòng này — nhưng repo không dùng để tránh hai nguồn secret.)
+  # BẮT BUỘC đổi thành chuỗi ngẫu nhiên: openssl rand -hex 32
+  # settings.yml đã nằm trong .gitignore. Không đặt thêm SEARXNG_SECRET trong
+  # service searxng vì env sẽ override dòng này, tạo hai nguồn cấu hình secret.
   secret_key: "REPLACE_WITH_openssl_rand_-hex_32"
+  # Khai báo rõ mode private, không phụ thuộc mặc định của image khi nâng cấp.
+  limiter: false
+  public_instance: false
 
 search:
-  # Bot gọi API dạng format=json nên bắt buộc có json. html giữ lại để xem UI khi debug
-  # nội bộ (docker compose exec ... wget ...). Mặc định upstream chỉ bật html.
+  # Bot gọi format=json nên bắt buộc có json (upstream chỉ bật html mặc định).
+  # html giữ lại để debug UI nội bộ bằng docker compose exec, không mở port.
   formats:
     - html
     - json
