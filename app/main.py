@@ -41,29 +41,26 @@ async def _amain(settings: Settings) -> int:
         return 1
     if not settings.configured_provider_names:
         logger.error(
-            "Chưa cấu hình API key nào (GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
+            "Chưa cấu hình API key text nào (GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
         )
         return 1
 
+    if settings.cloudflare_api_token and not settings.cloudflare_account_id:
+        logger.warning(
+            "Có CLOUDFLARE_API_TOKEN nhưng thiếu CLOUDFLARE_ACCOUNT_ID — bỏ qua Cloudflare vision."
+        )
+    if settings.vision_enabled and not settings.configured_vision_provider_names:
+        logger.warning("Vision đang bật nhưng chưa có vision provider hợp lệ; text bot vẫn hoạt động.")
+
     if not settings.allowed_group_ids_list and not settings.learn_group_id_mode:
         logger.warning(
-            "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> bot sẽ không trả lời "
-            "ở bất kỳ đâu. Bật LEARN_GROUP_ID_MODE=1 (lần đầu) để học chat_id group."
+            "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> bot sẽ không trả lời ở bất kỳ đâu."
         )
     if settings.search_backend == "searxng" and not settings.searxng_url.strip():
-        logger.warning(
-            "SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG — tìm kiếm web sẽ lỗi "
-            "khi được gọi. Khởi động SearXNG (docker compose --profile searxng) và điền URL."
-        )
+        logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
     if settings.search_backend == "tavily" and not settings.tavily_api_key.strip():
-        logger.warning(
-            "SEARCH_BACKEND=tavily nhưng TAVILY_API_KEY đang TRỐNG — tìm kiếm web sẽ lỗi "
-            "khi được gọi. Điền key Tavily vào .env."
-        )
+        logger.warning("SEARCH_BACKEND=tavily nhưng TAVILY_API_KEY đang TRỐNG.")
 
-    # Bot() tự validate cú pháp token và có thể ném TokenValidationError ngay tại
-    # constructor (trước get_me). Bắt riêng để startup fail-fast sạch, không traceback
-    # và không tạo provider client rồi bỏ quên chưa đóng.
     try:
         bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
     except TokenValidationError as exc:
@@ -80,24 +77,22 @@ async def _amain(settings: Settings) -> int:
         orchestrator = Orchestrator(settings, provider_router)
 
         dp = Dispatcher()
-
         dp.include_router(build_message_router(settings, orchestrator, memory, limiter, stats))
         dp.include_router(build_lifecycle_router(settings))
 
         try:
             me = await bot.get_me()
             logger.info("Kết nối Telegram OK — bot @%s (%s)", me.username, me.first_name)
-            # Luôn lấy username THẬT từ Telegram làm nguồn chuẩn cho @mention
-            # (BOT_USERNAME trong .env chỉ là fallback, tránh sai typo làm hỏng trigger).
             settings.bot_username = me.username or settings.bot_username
         except TelegramAPIError as exc:
             logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
             return 1
 
         logger.info(
-            "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | "
+            "Text providers: %s | Vision: %s | Search: %s | Allowed groups: %s | Admin: %s | "
             "Context turns: %s | Learn-mode: %s",
             ", ".join(settings.configured_provider_names) or "-",
+            ", ".join(settings.configured_vision_provider_names) or "disabled",
             settings.search_backend,
             settings.allowed_group_ids_list or "-",
             settings.admin_ids_list or "-",
@@ -106,14 +101,10 @@ async def _amain(settings: Settings) -> int:
         )
 
         try:
-            # Xoá webhook cũ (nếu có) trước khi polling — nếu lỗi thì polling sẽ báo 409
-            # và tiến trình khởi động lại, nên không cần coi đây là lỗi chí mạng.
             await bot.delete_webhook(drop_pending_updates=False)
         except TelegramAPIError as exc:
             logger.warning("Không xoá được webhook cũ: %s", exc)
 
-        # Aiogram owns signal handling and polling shutdown. Do not install a
-        # second competing signal handler or close the bot session twice.
         await dp.start_polling(
             bot,
             allowed_updates=["message", "my_chat_member"],
@@ -121,8 +112,6 @@ async def _amain(settings: Settings) -> int:
         )
         return 0
     finally:
-        # Aiogram stops polling but leaves handle_as_tasks update handlers alive.
-        # Cancel and join them before closing clients they may still be using.
         if dp is not None:
             pending = tuple(dp._handle_update_tasks)
             for task in pending:
@@ -139,7 +128,7 @@ async def _amain(settings: Settings) -> int:
 def main() -> None:
     try:
         settings = get_settings()
-    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError & lỗi đọc .env
+    except Exception as exc:  # noqa: BLE001
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
