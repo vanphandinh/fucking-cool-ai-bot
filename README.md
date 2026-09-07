@@ -20,7 +20,7 @@ Tài liệu đang duy trì:
 - Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; khi không ở learn-mode bot tự rời chat lạ lúc được add.
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
 - Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
-- Text route free-first, xếp theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
+- Text route free-tier-first, xếp theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
 - Vision route tách riêng, chọn theo `VISION_PROVIDER_ORDER`; default: Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash.
 - Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
 - Ở flow Telegram hiện tại, một request có thể lấy ảnh từ **message hiện tại + message được reply**
@@ -67,9 +67,11 @@ request không rơi sang text-only slot.
 Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo các default
 đang được cấu hình trong source và `.env.example`.
 
-Mục tiêu của default hiện tại là **zero-cost by design**: chỉ chọn các model/free router được cấu hình để dùng
-free tier, sau đó fallback qua provider độc lập khi quota hoặc provider lỗi. Điều này không đảm bảo vô hạn request;
-khi toàn bộ free quota đều cạn, bot sẽ trả lỗi provider thay vì tự động chuyển sang paid model.
+Default hiện tại được tối ưu theo hướng **free-tier-first**: ưu tiên model/router có thể dùng trên free tier và
+fallback qua provider độc lập khi quota hoặc provider lỗi. Đây **không phải cơ chế cưỡng chế billing**. Bot không
+thể phát hiện account/project của Groq, Cloudflare hoặc Gemini đang ở Free hay Paid tier; nếu credential thuộc
+paid tier thì provider vẫn có thể tính phí theo chính sách của họ. Muốn vận hành thực tế ở $0, hãy giữ từng
+provider trên free tier/quota phù hợp và theo dõi billing ở dashboard của provider.
 
 ---
 
@@ -94,6 +96,25 @@ docker compose logs -f bot
 
 Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc các giá trị số có constraint, app sẽ fail-fast
 khi load `Settings` thay vì chạy với cấu hình mơ hồ.
+
+### Nâng cấp deployment đã có `.env`
+
+`Settings` đọc `.env` và biến môi trường **ưu tiên hơn default trong source**. Vì vậy chỉ `git pull` sẽ không tự
+thay các giá trị model/order cũ đã có trong `.env`. Sau khi nâng cấp từ bản trước PR này, hãy đối chiếu và cập
+nhật ít nhất các dòng sau nếu muốn dùng default free-tier-first mới:
+
+```env
+GROQ_MODEL=openai/gpt-oss-120b
+OPENROUTER_MODEL=openrouter/free
+GEMINI_MODEL=gemini-3.8-flash
+CLOUDFLARE_TEXT_MODEL=@cf/zai-org/glm-4.7-flash
+TEXT_PROVIDER_ORDER=groq,cloudflare,openrouter,gemini
+VISION_PROVIDER_ORDER=groq_qwen38,cloudflare,groq_qwen36,gemini
+MAX_CONTEXT_TURNS=6
+MAX_TOOL_ROUNDS=2
+```
+
+Không copy đè secret từ `.env.example`; chỉ cập nhật các key cần thiết rồi rebuild/restart bot.
 
 ---
 
@@ -170,17 +191,18 @@ Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 
 | Biến | Default model | Vai trò |
 |---|---|---|
-| `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Free-first text primary |
+| `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Free-tier-first text primary |
 | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Cloudflare text fallback |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Chất lượng cao, giữ free quota làm reserve |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Chất lượng cao, giữ free-tier quota làm reserve |
 | `TEXT_PROVIDER_ORDER` | `groq,cloudflare,openrouter,gemini` | Thứ tự fallback text hiệu lực |
 
 Startup yêu cầu **ít nhất một** text provider khả dụng. `configured_provider_names` chỉ báo provider vừa có
 credential/model phù hợp vừa nằm trong `TEXT_PROVIDER_ORDER`.
 
-Default này không chứa paid fallback. Nếu muốn đổi model/order, chỉnh `.env`; source không tự động mua hoặc
-chuyển sang model trả phí.
+Các model/router mặc định có thể dùng theo free tier tương ứng, nhưng source không biết billing plan của API
+key. `openrouter/free` là router miễn phí; với Groq/Cloudflare/Gemini, account/project ở paid tier vẫn có thể
+phát sinh phí theo policy của provider.
 
 ### 7.3 Vision provider pool
 
@@ -270,6 +292,17 @@ Provider health là state trong RAM:
 
 Fallback giữ chung tool budget của request; provider không hỗ trợ tools có thể retry plain mode theo error
 classification thay vì làm hỏng toàn bộ route.
+
+### Metadata khi tool-calling
+
+Một số model yêu cầu metadata từ assistant response phải được gửi lại nguyên vẹn ở tool turn kế tiếp. Adapter
+hiện xử lý hai nhóm đã được audit:
+
+- Gemini 3.x: giữ `tool_calls[].extra_content.google.thought_signature` trong cùng provider;
+- OpenRouter/reasoning models: giữ assistant-level `reasoning_details`, `reasoning` và `reasoning_content`.
+
+Các metadata provider-specific này được loại bỏ khi chuyển transcript sang provider fallback khác để tránh
+provider kế từ chối unknown field. Tool budget và transcript tool result vẫn được giữ qua fallback.
 
 ---
 
@@ -370,9 +403,11 @@ Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull reque
 - `pip-audit`.
 - Production Docker build trên Python 3.12 job.
 
-`tests/test_free_routing.py` khóa regression cho free-first model defaults, text provider order, Cloudflare text
-slot và provider-diverse vision order. Tests dùng fake Telegram/provider transports và local fixtures; CI không
-chứng minh live credential/provider E2E trong môi trường production.
+`tests/test_free_routing.py` khóa regression cho free-tier-first model defaults, text provider order,
+Cloudflare text slot, provider-diverse vision order, Gemini thought-signature replay và cross-provider metadata
+isolation. `tests/test_provider_metadata.py` khóa OpenRouter reasoning metadata replay. Tests dùng fake
+Telegram/provider transports và local fixtures; CI không chứng minh live credential/provider E2E trong môi
+trường production.
 
 ---
 
@@ -400,6 +435,7 @@ tests/
 ├── run_tests.py
 ├── test_audit_regressions.py
 ├── test_free_routing.py
+├── test_provider_metadata.py
 └── test_vision.py
 
 .github/workflows/audit.yml
