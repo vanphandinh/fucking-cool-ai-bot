@@ -248,13 +248,6 @@ async def _handle_question(
             await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
             return
 
-        stats.record_answer(answer.provider)
-        if answer.searched:
-            stats.record_search()
-
-        memory.push(chat_id, "user", question)
-        memory.push(chat_id, "assistant", answer.text)
-
         # Ghép phần trả lời + nguồn rồi gửi (cắt nếu quá dài)
         parts = split_plain(answer.text, 3900)
         if answer.searched and answer.sources:
@@ -264,18 +257,29 @@ async def _handle_question(
         if not parts:
             parts = ["..."]
         try:
-            first = parts[0]
-            await message.reply(first)
-            # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
-            # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
-            extra_kwargs = {}
-            if message.message_thread_id:
-                extra_kwargs["message_thread_id"] = message.message_thread_id
+            await message.reply(parts[0])
+        except Exception:  # noqa: BLE001
+            logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+            return
+
+        # Chỉ ghi nhớ / thống kê khi user đã nhận được ít nhất 1 phần trả lời.
+        stats.record_answer(answer.provider)
+        if answer.searched:
+            stats.record_search()
+        memory.push(chat_id, "user", question)
+        memory.push(chat_id, "assistant", answer.text)
+
+        # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
+        # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
+        extra_kwargs = {}
+        if message.message_thread_id:
+            extra_kwargs["message_thread_id"] = message.message_thread_id
+        try:
             for part in parts[1:]:
                 await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                 await asyncio.sleep(0.15)
         except Exception:  # noqa: BLE001
-            logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+            logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
 
 
 async def _typing_loop(bot: Bot, chat_id: int, message_thread_id: int | None = None) -> None:

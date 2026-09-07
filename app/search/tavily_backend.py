@@ -27,8 +27,12 @@ async def search_tavily(query: str, settings: Settings, limit: int) -> list[dict
         )
         resp.raise_for_status()
         data = resp.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Tavily trả JSON không phải object")
     results: list[dict] = []
     for item in (data.get("results") or [])[:limit]:
+        if not isinstance(item, dict):
+            continue
         url_item = item.get("url") or ""
         title = item.get("title") or ""
         content = item.get("content") or ""

@@ -17,6 +17,8 @@ def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
         raw = list(ddgs.text(query, max_results=limit, region="vn-vi"))
     results: list[dict] = []
     for item in raw or []:
+        if not isinstance(item, dict):
+            continue
         title = item.get("title") or ""
         url = item.get("href") or item.get("url") or ""
         snippet = item.get("body") or item.get("content") or item.get("description") or ""

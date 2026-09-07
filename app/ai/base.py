@@ -78,7 +78,10 @@ class OpenAICompatProvider:
         if tools and self.supports_tools:
             payload["tools"] = tools
 
-        resp = await self._client.post("chat/completions", json=payload)
+        try:
+            resp = await self._client.post("chat/completions", json=payload)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.name}: lỗi mạng ({exc})") from exc
         if resp.status_code >= 400:
             body = resp.text[:500]
             unsupported = resp.status_code == 400 and (

@@ -221,13 +221,16 @@ def validate_public_url(url: str) -> str | None:
     """
     try:
         parts = urlparse(url)
+        # .hostname có thể ném ValueError riêng (IPv6 cụt, port ngoài dải, …)
+        host = (parts.hostname or "").strip().lower().rstrip(".")
+        userinfo = bool(parts.username or parts.password)
+        scheme = parts.scheme
     except ValueError:
         return "URL không hợp lệ."
-    if parts.scheme not in ("http", "https"):
+    if scheme not in ("http", "https"):
         return "Chỉ cho phép URL http/https."
-    if parts.username or parts.password:
+    if userinfo:
         return "URL không được chứa thông tin đăng nhập."
-    host = (parts.hostname or "").lower().rstrip(".")
     if not host:
         return "URL thiếu tên miền."
     if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):

@@ -29,8 +29,12 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
         )
         resp.raise_for_status()
         data = resp.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("SearXNG trả JSON không phải object")
     results: list[dict] = []
     for item in (data.get("results") or [])[:limit]:
+        if not isinstance(item, dict):
+            continue
         url_item = item.get("url") or ""
         title = item.get("title") or ""
         content = item.get("content") or item.get("snippet") or ""

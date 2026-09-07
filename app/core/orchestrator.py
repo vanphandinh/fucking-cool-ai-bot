@@ -112,6 +112,8 @@ class Orchestrator:
     ) -> Answer:
         messages: list[dict] = [{"role": "system", "content": self.system_prompt()}]
         for entry in (history or [])[-(self.settings.max_context_turns * 2) :]:
+            if not isinstance(entry, dict):
+                continue
             if entry.get("role") in ("user", "assistant") and entry.get("content"):
                 messages.append({"role": entry["role"], "content": (entry["content"] or "")[:2000]})
 
@@ -171,11 +173,22 @@ def _format_search_results(query: str, results: list[dict]) -> str:
             "Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu."
         )
     lines = [f'Kết quả tìm kiếm cho "{query}":']
-    for i, item in enumerate(results[:8], start=1):
-        title = item.get("title") or "(không tiêu đề)"
+    n = 0
+    for item in results[:8]:
+        if not isinstance(item, dict):
+            continue
         url = item.get("url") or ""
+        if url and not str(url).startswith(("http://", "https://")):
+            continue
+        n += 1
+        title = item.get("title") or "(không tiêu đề)"
         snippet = item.get("snippet") or ""
-        lines.append(f"{i}. {title}\n   URL: {url}\n   {snippet[:300]}")
+        lines.append(f"{n}. {title}\n   URL: {url}\n   {snippet[:300]}")
+    if n == 0:
+        return (
+            f'Không có kết quả tìm kiếm cho "{query}". '
+            "Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu."
+        )
     lines.append("Hãy dựa vào các kết quả trên để trả lời; nếu không đủ thì nói rõ.")
     return "\n".join(lines)
 
@@ -184,8 +197,10 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
     seen: set[str] = set()
     out: list[dict] = []
     for src in sources:
+        if not isinstance(src, dict):
+            continue
         url = (src.get("url") or "").strip()
-        if not url or url in seen:
+        if not url.startswith(("http://", "https://")) or url in seen:
             continue
         seen.add(url)
         out.append(src)

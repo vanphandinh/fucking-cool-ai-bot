@@ -86,7 +86,7 @@ def format_sources(sources: list[dict[str, str]]) -> str:
     n = 0
     for src in sources:
         url = (src.get("url") or "").strip()
-        if not url or url in seen:
+        if not url.startswith(("http://", "https://")) or url in seen:
             continue
         seen.add(url)
         n += 1

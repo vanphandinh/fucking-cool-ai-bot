@@ -112,6 +112,8 @@ def t_config_formatting():
         [{"title": "A", "url": "https://a.com"}, {"title": "B", "url": "https://a.com"}]
     )
     check("format_sources dedupe", footer.count("https://") == 1 and "📚" in footer)
+    js_footer = format_sources([{"title": "x", "url": "javascript:alert(1)"}])
+    check("format_sources bỏ javascript:", js_footer == "")
 
 
 def t_core():
@@ -167,6 +169,8 @@ def t_reader_guard():
     check("chặn userinfo", validate_public_url("http://user:pass@example.com/") is not None)
     check("chặn scheme lạ", validate_public_url("file:///etc/passwd") is not None)
     check("chặn rỗng", validate_public_url("") is not None)
+    check("IPv6 cụt không nổ", validate_public_url("http://[::1") is not None)
+    check("host khoảng trắng bị từ chối", validate_public_url("http:// ") is not None)
 
     # --- Dạng IP viết tắt mà ipaddress không parse nhưng glibc resolve về nội bộ
     for bad in [
@@ -918,6 +922,10 @@ def t_ai_router_mock():
                 # model "kẹt vòng lặp": có tools thì gọi mãi, không tools mới trả lời
                 STATE["loop_n"] += 1
                 STATE["loop_with_tools"].append(tools)
+                if not tools:
+                    STATE["loop_retry_has_tool_msg"] = any(
+                        isinstance(m, dict) and m.get("role") == "tool" for m in req["messages"]
+                    )
                 if tools:
                     return self._send(
                         {
@@ -1048,6 +1056,10 @@ def t_ai_router_mock():
                 and STATE["loop_with_tools"][-1] is False
                 and STATE["loop_with_tools"][0] is not False,
                 str(STATE["loop_with_tools"]),
+            )
+            check(
+                "tool-loop: retry giữ transcript tool",
+                STATE.get("loop_retry_has_tool_msg") is True,
             )
 
         asyncio.run(run())
