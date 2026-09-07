@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -29,7 +30,7 @@ async def _close_providers(provider_router) -> None:
             logger.debug("Đóng provider %s lỗi (bỏ qua)", provider.name)
 
 
-async def _amain(settings: Settings) -> None:
+async def _amain(settings: Settings) -> int:
     logging.basicConfig(
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
@@ -37,12 +38,12 @@ async def _amain(settings: Settings) -> None:
 
     if not settings.bot_token:
         logger.error("Thiếu BOT_TOKEN trong .env — bot không thể chạy.")
-        return
+        return 1
     if not settings.configured_provider_names:
         logger.error(
             "Chưa cấu hình API key nào (GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
         )
-        return
+        return 1
 
     if not settings.allowed_group_ids_list and not settings.learn_group_id_mode:
         logger.warning(
@@ -82,7 +83,7 @@ async def _amain(settings: Settings) -> None:
         logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
         await bot.session.close()
         await _close_providers(provider_router)
-        return
+        return 1
 
     logger.info(
         "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | "
@@ -141,14 +142,25 @@ async def _amain(settings: Settings) -> None:
         poll_error = polling_task.exception()
         if poll_error:
             raise poll_error
+    return 0
 
 
 def main() -> None:
-    settings = get_settings()
     try:
-        asyncio.run(_amain(settings))
-    except (KeyboardInterrupt, SystemExit):
-        pass
+        settings = get_settings()
+    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError & lỗi đọc .env
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        )
+        logging.getLogger(__name__).error("Cấu hình không hợp lệ: %s", exc)
+        raise SystemExit(1) from exc
+    try:
+        code = asyncio.run(_amain(settings))
+    except KeyboardInterrupt:
+        return
+    if code:
+        sys.exit(code)
 
 
 if __name__ == "__main__":

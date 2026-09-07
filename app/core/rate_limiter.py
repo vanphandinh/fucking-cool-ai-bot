@@ -16,13 +16,17 @@ class RateLimiter:
     def allow(self, user_id: int) -> tuple[bool, float]:
         """Trả về (được phép?, số giây phải chờ)."""
         now = time.monotonic()
+        if self._max <= 0:
+            # 0 = tắt hết câu hỏi; không được IndexError vì stamps rỗng.
+            return False, self._window
         stamps = self._stamps[user_id]
         while stamps and now - stamps[0] > self._window:
             stamps.popleft()
         if len(stamps) < self._max:
             stamps.append(now)
             return True, 0.0
-        retry_in = max(0.0, self._window - (now - stamps[0]))
+        oldest = stamps[0] if stamps else now
+        retry_in = max(0.0, self._window - (now - oldest))
         return False, retry_in
 
     def should_warn(self, user_id: int, cooldown_sec: float = 30.0) -> bool:

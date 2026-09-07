@@ -80,7 +80,7 @@ def build_message_router(
             "📊 Trạng thái bot",
             f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
-            f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.questions_today})",
+            f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
             "- Phân bổ: "
@@ -216,7 +216,9 @@ async def _handle_question(
 
     lock = await chat_locks.get(chat_id)
     async with lock:
-        typing_task = asyncio.create_task(_typing_loop(bot, chat_id))
+        typing_task = asyncio.create_task(
+            _typing_loop(bot, chat_id, message_thread_id=message.message_thread_id)
+        )
         try:
             history = memory.history_for(chat_id, settings.max_context_turns)
             answer = await orchestrator.ask(question=question, history=history, quoted=quoted)
@@ -271,10 +273,13 @@ async def _handle_question(
             logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
 
 
-async def _typing_loop(bot: Bot, chat_id: int) -> None:
+async def _typing_loop(bot: Bot, chat_id: int, message_thread_id: int | None = None) -> None:
+    kwargs: dict = {}
+    if message_thread_id:
+        kwargs["message_thread_id"] = message_thread_id
     while True:
         try:
-            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await bot.send_chat_action(chat_id=chat_id, action="typing", **kwargs)
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(4.0)

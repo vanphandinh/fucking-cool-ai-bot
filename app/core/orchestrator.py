@@ -126,6 +126,8 @@ class Orchestrator:
 
         async def tool_executor(name: str, args: dict) -> str:
             nonlocal searched
+            if not isinstance(args, dict):
+                args = {}
             if name == "web_search":
                 q = str(args.get("query") or "").strip()[:300]
                 if not q:
@@ -140,6 +142,8 @@ class Orchestrator:
                 if reason:
                     return f"Không thể tải trang: {reason}"
                 text = await read_page(url, timeout=self.settings.request_timeout_sec)
+                searched = True
+                sources.append({"title": url, "url": url, "snippet": ""})
                 return f"Nội dung trang {url}:\n{text}"
             return f"Tool '{name}' không tồn tại."
 

@@ -20,10 +20,11 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
     url = (settings.searxng_url or "").rstrip("/")
     if not url:
         raise RuntimeError("SEARXNG_URL chưa được cấu hình")
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    timeout = max(5.0, min(float(settings.request_timeout_sec), 30.0))
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(
             f"{url}/search",
-            params={"q": query, "format": "json"},
+            params={"q": query, "format": "json", "language": "vi"},
             headers={"User-Agent": _UA, "Accept": "application/json"},
         )
         resp.raise_for_status()

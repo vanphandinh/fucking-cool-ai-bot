@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
     from ddgs import DDGS
 
-    with DDGS() as ddgs:
-        raw = list(ddgs.text(query, max_results=limit))
+    with DDGS(timeout=15) as ddgs:
+        raw = list(ddgs.text(query, max_results=limit, region="vn-vi"))
     results: list[dict] = []
     for item in raw or []:
         title = item.get("title") or ""
@@ -26,4 +26,8 @@ def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
 
 
 async def search_ddgs(query: str, settings: Settings, limit: int) -> list[dict]:
-    return await asyncio.to_thread(_ddgs_search_sync, query, limit)
+    timeout = max(5.0, float(settings.request_timeout_sec))
+    return await asyncio.wait_for(
+        asyncio.to_thread(_ddgs_search_sync, query, limit),
+        timeout=timeout,
+    )
