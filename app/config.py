@@ -60,7 +60,9 @@ class Settings(BaseSettings):
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=10, ge=1)
     max_tool_rounds: int = Field(default=4, ge=0)
-    request_timeout_sec: float = Field(default=60.0, gt=0)
+    request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
+    # Entire question, including waiting for the chat lock and all fallbacks.
+    question_timeout_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
 
     log_level: str = "INFO"
 

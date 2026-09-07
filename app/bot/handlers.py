@@ -219,74 +219,84 @@ async def _handle_question(
 
     stats.record_question()
 
-    lock = await chat_locks.get(chat_id)
-    async with lock:
-        typing_task = asyncio.create_task(
-            _typing_loop(bot, chat_id, message_thread_id=message.message_thread_id)
-        )
-        try:
-            history = memory.history_for(chat_id, settings.max_context_turns)
-            answer = await orchestrator.ask(question=question, history=history, quoted=quoted)
-        except AllProvidersFailed as exc:
-            stats.record_error(str(exc), fallback=True)
-            logger.error("Tất cả AI provider thất bại: %s", exc)
-            await message.reply(
-                "❌ Xin lỗi, hiện tại mình không thể trả lời (các nguồn AI đều đang lỗi/quá tải). "
-                "Bạn thử lại sau vài phút nhé."
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            stats.record_error(str(exc))
-            logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
-            await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
-            return
-        finally:
-            typing_task.cancel()
-            await asyncio.gather(typing_task, return_exceptions=True)
-
-        if not answer.text:
-            await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
-            return
-
-        # Câu trả lời gửi plain text; nguồn (nếu có) gửi HTML riêng — tiêu đề
-        # ngắn bấm được, không in URL dài và không dính parse_mode vào nội dung AI.
-        parts = split_plain(answer.text, 3900)
-        if not parts:
-            parts = ["..."]
-        try:
-            await message.reply(parts[0])
-        except Exception:  # noqa: BLE001
-            logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
-            return
-
-        # Chỉ ghi nhớ / thống kê khi user đã nhận được ít nhất 1 phần trả lời.
-        stats.record_answer(answer.provider)
-        if answer.searched:
-            stats.record_search()
-        memory.push(chat_id, "user", question)
-        memory.push(chat_id, "assistant", answer.text)
-
-        # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
-        # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
-        extra_kwargs = {}
-        if message.message_thread_id:
-            extra_kwargs["message_thread_id"] = message.message_thread_id
-        try:
-            for part in parts[1:]:
-                await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
-                await asyncio.sleep(0.15)
-            if answer.searched and answer.sources:
-                footer = format_sources(answer.sources)
-                if footer:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=footer,
-                        parse_mode="HTML",
-                        link_preview_options=LinkPreviewOptions(is_disabled=True),
-                        **extra_kwargs,
+    try:
+        async with asyncio.timeout(settings.question_timeout_sec):
+            lock = await chat_locks.get(chat_id)
+            async with lock:
+                typing_task = asyncio.create_task(
+                    _typing_loop(bot, chat_id, message_thread_id=message.message_thread_id)
+                )
+                try:
+                    history = memory.history_for(chat_id, settings.max_context_turns)
+                    answer = await orchestrator.ask(
+                        question=question, history=history, quoted=quoted
                     )
-        except Exception:  # noqa: BLE001
-            logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
+                except AllProvidersFailed as exc:
+                    stats.record_error(str(exc), fallback=True)
+                    logger.error("Tất cả AI provider thất bại: %s", exc)
+                    await message.reply(
+                        "❌ Xin lỗi, hiện tại mình không thể trả lời "
+                        "(các nguồn AI đều đang lỗi/quá tải). "
+                        "Bạn thử lại sau vài phút nhé."
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    stats.record_error(str(exc))
+                    logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
+                    await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
+                    return
+                finally:
+                    typing_task.cancel()
+                    await asyncio.gather(typing_task, return_exceptions=True)
+
+                if not answer.text:
+                    await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
+                    return
+
+                # Câu trả lời gửi plain text; nguồn (nếu có) gửi HTML riêng — tiêu đề
+                # ngắn bấm được, không in URL dài và không dính parse_mode vào nội dung AI.
+                parts = split_plain(answer.text, 3900)
+                if not parts:
+                    parts = ["..."]
+                try:
+                    await message.reply(parts[0])
+                except Exception:  # noqa: BLE001
+                    logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+                    return
+
+                # Chỉ ghi nhớ / thống kê khi user đã nhận được ít nhất 1 phần trả lời.
+                stats.record_answer(answer.provider)
+                if answer.searched:
+                    stats.record_search()
+                memory.push(chat_id, "user", question)
+                memory.push(chat_id, "assistant", answer.text)
+
+                # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
+                # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
+                extra_kwargs = {}
+                if message.message_thread_id:
+                    extra_kwargs["message_thread_id"] = message.message_thread_id
+                try:
+                    for part in parts[1:]:
+                        await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
+                        await asyncio.sleep(0.15)
+                    if answer.searched and answer.sources:
+                        footer = format_sources(answer.sources)
+                        if footer:
+                            await bot.send_message(
+                                chat_id=chat_id,
+                                text=footer,
+                                parse_mode="HTML",
+                                link_preview_options=LinkPreviewOptions(is_disabled=True),
+                                **extra_kwargs,
+                            )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
+
+    except TimeoutError:
+        stats.record_error("Câu hỏi quá thời gian xử lý")
+        logger.warning("Câu hỏi quá thời gian xử lý (chat %s)", chat_id)
+        await message.reply("⏳ Câu hỏi đã quá thời gian chờ/xử lý. Bạn thử lại sau nhé.")
 
 
 async def _typing_loop(bot: Bot, chat_id: int, message_thread_id: int | None = None) -> None:

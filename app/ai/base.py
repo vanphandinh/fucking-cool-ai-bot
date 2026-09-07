@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -85,12 +86,46 @@ class OpenAICompatProvider:
             raise ProviderError(f"{self.name}: lỗi mạng ({exc})") from exc
         if resp.status_code >= 400:
             body = resp.text[:500]
-            unsupported = resp.status_code == 400 and (
-                "tool" in body.lower() or "function" in body.lower()
+            error_message = body
+            generation_error = False
+            try:
+                error_data = resp.json()
+            except ValueError:
+                error_data = None
+            if isinstance(error_data, dict) and isinstance(error_data.get("error"), dict):
+                error = error_data["error"]
+                error_message = str(error.get("message") or "")
+                generation_error = (
+                    error.get("code") == "tool_use_failed" or "failed_generation" in error
+                )
+            tool_error = (
+                resp.status_code == 400
+                and bool(tools)
+                and (
+                    generation_error
+                    or "tool" in error_message.lower()
+                    or "function" in error_message.lower()
+                )
+            )
+            # Invalid generations/arguments are transient tool failures, not a
+            # statement that this model lacks tool support for all future chats.
+            unsupported = (
+                tool_error
+                and not generation_error
+                and bool(
+                    re.search(
+                        r"(?:does not support|do not support|not support|unsupported)"
+                        r"[^.\n]{0,60}(?:tool|function)"
+                        r"|(?:tool|function)[^.\n]{0,60}(?:not supported|unsupported)",
+                        error_message,
+                        flags=re.IGNORECASE,
+                    )
+                )
             )
             raise ProviderError(
                 f"{self.name} HTTP {resp.status_code}: {body}",
                 unsupported_tools=unsupported,
+                retry_without_tools=tool_error and not unsupported,
             )
 
         try:
@@ -131,9 +166,7 @@ class OpenAICompatProvider:
             call_id = str(tc.get("id") or "").strip()
             if not call_id:
                 call_id = f"call_{uuid.uuid4().hex[:24]}"
-            tool_calls.append(
-                ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args)
-            )
+            tool_calls.append(ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args))
         return ChatResponse(content=content, tool_calls=tool_calls)
 
     async def aclose(self) -> None:
