@@ -20,9 +20,8 @@ Tài liệu đang duy trì:
 - Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; khi không ở learn-mode bot tự rời chat lạ lúc được add.
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
 - Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
-- Text route: Gemini → Groq → OpenRouter, chỉ dùng provider có key.
-- Vision route tách riêng, chọn theo `VISION_PROVIDER_ORDER`: Gemini vision, tối đa 2 Groq vision slot,
-  và Cloudflare Workers AI reserve.
+- Text route free-first, xếp theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
+- Vision route tách riêng, chọn theo `VISION_PROVIDER_ORDER`; default: Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash.
 - Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
 - Ở flow Telegram hiện tại, một request có thể lấy ảnh từ **message hiện tại + message được reply**
   (tối đa 2 ảnh thực tế). `MAX_IMAGES_PER_REQUEST` là trần capability/config, không tự thêm album support.
@@ -62,11 +61,15 @@ request không rơi sang text-only slot.
 - Python runtime trong Docker: **3.12**.
 - Docker + Docker Compose plugin trên VPS.
 - Telegram bot token từ BotFather.
-- Tối thiểu một text provider key trong `GEMINI_API_KEY`, `GROQ_API_KEY` hoặc `OPENROUTER_API_KEY`.
+- Tối thiểu một text provider khả dụng: Groq, Cloudflare Workers AI, OpenRouter hoặc Gemini.
 - Privacy Mode nên tắt nếu muốn bot đọc message/reply trong group theo workflow hiện tại.
 
 Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo các default
 đang được cấu hình trong source và `.env.example`.
+
+Mục tiêu của default hiện tại là **zero-cost by design**: chỉ chọn các model/free router được cấu hình để dùng
+free tier, sau đó fallback qua provider độc lập khi quota hoặc provider lỗi. Điều này không đảm bảo vô hạn request;
+khi toàn bộ free quota đều cạn, bot sẽ trả lỗi provider thay vì tự động chuyển sang paid model.
 
 ---
 
@@ -81,7 +84,7 @@ nano .env
 
 # tối thiểu điền:
 # BOT_TOKEN=...
-# GEMINI_API_KEY=...   # hoặc GROQ_API_KEY / OPENROUTER_API_KEY
+# GROQ_API_KEY=...   # hoặc Cloudflare / OpenRouter / Gemini
 # ADMIN_IDS=...
 # ALLOWED_GROUP_IDS=...  # hoặc dùng learn-mode ở mục 5
 
@@ -167,11 +170,17 @@ Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 
 | Biến | Default model | Vai trò |
 |---|---|---|
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-2.5-flash` | Text provider ưu tiên 1 |
-| `GROQ_API_KEY` / `GROQ_MODEL` | `llama-3.3-70b-versatile` | Text fallback |
-| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `meta-llama/llama-3.3-70b-instruct:free` | Text fallback cuối |
+| `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Free-first text primary |
+| `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Cloudflare text fallback |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Chất lượng cao, giữ free quota làm reserve |
+| `TEXT_PROVIDER_ORDER` | `groq,cloudflare,openrouter,gemini` | Thứ tự fallback text hiệu lực |
 
-Startup yêu cầu **ít nhất một** text provider key.
+Startup yêu cầu **ít nhất một** text provider khả dụng. `configured_provider_names` chỉ báo provider vừa có
+credential/model phù hợp vừa nằm trong `TEXT_PROVIDER_ORDER`.
+
+Default này không chứa paid fallback. Nếu muốn đổi model/order, chỉnh `.env`; source không tự động mua hoặc
+chuyển sang model trả phí.
 
 ### 7.3 Vision provider pool
 
@@ -180,16 +189,19 @@ Startup yêu cầu **ít nhất một** text provider key.
 | `VISION_ENABLED` | `1` | Bật/tắt toàn bộ vision slot; text route không bị ảnh hưởng |
 | `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Model của Gemini vision slot |
 | `GROQ_VISION_MODELS` | `qwen/qwen3.8-27b,qwen/qwen3.6-27b` | Tối đa hai Groq vision slot theo thứ tự list |
-| `CLOUDFLARE_ACCOUNT_ID` | trống | Bắt buộc cùng API token để tạo Cloudflare vision slot |
-| `CLOUDFLARE_API_TOKEN` | trống | Token Workers AI |
+| `CLOUDFLARE_ACCOUNT_ID` | trống | Bắt buộc cùng API token để tạo Cloudflare slot |
+| `CLOUDFLARE_API_TOKEN` | trống | Token Workers AI dùng chung text/vision |
 | `CLOUDFLARE_VISION_MODEL` | `@cf/google/gemma-4-26b-a4b-it` | Cloudflare vision model |
-| `VISION_PROVIDER_ORDER` | `gemini,groq_qwen38,groq_qwen36,cloudflare` | Thứ tự fallback vision hiệu lực |
+| `VISION_PROVIDER_ORDER` | `groq_qwen38,cloudflare,groq_qwen36,gemini` | Thứ tự fallback vision hiệu lực |
 | `MAX_IMAGES_PER_REQUEST` | `3` | Capability/config ceiling; Telegram loader hiện chỉ cung cấp current + reply |
 | `MAX_IMAGE_BYTES` | `8388608` | Trần bytes cho từng ảnh |
 | `MAX_TOTAL_IMAGE_BYTES` | `12582912` | Trần tổng bytes ảnh trong một request |
 
 `configured_vision_provider_names` chỉ báo các slot vừa có credential/model phù hợp vừa nằm trong
 `VISION_PROVIDER_ORDER`.
+
+Cloudflare được đặt giữa hai Groq vision slot để tăng provider diversity: quota/auth/outage Groq không khiến
+router thử hai model cùng provider liên tiếp trước khi đổi sang provider độc lập.
 
 ### 7.4 Web search
 
@@ -213,8 +225,8 @@ Các biến Compose-only cho SearXNG:
 | Biến | Default | Ý nghĩa |
 |---|---|---|
 | `MAX_QUESTIONS_PER_MIN_PER_USER` | `3` | Rate-limit RAM theo user; `0` = chặn toàn bộ câu hỏi |
-| `MAX_CONTEXT_TURNS` | `10` | Số cặp hỏi/đáp gần nhất giữ theo chat |
-| `MAX_TOOL_ROUNDS` | `4` | Số vòng tool tối đa trong completion |
+| `MAX_CONTEXT_TURNS` | `6` | Số cặp hỏi/đáp gần nhất giữ theo chat; giảm token free-tier |
+| `MAX_TOOL_ROUNDS` | `2` | Số vòng tool tối đa trong completion; giảm số request/token |
 | `REQUEST_TIMEOUT_SEC` | `60.0` | Timeout HTTP/provider/reader |
 | `QUESTION_TIMEOUT_SEC` | `180.0` | Deadline tổng của một câu hỏi, gồm chờ chat lock |
 | `LOG_LEVEL` | `INFO` | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` (`WARN` được normalize) |
@@ -227,16 +239,27 @@ Router còn có safety cap nội bộ tối đa 8 tool calls cho một completio
 
 ### Text
 
-Thứ tự được tạo cố định theo key đã cấu hình:
+Provider được tạo từ credential/model hiện có rồi xếp theo `TEXT_PROVIDER_ORDER`.
+Default:
 
 ```text
-Gemini -> Groq -> OpenRouter
+Groq / openai/gpt-oss-120b
+  -> Cloudflare / @cf/zai-org/glm-4.7-flash
+  -> OpenRouter / openrouter/free
+  -> Gemini / gemini-3.8-flash
 ```
 
 ### Vision
 
 Vision slot được tạo từ credential hiện có rồi xếp theo `VISION_PROVIDER_ORDER`.
-Cloudflare hiện chỉ là **vision provider**, không nằm trong text pool.
+Default:
+
+```text
+Groq Qwen 3.8
+  -> Cloudflare Gemma 4
+  -> Groq Qwen 3.6
+  -> Gemini 3.8 Flash
+```
 
 Provider health là state trong RAM:
 
@@ -312,7 +335,8 @@ docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/he
 Các lỗi startup đáng chú ý:
 
 - thiếu `BOT_TOKEN` → dừng.
-- không có text provider key → dừng.
+- không có text provider khả dụng trong `TEXT_PROVIDER_ORDER` → dừng.
+- có Cloudflare token nhưng thiếu account ID → warning; bỏ qua Cloudflare text/vision.
 - vision bật nhưng không có vision provider hợp lệ → warning; text bot vẫn chạy.
 - `SEARCH_BACKEND=searxng` nhưng URL trống hoặc `tavily` nhưng thiếu key → warning lúc startup; tool sẽ lỗi khi dùng.
 
@@ -346,8 +370,9 @@ Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull reque
 - `pip-audit`.
 - Production Docker build trên Python 3.12 job.
 
-Tests dùng fake Telegram/provider transports và local fixtures; CI không chứng minh live credential/provider
-E2E trong môi trường production.
+`tests/test_free_routing.py` khóa regression cho free-first model defaults, text provider order, Cloudflare text
+slot và provider-diverse vision order. Tests dùng fake Telegram/provider transports và local fixtures; CI không
+chứng minh live credential/provider E2E trong môi trường production.
 
 ---
 
@@ -374,6 +399,7 @@ app/
 tests/
 ├── run_tests.py
 ├── test_audit_regressions.py
+├── test_free_routing.py
 └── test_vision.py
 
 .github/workflows/audit.yml
