@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 
-from app.ai.router import build_provider_router
+import httpx
+
+from app.ai.base import OpenAICompatProvider
+from app.ai.router import AIProviderRouter, build_provider_router
 from app.config import Settings
 
 
@@ -97,6 +101,95 @@ class FreeFirstRouterTests(unittest.TestCase):
             ])
         finally:
             asyncio.run(_close_router(router))
+
+
+class GeminiThoughtSignatureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tool_call_replays_gemini_thought_signature_verbatim(self) -> None:
+        signature = "opaque-signature"
+        requests: list[dict] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if len(requests) == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [
+                                        {
+                                            "id": "call_search",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "web_search",
+                                                "arguments": '{"query":"latest"}',
+                                            },
+                                            "extra_content": {
+                                                "google": {"thought_signature": signature}
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    },
+                    request=request,
+                )
+
+            replayed = payload["messages"][-2]["tool_calls"][0]
+            if replayed.get("extra_content") != {
+                "google": {"thought_signature": signature}
+            }:
+                return httpx.Response(
+                    400,
+                    json={
+                        "error": {
+                            "message": "Function call is missing a thought_signature"
+                        }
+                    },
+                    request=request,
+                )
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "done"}}]},
+                request=request,
+            )
+
+        provider = OpenAICompatProvider(
+            "gemini", "https://example.org/v1", "fake", "gemini-3.8-flash"
+        )
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
+        )
+        router = AIProviderRouter([provider], max_tool_rounds=2)
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "search result"
+
+        try:
+            text, name = await router.complete(
+                [{"role": "user", "content": "latest?"}],
+                [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+                execute,
+            )
+        finally:
+            await provider.aclose()
+
+        self.assertEqual((text, name), ("done", "gemini"))
+        self.assertEqual(len(requests), 2)
 
 
 async def _close_router(router) -> None:
