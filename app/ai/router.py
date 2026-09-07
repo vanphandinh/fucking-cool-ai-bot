@@ -212,12 +212,28 @@ def _json_dumps(data: dict) -> str:
 def build_provider_router(settings: Settings) -> AIProviderRouter:
     providers: list[OpenAICompatProvider] = []
 
-    if settings.gemini_api_key:
-        providers.append(make_gemini_provider(settings))
-    if settings.groq_api_key:
-        providers.append(make_groq_provider(settings))
-    if settings.openrouter_api_key:
-        providers.append(make_openrouter_provider(settings))
+    text: dict[str, OpenAICompatProvider] = {}
+    if settings.gemini_api_key and settings.gemini_model:
+        text["gemini"] = make_gemini_provider(settings)
+    if settings.groq_api_key and settings.groq_model:
+        text["groq"] = make_groq_provider(settings)
+    if settings.openrouter_api_key and settings.openrouter_model:
+        text["openrouter"] = make_openrouter_provider(settings)
+    if (
+        settings.cloudflare_account_id
+        and settings.cloudflare_api_token
+        and settings.cloudflare_text_model
+    ):
+        text["cloudflare"] = make_cloudflare_provider(
+            settings,
+            name="cloudflare_text",
+            model=settings.cloudflare_text_model,
+            vision=False,
+        )
+    for slot_name in settings.text_provider_order_list:
+        provider = text.get(slot_name)
+        if provider is not None:
+            providers.append(provider)
 
     if settings.vision_enabled:
         vision: dict[str, OpenAICompatProvider] = {}
@@ -246,7 +262,11 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
                     vision=True,
                     max_images=3,
                 )
-        if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        if (
+            settings.cloudflare_account_id
+            and settings.cloudflare_api_token
+            and settings.cloudflare_vision_model
+        ):
             vision["cloudflare"] = make_cloudflare_provider(settings)
         for slot_name in settings.vision_provider_order_list:
             provider = vision.get(slot_name)
