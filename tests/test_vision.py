@@ -57,7 +57,10 @@ class MultimodalPayloadTests(unittest.TestCase):
             ),
         )
         content = build_user_content(request)
-        self.assertEqual([part["type"] for part in content], ["text", "image_url", "text", "image_url"])
+        self.assertEqual(
+            [part["type"] for part in content],
+            ["text", "image_url", "text", "image_url"],
+        )
         self.assertIn("quoted", content[0]["text"])
         self.assertIn("compare", content[2]["text"])
 
