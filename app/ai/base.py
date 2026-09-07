@@ -12,6 +12,18 @@ import httpx
 from .capabilities import ProviderCapabilities
 from .health import ProviderHealth
 
+_IMAGE_DATA_URL_RE = re.compile(
+    r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=_-]+",
+    flags=re.IGNORECASE,
+)
+
+
+def _safe_error_excerpt(value: object, limit: int) -> str:
+    """Redact image payloads before provider responses can reach logs/status."""
+    text = value if isinstance(value, str) else str(value)
+    redacted = _IMAGE_DATA_URL_RE.sub("data:image/[redacted];base64,[redacted]", text)
+    return redacted[:limit]
+
 
 class ProviderError(Exception):
     def __init__(
@@ -85,8 +97,8 @@ class OpenAICompatProvider:
         except httpx.HTTPError as exc:
             raise ProviderError(f"{self.name}: lỗi mạng ({exc})", transient=True) from exc
         if resp.status_code >= 400:
-            body = resp.text[:500]
-            error_message = body
+            body = _safe_error_excerpt(resp.text, 500)
+            error_message = resp.text
             generation_error = False
             try:
                 error_data = resp.json()
@@ -133,14 +145,18 @@ class OpenAICompatProvider:
             data = resp.json()
         except json.JSONDecodeError as exc:
             raise ProviderError(
-                f"{self.name}: phản hồi không phải JSON: {resp.text[:200]}"
+                f"{self.name}: phản hồi không phải JSON: {_safe_error_excerpt(resp.text, 200)}"
             ) from exc
         try:
             msg = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError(f"{self.name}: phản hồi thiếu choices: {str(data)[:200]}") from exc
+            raise ProviderError(
+                f"{self.name}: phản hồi thiếu choices: {_safe_error_excerpt(data, 200)}"
+            ) from exc
         if not isinstance(msg, dict):
-            raise ProviderError(f"{self.name}: message không phải object: {str(msg)[:200]}")
+            raise ProviderError(
+                f"{self.name}: message không phải object: {_safe_error_excerpt(msg, 200)}"
+            )
         content = _normalize_content(msg.get("content"))
         tool_calls: list[ToolCall] = []
         for tc in msg.get("tool_calls") or []:

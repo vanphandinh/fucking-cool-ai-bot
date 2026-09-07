@@ -123,14 +123,18 @@ class Settings(BaseSettings):
     def configured_vision_provider_names(self) -> list[str]:
         if not self.vision_enabled:
             return []
-        names: list[str] = []
+        available: set[str] = set()
         if self.gemini_api_key and self.gemini_vision_model:
-            names.append("gemini")
+            available.add("gemini")
         if self.groq_api_key:
-            names.extend(["groq_qwen38", "groq_qwen36"][: len(self.groq_vision_models_list)])
+            models = self.groq_vision_models_list
+            if len(models) >= 1:
+                available.add("groq_qwen38")
+            if len(models) >= 2:
+                available.add("groq_qwen36")
         if self.cloudflare_account_id and self.cloudflare_api_token:
-            names.append("cloudflare")
-        return names
+            available.add("cloudflare")
+        return [name for name in self.vision_provider_order_list if name in available]
 
 
 @lru_cache
