@@ -144,6 +144,15 @@ def t_core():
         st.live_questions_today() == 0 and st.questions_total == 1,
     )
 
+    from app.core.orchestrator import _format_search_results
+
+    empty = _format_search_results("xyz", [])
+    check(
+        "search rỗng không bảo dựa vào kết quả",
+        "Không có kết quả" in empty and "dựa vào" not in empty,
+        empty,
+    )
+
 
 def t_reader_guard():
     print("== SSRF guard ==")
@@ -225,6 +234,11 @@ def t_reader_dns_rebinding():
                 "DNS chết -> rỗng (fail-closed, không resolve lần 2)",
                 await mod._resolve_all("offline.example") == [],
             )
+            socket.getaddrinfo = fake_resolver(error=OSError("resolver exploded"))
+            check(
+                "OSError resolve -> rỗng (fail-closed)",
+                await mod._resolve_all("boom.example") == [],
+            )
         finally:
             socket.getaddrinfo = real_getaddrinfo
 
@@ -293,6 +307,20 @@ def t_reader_dns_rebinding():
             "inner mặc định là AnyIOBackend (không phải lớp abstract)",
             isinstance(mod.SSRFCheckBackend()._backend, httpcore.AnyIOBackend),
         )
+
+        client = mod._build_client(5.0)
+        try:
+            check(
+                "_build_client không tạo pool mặc định rồi thay",
+                isinstance(client._transport, mod._PinnedTransport),
+            )
+            pool = client._transport._pool
+            check(
+                "_build_client pool dùng SSRFCheckBackend",
+                isinstance(pool._network_backend, mod.SSRFCheckBackend),
+            )
+        finally:
+            await client.aclose()
 
     asyncio.run(run())
 
@@ -578,6 +606,12 @@ def t_e2e_handlers():
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /help trả lời", any("trợ lý AI" in c[1].get("text", "") for c in sent))
 
+        session.calls.clear()
+        up = mk_update(-100200, "supergroup", "/HELP", update_id=101)
+        await dp.feed_update(bot, up)
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: /HELP ignore_case", any("trợ lý AI" in c[1].get("text", "") for c in sent))
+
         # 2) mention câu hỏi -> trả lời, ghi memory
         session.calls.clear()
         up = mk_update(-100200, "supergroup", "giá vàng @FuckingCoolAIbot?", update_id=2)
@@ -680,6 +714,22 @@ def t_e2e_handlers():
         )
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /ask trả lời", any("TRẢ LỜI: thời tiết" in c[1].get("text", "") for c in sent))
+
+        session.calls.clear()
+        orch.received.clear()
+        chat_ask = Chat(id=-100200, type="supergroup", title="G")
+        reply_for_ask = _mk_reply(chat_ask, "nội dung cũ của bot", "FuckingCoolAIbot")
+        up = mk_update(
+            -100200, "supergroup", "/ask thế còn VN?", reply=reply_for_ask, update_id=102
+        )
+        await dp.feed_update(bot, up)
+        check(
+            "E2E: /ask khi reply đọc quoted",
+            bool(orch.received)
+            and orch.received[-1]["q"] == "thế còn VN?"
+            and orch.received[-1]["quoted"] == "nội dung cũ của bot",
+            str(orch.received),
+        )
 
         # 10) /ask không có câu hỏi -> nhắc cách dùng
         session.calls.clear()

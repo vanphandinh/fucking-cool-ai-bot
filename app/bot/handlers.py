@@ -62,7 +62,7 @@ def build_message_router(
 
     # ignore_mention mặc định False: "/help@BotKhác" sẽ bị aiogram từ chối
     # (mention không khớp username bot), tránh trả lời lệnh nhắm bot khác.
-    @router.message(Command("help", "start"))
+    @router.message(Command("help", "start", ignore_case=True))
     async def help_handler(message: Message) -> None:
         await message.reply(
             _HELP_TEXT.format(
@@ -71,10 +71,11 @@ def build_message_router(
             )
         )
 
-    @router.message(Command("status"))
+    @router.message(Command("status", ignore_case=True))
     async def status_handler(message: Message) -> None:
-        if message.from_user and message.from_user.id not in settings.admin_ids_list:
-            return  # im lặng với người không phải admin
+        uid = message.from_user.id if message.from_user else None
+        if uid is None or uid not in settings.admin_ids_list:
+            return  # im lặng nếu không xác định được user hoặc không phải admin
         allowed_text = settings.allowed_group_ids_list or "TRỐNG"
         lines = [
             "📊 Trạng thái bot",
@@ -92,7 +93,7 @@ def build_message_router(
         ]
         await message.reply("\n".join(lines))
 
-    @router.message(Command("ask"))
+    @router.message(Command("ask", ignore_case=True))
     async def ask_command(message: Message, command: CommandObject) -> None:
         question = (command.args or "").strip()
         if not question:
@@ -100,10 +101,14 @@ def build_message_router(
                 "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
             )
             return
+        quoted = None
+        replied = message.reply_to_message
+        if replied:
+            quoted = replied.text or replied.caption or ""
         await _handle_question(
             message,
             question,
-            quoted=None,
+            quoted=quoted,
             settings=settings,
             orchestrator=orchestrator,
             memory=memory,

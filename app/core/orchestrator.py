@@ -165,6 +165,11 @@ class Orchestrator:
 
 
 def _format_search_results(query: str, results: list[dict]) -> str:
+    if not results:
+        return (
+            f'Không có kết quả tìm kiếm cho "{query}". '
+            "Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu."
+        )
     lines = [f'Kết quả tìm kiếm cho "{query}":']
     for i, item in enumerate(results[:8], start=1):
         title = item.get("title") or "(không tiêu đề)"

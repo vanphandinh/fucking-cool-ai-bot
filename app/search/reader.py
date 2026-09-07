@@ -59,7 +59,8 @@ async def _resolve_all(host: str) -> list[str]:
     def _res() -> list[str]:
         try:
             infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-        except socket.gaierror:
+        except OSError:
+            # gaierror là OSError — fail-closed với mọi lỗi resolve, không chỉ DNS.
             return []
         out: list[str] = []
         seen: set[str] = set()
@@ -123,7 +124,7 @@ class SSRFCheckBackend(httpcore.AsyncNetworkBackend):
                 socket_options=socket_options,
             )
 
-        ips = await self._resolve_pinned(str(host))
+        ips = await self._resolve_pinned(host_clean)
         if not ips:
             raise SSRFBlocked(f"host '{host}' không resolve ra IP công khai nào — chặn kết nối")
         last_exc: BaseException | None = None
@@ -274,7 +275,7 @@ async def _fetch_limited(
             raise _FetchError(reason)
         async with client.stream("GET", current, headers={"User-Agent": _UA}) as resp:
             if resp.status_code in _REDIRECT_STATUSES:
-                location = resp.headers.get("location")
+                location = (resp.headers.get("location") or "").strip()
                 if not location:
                     raise _FetchError("trang chuyển hướng thiếu địa chỉ đích")
                 current = urljoin(current, location)
@@ -292,6 +293,15 @@ async def _fetch_limited(
     raise _FetchError("quá nhiều lần chuyển hướng")
 
 
+class _PinnedTransport(httpx.AsyncHTTPTransport):
+    """Transport gắn sẵn pool chống SSRF — không tạo pool mặc định rồi bỏ."""
+
+    def __init__(self, pool: httpcore.AsyncConnectionPool) -> None:
+        # Không gọi super().__init__: AsyncHTTPTransport() sẽ mở pool AnyIO
+        # mặc định (không SSRF) rồi bị thay — rò FD nếu không aclose pool cũ.
+        self._pool = pool
+
+
 def _build_client(timeout: float) -> httpx.AsyncClient:
     """Client có transport chống SSRF (IP pinning) — KHÔNG follow redirect tự động
     (mỗi chặng redirect đều được validate lại trong _fetch_limited)."""
@@ -302,9 +312,11 @@ def _build_client(timeout: float) -> httpx.AsyncClient:
         http2=False,
         network_backend=backend,
     )
-    transport = httpx.AsyncHTTPTransport()
-    transport._pool = pool  # noqa: SLF001 — lắp pool tuỳ biến (network_backend)
-    return httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False)
+    return httpx.AsyncClient(
+        transport=_PinnedTransport(pool),
+        timeout=timeout,
+        follow_redirects=False,
+    )
 
 
 async def read_page(

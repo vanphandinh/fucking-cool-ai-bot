@@ -51,6 +51,7 @@ class AIProviderRouter:
                     return text, provider.name
                 except ProviderError as exc:
                     last_error = exc
+                    logger.warning("Provider %s lỗi: %s", provider.name, exc)
                     if exc.unsupported_tools and provider.supports_tools:
                         # Model không hỗ trợ tool-calling -> tắt vĩnh viễn rồi thử lại
                         provider.supports_tools = False
@@ -62,6 +63,7 @@ class AIProviderRouter:
                     break  # lỗi khác -> chuyển provider kế tiếp
                 except Exception as exc:  # lỗi không lường trước -> coi như hỏng provider này
                     last_error = ProviderError(f"{provider.name}: {exc}")
+                    logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
                     break
 
         raise AllProvidersFailed(str(last_error) if last_error else "Tất cả provider đều lỗi")
