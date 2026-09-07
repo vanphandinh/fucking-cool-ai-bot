@@ -1,7 +1,7 @@
 # Telegram vision input
 
 Tài liệu này mô tả **đúng flow vision hiện tại trong source**. Vision là route riêng; text request dùng
-free-first text provider pool và không bị chuyển sang vision slot.
+free-tier-first text provider pool và không bị chuyển sang vision slot.
 
 ## 1. Input được hỗ trợ
 
@@ -80,7 +80,7 @@ thử provider.
 
 ### Text route
 
-Text provider được tạo từ credential hiện có rồi xếp theo `TEXT_PROVIDER_ORDER`. Default free-first:
+Text provider được tạo từ credential hiện có rồi xếp theo `TEXT_PROVIDER_ORDER`. Default free-tier-first:
 
 ```text
 Groq GPT-OSS 120B
@@ -120,20 +120,33 @@ MAX_TOTAL_IMAGE_BYTES=12582912
 
 Default đặt Cloudflare giữa hai Groq vision slot để tăng provider diversity: nếu Groq gặp quota/auth/outage,
 router có cơ hội chuyển sang một provider độc lập trước khi thử Groq model thứ hai. Gemini 3.8 Flash nằm cuối
-để giữ free quota làm lớp dự phòng chất lượng cao.
+để giữ free-tier quota làm lớp dự phòng chất lượng cao.
 
 `VISION_ENABLED=0` không thay đổi text provider pool. Image request khi không còn capable vision provider sẽ
 trả UX “chưa có model đọc ảnh được cấu hình”.
 
-## 5. Tools, quota và fallback
+## 5. Tools, metadata, quota và fallback
 
 Vision completion vẫn được phép dùng cùng `web_search`/`fetch_url` như text completion. System prompt yêu
 cầu tách điều nhìn thấy trong ảnh khỏi dữ liệu tìm trên web và dùng search khi ảnh dẫn tới thông tin cần cập
 nhật ngoài đời.
 
-Free-first defaults dùng `MAX_TOOL_ROUNDS=2` và `MAX_CONTEXT_TURNS=6` để hạn chế số request/token bị đốt
+Các model mới có thể trả metadata bắt buộc phải round-trip qua tool turn. Adapter hiện giữ metadata đó trong
+**cùng provider** rồi loại bỏ trước khi chuyển transcript sang provider khác:
+
+- Gemini 3.x: giữ `tool_calls[].extra_content.google.thought_signature`;
+- OpenRouter/reasoning model: giữ assistant-level `reasoning_details`, `reasoning` hoặc `reasoning_content`;
+- khi fallback sang provider khác, các field provider-specific trên bị strip để tránh provider kế từ chối
+  unknown field.
+
+Free-tier-first defaults dùng `MAX_TOOL_ROUNDS=2` và `MAX_CONTEXT_TURNS=6` để hạn chế số request/token bị đốt
 trên free tier. Router vẫn có safety cap nội bộ tối đa 8 tool calls cho một completion và dùng chung budget
 qua retry/fallback.
+
+**Free-tier-first không đồng nghĩa code có thể bảo đảm chi phí $0.** Bot không biết billing plan của credential.
+Nếu Groq, Cloudflare hoặc Gemini project/account đã ở paid tier thì provider có thể tính phí theo policy của họ.
+Muốn vận hành $0, phải giữ các provider tương ứng trên free tier/quota phù hợp; OpenRouter slot mặc định dùng
+`openrouter/free`.
 
 Provider health/fallback:
 
@@ -155,7 +168,9 @@ python -m compileall -q app tests
 
 Regression coverage gồm:
 
-- effective text/vision provider order và free-first model defaults (`tests/test_free_routing.py`);
+- effective text/vision provider order và free-tier-first model defaults (`tests/test_free_routing.py`);
+- Gemini thought-signature replay và cross-provider metadata isolation (`tests/test_free_routing.py`);
+- OpenRouter reasoning metadata replay (`tests/test_provider_metadata.py`);
 - capability routing;
 - multimodal payload;
 - Telegram media size enforcement khi `file_size` không biết trước;
