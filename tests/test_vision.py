@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import base64
 import unittest
+from types import SimpleNamespace
 
+import httpx
+
+from app.ai.base import OpenAICompatProvider, ProviderError
 from app.ai.capabilities import ProviderCapabilities
 from app.ai.health import ProviderHealth
 from app.ai.multimodal import build_user_content
 from app.ai.router import AIProviderRouter
+from app.bot.media import ImageTooLarge, TelegramMediaLoader
 from app.config import Settings
 from app.core.request import ImageAttachment, UserRequest
 
@@ -137,6 +142,58 @@ class VisionConfigTests(unittest.TestCase):
             vision_provider_order="cloudflare",
         )
         self.assertEqual(excluded.configured_vision_provider_names, [])
+
+
+class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_error_redacts_image_data_url(self) -> None:
+        secret = "SECRET_IMAGE_BYTES"
+
+        def respond(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": f"invalid image data:image/png;base64,{secret}"
+                    }
+                },
+            )
+
+        provider = OpenAICompatProvider("vision", "https://example.org/v1", "fake", "fake")
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
+        )
+        try:
+            with self.assertRaises(ProviderError) as ctx:
+                await provider.chat([{"role": "user", "content": "image"}])
+            self.assertNotIn(secret, str(ctx.exception))
+        finally:
+            await provider.aclose()
+
+
+class TelegramMediaSafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unknown_file_size_is_bounded_during_download(self) -> None:
+        completed_writes: list[int] = []
+
+        class FakeBot:
+            async def download(self, _file_id: str, destination) -> None:
+                destination.write(b"1234")
+                completed_writes.append(1)
+                destination.write(b"56")
+                completed_writes.append(2)
+
+        message = SimpleNamespace(
+            photo=[SimpleNamespace(file_id="photo", file_size=None)],
+            document=None,
+            bot=FakeBot(),
+        )
+        loader = TelegramMediaLoader(
+            Settings(_env_file=None, max_image_bytes=5, max_total_image_bytes=5)
+        )
+
+        with self.assertRaises(ImageTooLarge):
+            await loader._from_message(message, "current")
+        self.assertEqual(completed_writes, [1])
 
 
 if __name__ == "__main__":
