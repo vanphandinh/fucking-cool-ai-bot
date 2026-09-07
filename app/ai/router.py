@@ -15,6 +15,7 @@ from .base import (
     OpenAICompatProvider,
     ProviderError,
 )
+from .capabilities import ProviderCapabilities
 from .cloudflare import make_cloudflare_provider
 from .gemini import make_gemini_provider
 from .groq import make_groq_provider
@@ -31,6 +32,35 @@ class _ToolBudget:
     rounds: int = 0
 
 
+def _capabilities(provider: object) -> ProviderCapabilities:
+    value = getattr(provider, "capabilities", None)
+    if isinstance(value, ProviderCapabilities):
+        return value
+    return ProviderCapabilities()
+
+
+def _available(provider: object) -> bool:
+    health = getattr(provider, "health", None)
+    return health is None or health.available()
+
+
+def _record_success(provider: object) -> None:
+    health = getattr(provider, "health", None)
+    if health is not None:
+        health.record_success()
+
+
+def _record_error(provider: object, error: ProviderError) -> None:
+    health = getattr(provider, "health", None)
+    if health is not None:
+        health.record_error(
+            str(error),
+            status_code=error.status_code,
+            retry_after=error.retry_after,
+            transient=error.transient,
+        )
+
+
 class AIProviderRouter:
     def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
         self.providers = providers
@@ -43,14 +73,14 @@ class AIProviderRouter:
         requires_vision: bool,
         image_count: int = 0,
     ) -> list[OpenAICompatProvider]:
-        return [
-            provider
-            for provider in self.providers
-            if provider.capabilities.accepts(
+        out: list[OpenAICompatProvider] = []
+        for provider in self.providers:
+            if _capabilities(provider).accepts(
                 requires_vision=requires_vision,
                 image_count=image_count,
-            )
-        ]
+            ):
+                out.append(provider)
+        return out
 
     async def complete(
         self,
@@ -74,7 +104,7 @@ class AIProviderRouter:
         self.last_fallbacks = 0
 
         for provider in candidates:
-            if not provider.health.available():
+            if not _available(provider):
                 continue
             if attempted:
                 self.last_fallbacks += 1
@@ -91,16 +121,11 @@ class AIProviderRouter:
                     text = await self._complete_with_provider(
                         provider, local_msgs, use_tools, tool_executor, budget
                     )
-                    provider.health.record_success()
+                    _record_success(provider)
                     return text, provider.name
                 except ProviderError as exc:
                     last_error = exc
-                    provider.health.record_error(
-                        str(exc),
-                        status_code=exc.status_code,
-                        retry_after=exc.retry_after,
-                        transient=exc.transient,
-                    )
+                    _record_error(provider, exc)
                     logger.warning("Provider %s lỗi: %s", provider.name, exc)
                     if len(local_msgs) > len(messages):
                         messages = local_msgs
@@ -112,7 +137,7 @@ class AIProviderRouter:
                     break
                 except Exception as exc:  # noqa: BLE001
                     last_error = ProviderError(f"{provider.name}: {exc}")
-                    provider.health.record_error(str(last_error), transient=True)
+                    _record_error(provider, last_error)
                     logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
                     if len(local_msgs) > len(messages):
                         messages = local_msgs
@@ -187,7 +212,6 @@ def _json_dumps(data: dict) -> str:
 def build_provider_router(settings: Settings) -> AIProviderRouter:
     providers: list[OpenAICompatProvider] = []
 
-    # Existing text route remains first and unchanged.
     if settings.gemini_api_key:
         providers.append(make_gemini_provider(settings))
     if settings.groq_api_key:
