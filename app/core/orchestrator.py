@@ -142,8 +142,9 @@ class Orchestrator:
                 if reason:
                     return f"Không thể tải trang: {reason}"
                 text = await read_page(url, timeout=self.settings.request_timeout_sec)
-                searched = True
-                sources.append({"title": url, "url": url, "snippet": ""})
+                if text and not text.startswith("Không tải được trang"):
+                    searched = True
+                    sources.append({"title": url, "url": url, "snippet": ""})
                 return f"Nội dung trang {url}:\n{text}"
             return f"Tool '{name}' không tồn tại."
 

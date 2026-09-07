@@ -329,6 +329,8 @@ async def read_page(
                 return text[:MAX_CHARS]
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             logger.debug("Jina Reader lỗi (chuyển fallback): %s", exc)
+        except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
+            logger.debug("Jina Reader lỗi lạ (chuyển fallback): %s", exc)
 
         # 2) Fallback: tải HTML trực tiếp và parse văn bản
         try:

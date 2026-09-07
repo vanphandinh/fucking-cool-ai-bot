@@ -95,6 +95,8 @@ def t_config_formatting():
     check("clean_question bỏ mention", q == "giá vàng hôm nay", repr(q))
     q_neg = clean_question("@bot -1 + 2 bằng bao nhiêu", "bot")
     check("clean_question giữ số âm", q_neg == "-1 + 2 bằng bao nhiêu", repr(q_neg))
+    check("clean_question mention-only thành rỗng", clean_question("@bot...", "bot") == "")
+    check("clean_question bỏ chấm cuối", clean_question("@bot giá vàng.", "bot") == "giá vàng")
     parts = split_plain("y" * 10000, 3900)
     check("split_plain giữ nguyên nội dung", "".join(parts) == "y" * 10000)
     check("split_plain không quá 3900", all(len(p) <= 3900 for p in parts))
@@ -123,6 +125,7 @@ def t_core():
         m.push(1, r, c)
     h = m.history_for(1)
     check("context giới hạn cặp", len(h) <= 4 and h[-1]["content"] == "h2")
+    check("context limit 0 rỗng", m.history_for(1, 0) == [])
 
     rl = RateLimiter(max_requests_per_min=2)
     check("rate limit allow 2", rl.allow(7)[0] and rl.allow(7)[0] and not rl.allow(7)[0])

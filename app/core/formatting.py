@@ -15,8 +15,8 @@ def clean_question(text: str, username: str) -> str:
     username = username.lower().lstrip("@")
     result = re.sub(rf"@\b{re.escape(username)}\b", " ", text, flags=re.IGNORECASE)
     result = _WHITESPACE_RE.sub(" ", result).strip()
-    # Chỉ bỏ dấu câu phân cách ở hai đầu — KHÔNG bỏ '-' (số âm, cờ lệnh).
-    result = result.strip(" \t,;:?!…")
+    # Bỏ dấu câu phân cách ở hai đầu. KHÔNG bỏ '-' (số âm, cờ lệnh).
+    result = result.strip(" \t,;:?!….")
     return result
 
 

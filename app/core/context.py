@@ -24,8 +24,10 @@ class ChatMemory:
         """Trả về danh sách ({role, content}) từ cũ tới mới."""
         if limit is None:
             limit = self._max
+        if limit <= 0:
+            return []
         entries = list(self._store.get(chat_id, []))
         # Tối đa `limit` cặp -> 2*limit bản ghi
-        if limit > 0 and len(entries) > limit * 2:
+        if len(entries) > limit * 2:
             entries = entries[-(limit * 2) :]
         return entries

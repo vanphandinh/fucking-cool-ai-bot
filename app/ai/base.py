@@ -99,6 +99,8 @@ class OpenAICompatProvider:
             msg = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ProviderError(f"{self.name}: phản hồi thiếu choices: {str(data)[:200]}") from exc
+        if not isinstance(msg, dict):
+            raise ProviderError(f"{self.name}: message không phải object: {str(msg)[:200]}")
 
         content = _normalize_content(msg.get("content"))
         tool_calls: list[ToolCall] = []
