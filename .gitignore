@@ -10,8 +10,9 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# SearXNG settings thật (chứa secret_key) — dùng bản mẫu settings.example.yml
+# SearXNG config thật (chứa secret_key / local overrides) — dùng bản mẫu *.example.*
 searxng/settings.yml
+searxng/limiter.toml
 
 # IDE / OS
 .idea/

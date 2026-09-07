@@ -24,7 +24,7 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(
             f"{url}/search",
-            params={"q": query, "format": "json", "language": "vi"},
+            params={"q": query, "format": "json"},
             headers={"User-Agent": _UA, "Accept": "application/json"},
         )
         resp.raise_for_status()

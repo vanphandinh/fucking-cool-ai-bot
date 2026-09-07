@@ -1,0 +1,35 @@
+# SearXNG limiter overrides — production baseline.
+# Sao chép thành ./searxng/limiter.toml
+#
+# LƯU Ý:
+# - File này chỉ override một phần nhỏ so với schema mặc định của SearXNG.
+# - Với bot Telegram trong repo này, cấu hình mặc định khuyến nghị là:
+#     server.limiter = false
+#     server.public_instance = false
+# - Nếu bạn public SearXNG qua Nginx/Caddy/Traefik, hãy bật limiter=true và
+#   thêm IP/CIDR của reverse proxy vào trusted_proxies.
+
+[botdetection]
+ipv4_prefix = 32
+ipv6_prefix = 48
+trusted_proxies = [
+  '127.0.0.0/8',
+  '::1',
+  # Nếu reverse proxy chạy trong Docker bridge riêng, thêm CIDR tương ứng, ví dụ:
+  # '172.16.0.0/12',
+  # '10.0.0.0/8',
+]
+
+[botdetection.ip_limit]
+filter_link_local = false
+# Bật true khi instance public để hạn chế abuse tốt hơn.
+link_token = false
+
+[botdetection.ip_lists]
+block_ip = []
+pass_ip = [
+  # Nếu SearXNG chỉ dùng nội bộ cho bot, có thể pass cả Docker bridge riêng của bạn.
+  # Ví dụ:
+  # '172.16.0.0/12',
+]
+pass_searxng_org = true
