@@ -119,6 +119,25 @@ class VisionConfigTests(unittest.TestCase):
         disabled = Settings(gemini_api_key="x", vision_enabled=False)
         self.assertEqual(disabled.configured_vision_provider_names, [])
 
+    def test_reported_vision_providers_match_effective_order(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            gemini_api_key="g",
+            groq_api_key="q",
+            vision_provider_order="groq_qwen36,gemini",
+        )
+        self.assertEqual(
+            settings.configured_vision_provider_names,
+            ["groq_qwen36", "gemini"],
+        )
+
+        excluded = Settings(
+            _env_file=None,
+            gemini_api_key="g",
+            vision_provider_order="cloudflare",
+        )
+        self.assertEqual(excluded.configured_vision_provider_names, [])
+
 
 if __name__ == "__main__":
     unittest.main()
