@@ -111,8 +111,9 @@ class AIProviderRouter:
                 self.last_fallbacks += 1
             attempted += 1
             already_plain = False
+            provider_messages = deepcopy(messages)
             for pass_no in (0, 1):
-                local_msgs = deepcopy(messages)
+                local_msgs = deepcopy(provider_messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
                 if use_tools is None and already_plain:
                     break
@@ -128,8 +129,8 @@ class AIProviderRouter:
                     last_error = exc
                     _record_error(provider, exc)
                     logger.warning("Provider %s lỗi: %s", provider.name, exc)
-                    if len(local_msgs) > len(messages):
-                        messages = local_msgs
+                    if len(local_msgs) > len(provider_messages):
+                        provider_messages = local_msgs
                     if exc.unsupported_tools and provider.supports_tools:
                         provider.supports_tools = False
                         continue
@@ -140,9 +141,10 @@ class AIProviderRouter:
                     last_error = ProviderError(f"{provider.name}: {exc}")
                     _record_error(provider, last_error)
                     logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
-                    if len(local_msgs) > len(messages):
-                        messages = local_msgs
+                    if len(local_msgs) > len(provider_messages):
+                        provider_messages = local_msgs
                     break
+            messages = _portable_messages(provider_messages)
 
         if attempted == 0:
             raise AllProvidersFailed("Các provider phù hợp đang cooldown hoặc unavailable")
@@ -206,6 +208,19 @@ def _assistant_tool_message(resp: ChatResponse) -> dict:
         "content": resp.content or "",
         "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
     }
+
+
+def _portable_messages(messages: list[dict]) -> list[dict]:
+    """Strip provider-specific tool metadata before cross-provider fallback."""
+    out = deepcopy(messages)
+    for message in out:
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                tool_call.pop("extra_content", None)
+    return out
 
 
 def _json_dumps(data: dict) -> str:
