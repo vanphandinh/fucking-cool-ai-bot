@@ -1,4 +1,4 @@
-"""Router AI: chạy vòng tool-calling + tự fallback giữa các provider."""
+"""Capability-aware AI router with shared tool budget and health-aware fallback."""
 
 from __future__ import annotations
 
@@ -11,20 +11,17 @@ from ..config import Settings
 from .base import (
     AllProvidersFailed,
     ChatResponse,
+    NoCapableProvider,
     OpenAICompatProvider,
     ProviderError,
 )
+from .cloudflare import make_cloudflare_provider
 from .gemini import make_gemini_provider
 from .groq import make_groq_provider
 from .openrouter import make_openrouter_provider
 
 logger = logging.getLogger(__name__)
-
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
-
-# Một phản hồi model có thể chứa rất nhiều tool call trong cùng một lượt. Nếu
-# không chặn, một câu hỏi duy nhất có thể đốt quota search/reader và giữ chat
-# lock hàng phút dù MAX_TOOL_ROUNDS đã nhỏ (giới hạn đó chỉ đếm số *lượt*).
 _MAX_TOOL_CALLS_TOTAL = 8
 
 
@@ -38,59 +35,86 @@ class AIProviderRouter:
     def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
         self.providers = providers
         self.max_tool_rounds = max_tool_rounds
+        self.last_fallbacks = 0
+
+    def capable_providers(self, *, requires_vision: bool, image_count: int = 0) -> list[OpenAICompatProvider]:
+        return [
+            provider
+            for provider in self.providers
+            if provider.capabilities.accepts(
+                requires_vision=requires_vision,
+                image_count=image_count,
+            )
+        ]
 
     async def complete(
         self,
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
+        *,
+        requires_vision: bool = False,
+        image_count: int = 0,
     ) -> tuple[str, str]:
-        """Gọi lần lượt từng provider; provider nào xong trước thì dùng.
+        candidates = self.capable_providers(
+            requires_vision=requires_vision,
+            image_count=image_count,
+        )
+        if not candidates:
+            raise NoCapableProvider("Không có provider phù hợp capability của request")
 
-        Trả về (text, provider_name). Ném AllProvidersFailed khi tất cả lỗi.
-        """
         last_error: ProviderError | None = None
-        # Budget belongs to the question, including plain retries and fallbacks.
         budget = _ToolBudget()
+        attempted = 0
+        self.last_fallbacks = 0
 
-        for provider in self.providers:
-            # pass 0: có tools; pass 1 (chỉ khi pass 0 lỗi vì tools): không kèm tools
+        for provider in candidates:
+            if not provider.health.available():
+                continue
+            if attempted:
+                self.last_fallbacks += 1
+            attempted += 1
             already_plain = False
             for pass_no in (0, 1):
                 local_msgs = deepcopy(messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
                 if use_tools is None and already_plain:
-                    break  # pass 0 đã chạy không-tools — không gọi trùng
+                    break
                 if use_tools is None:
                     already_plain = True
                 try:
                     text = await self._complete_with_provider(
                         provider, local_msgs, use_tools, tool_executor, budget
                     )
+                    provider.health.record_success()
                     return text, provider.name
                 except ProviderError as exc:
                     last_error = exc
+                    provider.health.record_error(
+                        str(exc),
+                        status_code=exc.status_code,
+                        retry_after=exc.retry_after,
+                        transient=exc.transient,
+                    )
                     logger.warning("Provider %s lỗi: %s", provider.name, exc)
-                    # Giữ transcript tool đã chạy: retry không-tools / provider kế
-                    # phải thấy kết quả search, không tìm lại từ đầu.
                     if len(local_msgs) > len(messages):
                         messages = local_msgs
                     if exc.unsupported_tools and provider.supports_tools:
-                        # Model không hỗ trợ tool-calling -> tắt vĩnh viễn rồi thử lại
                         provider.supports_tools = False
                         continue
                     if exc.retry_without_tools:
-                        # Lỗi chỉ xảy ra khi tool-calling (vd kẹt vòng lặp gọi tool):
-                        # thử lại 1 lần không kèm tools, vẫn giữ nguyên supports_tools
                         continue
-                    break  # lỗi khác -> chuyển provider kế tiếp
-                except Exception as exc:  # lỗi không lường trước -> coi như hỏng provider này
+                    break
+                except Exception as exc:  # noqa: BLE001
                     last_error = ProviderError(f"{provider.name}: {exc}")
+                    provider.health.record_error(str(last_error), transient=True)
                     logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
                     if len(local_msgs) > len(messages):
                         messages = local_msgs
                     break
 
+        if attempted == 0:
+            raise AllProvidersFailed("Các provider phù hợp đang cooldown hoặc unavailable")
         raise AllProvidersFailed(str(last_error) if last_error else "Tất cả provider đều lỗi")
 
     async def _complete_with_provider(
@@ -101,9 +125,6 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         budget: _ToolBudget,
     ) -> str:
-        # Vòng 0 là lượt trả lời đầu tiên; mỗi vòng sau tương ứng 1 lượt thực thi
-        # tool-call. Cho phép tối đa max_tool_rounds lượt và một trần tổng số call
-        # riêng để chống phản hồi fan-out bất thường từ model.
         for _round in range(self.max_tool_rounds + 1):
             resp = await provider.chat(messages, tools)
             if not resp.tool_calls:
@@ -115,35 +136,25 @@ class AIProviderRouter:
                 raise ProviderError(f"{provider.name}: model gọi tool khi tools đã tắt")
             if budget.rounds >= self.max_tool_rounds:
                 raise ProviderError(
-                    f"{provider.name}: model gọi tool quá {self.max_tool_rounds} "
-                    "vòng — dừng để tránh kẹt vòng lặp",
+                    f"{provider.name}: model gọi tool quá {self.max_tool_rounds} vòng",
                     retry_without_tools=True,
                 )
             if budget.calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
                 raise ProviderError(
-                    f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call "
-                    "trong một câu hỏi — dừng để bảo vệ quota",
+                    f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call",
                     retry_without_tools=True,
                 )
-
-            # Thực thi tool-calls
             budget.rounds += 1
             budget.calls += len(resp.tool_calls)
             messages.append(_assistant_tool_message(resp))
             for tc in resp.tool_calls:
                 try:
                     output = await tool_executor(tc.name, tc.arguments)
-                except Exception as exc:  # noqa: BLE001 — lỗi tool không được làm sập bot
+                except Exception as exc:  # noqa: BLE001
                     output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
                 messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": str(output)[:6000],
-                    }
+                    {"role": "tool", "tool_call_id": tc.id, "content": str(output)[:6000]}
                 )
-
-        # Không thể chạm tới — vòng lặp luôn return/raise phía trên.
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")
 
 
@@ -169,12 +180,48 @@ def _json_dumps(data: dict) -> str:
 
 
 def build_provider_router(settings: Settings) -> AIProviderRouter:
-    """Dựng chuỗi provider theo thứ tự ưu tiên, chỉ giữ provider có key."""
     providers: list[OpenAICompatProvider] = []
+
+    # Existing text route remains first and unchanged.
     if settings.gemini_api_key:
         providers.append(make_gemini_provider(settings))
     if settings.groq_api_key:
         providers.append(make_groq_provider(settings))
     if settings.openrouter_api_key:
         providers.append(make_openrouter_provider(settings))
+
+    if settings.vision_enabled:
+        vision: dict[str, OpenAICompatProvider] = {}
+        if settings.gemini_api_key and settings.gemini_vision_model:
+            vision["gemini"] = make_gemini_provider(
+                settings,
+                name="gemini_vision",
+                model=settings.gemini_vision_model,
+                vision=True,
+            )
+        if settings.groq_api_key:
+            models = settings.groq_vision_models_list
+            if len(models) >= 1:
+                vision["groq_qwen38"] = make_groq_provider(
+                    settings,
+                    name="groq_qwen38",
+                    model=models[0],
+                    vision=True,
+                    max_images=3,
+                )
+            if len(models) >= 2:
+                vision["groq_qwen36"] = make_groq_provider(
+                    settings,
+                    name="groq_qwen36",
+                    model=models[1],
+                    vision=True,
+                    max_images=3,
+                )
+        if settings.cloudflare_account_id and settings.cloudflare_api_token:
+            vision["cloudflare"] = make_cloudflare_provider(settings)
+        for slot_name in settings.vision_provider_order_list:
+            provider = vision.get(slot_name)
+            if provider is not None:
+                providers.append(provider)
+
     return AIProviderRouter(providers, max_tool_rounds=settings.max_tool_rounds)
