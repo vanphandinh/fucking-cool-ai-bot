@@ -220,7 +220,7 @@ Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KH
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/run_tests.py     # kỳ vọng: 177 passed, 0 failed
+.venv/bin/python tests/run_tests.py     # kỳ vọng: 186 passed, 0 failed
 ```
 
 Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·

@@ -7,7 +7,7 @@ import logging
 
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import ChatMemberUpdated, Message
+from aiogram.types import ChatMemberUpdated, LinkPreviewOptions, Message
 
 from ..config import Settings
 from ..core.context import ChatMemory
@@ -248,12 +248,9 @@ async def _handle_question(
             await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
             return
 
-        # Ghép phần trả lời + nguồn rồi gửi (cắt nếu quá dài)
+        # Câu trả lời gửi plain text; nguồn (nếu có) gửi HTML riêng — tiêu đề
+        # ngắn bấm được, không in URL dài và không dính parse_mode vào nội dung AI.
         parts = split_plain(answer.text, 3900)
-        if answer.searched and answer.sources:
-            footer = format_sources(answer.sources)
-            if footer:
-                parts = parts + split_plain("\n\n" + footer, 3900)
         if not parts:
             parts = ["..."]
         try:
@@ -278,6 +275,16 @@ async def _handle_question(
             for part in parts[1:]:
                 await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                 await asyncio.sleep(0.15)
+            if answer.searched and answer.sources:
+                footer = format_sources(answer.sources)
+                if footer:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=footer,
+                        parse_mode="HTML",
+                        link_preview_options=LinkPreviewOptions(is_disabled=True),
+                        **extra_kwargs,
+                    )
         except Exception:  # noqa: BLE001
             logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
 
