@@ -28,6 +28,18 @@ def parse_csv(raw: str | None) -> list[str]:
     return [part.strip() for part in (raw or "").split(",") if part.strip()]
 
 
+def parse_unique_csv(raw: str | None) -> list[str]:
+    """Parse a CSV order while preserving the first occurrence of each slot."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in parse_csv(raw):
+        if part in seen:
+            continue
+        seen.add(part)
+        out.append(part)
+    return out
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -37,7 +49,7 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Text pool — free-first defaults.
+    # Text pool — free-tier-first defaults.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
@@ -104,7 +116,7 @@ class Settings(BaseSettings):
 
     @property
     def text_provider_order_list(self) -> list[str]:
-        return parse_csv(self.text_provider_order)
+        return parse_unique_csv(self.text_provider_order)
 
     @property
     def groq_vision_models_list(self) -> list[str]:
@@ -112,7 +124,7 @@ class Settings(BaseSettings):
 
     @property
     def vision_provider_order_list(self) -> list[str]:
-        return parse_csv(self.vision_provider_order)
+        return parse_unique_csv(self.vision_provider_order)
 
     @property
     def configured_provider_names(self) -> list[str]:
