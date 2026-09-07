@@ -28,7 +28,9 @@ TOOLS: list[dict] = [
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"query": {"type": "string", "description": "Từ khóa tìm kiếm."}},
+                "properties": {
+                    "query": {"type": "string", "description": "Từ khóa tìm kiếm."}
+                },
                 "required": ["query"],
             },
         },
@@ -40,7 +42,9 @@ TOOLS: list[dict] = [
             "description": "Đọc nội dung của một trang web cụ thể lấy từ kết quả web_search.",
             "parameters": {
                 "type": "object",
-                "properties": {"url": {"type": "string", "description": "URL http/https."}},
+                "properties": {
+                    "url": {"type": "string", "description": "URL http/https."}
+                },
                 "required": ["url"],
             },
         },
@@ -70,7 +74,8 @@ class Orchestrator:
     def system_prompt(self) -> str:
         today = datetime.now(_VN_TZ).date().isoformat()
         return (
-            f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một group Telegram riêng tư.\n"
+            f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một group "
+            "Telegram riêng tư.\n"
             "QUY TẮC BẮT BUỘC:\n"
             "1. Luôn trả lời bằng TIẾNG VIỆT trừ khi user yêu cầu ngôn ngữ khác.\n"
             "2. Ngắn gọn, dễ đọc, không lan man; không dùng markdown/HTML trong nội dung chính.\n"
@@ -99,7 +104,12 @@ class Orchestrator:
             if not isinstance(entry, dict):
                 continue
             if entry.get("role") in ("user", "assistant") and entry.get("content"):
-                messages.append({"role": entry["role"], "content": (entry["content"] or "")[:2000]})
+                messages.append(
+                    {
+                        "role": entry["role"],
+                        "content": (entry["content"] or "")[:2000],
+                    }
+                )
         messages.append({"role": "user", "content": build_user_content(request)})
 
         searched = False
@@ -152,9 +162,16 @@ class Orchestrator:
         )
 
 
+def _no_search_results(query: str) -> str:
+    return (
+        f'Không có kết quả tìm kiếm cho "{query}". '
+        "Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu."
+    )
+
+
 def _format_search_results(query: str, results: list[dict]) -> str:
     if not results:
-        return f'Không có kết quả tìm kiếm cho "{query}". Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu.'
+        return _no_search_results(query)
     lines = [f'Kết quả tìm kiếm cho "{query}":']
     n = 0
     for item in results[:8]:
@@ -168,7 +185,7 @@ def _format_search_results(query: str, results: list[dict]) -> str:
         snippet = item.get("snippet") or ""
         lines.append(f"{n}. {title}\n   URL: {url}\n   {snippet[:300]}")
     if n == 0:
-        return f'Không có kết quả tìm kiếm cho "{query}". Nói rõ là không tìm thấy dữ liệu mới, không bịa số liệu.'
+        return _no_search_results(query)
     lines.append("Hãy dựa vào các kết quả trên để trả lời; nếu không đủ thì nói rõ.")
     return "\n".join(lines)
 
@@ -184,7 +201,11 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
             continue
         seen.add(url)
         out.append(
-            {"title": str(src.get("title") or ""), "url": url, "snippet": str(src.get("snippet") or "")}
+            {
+                "title": str(src.get("title") or ""),
+                "url": url,
+                "snippet": str(src.get("snippet") or ""),
+            }
         )
         if len(out) >= 8:
             break
