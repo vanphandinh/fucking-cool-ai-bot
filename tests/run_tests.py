@@ -8,6 +8,7 @@ Bao gồm:
 4. E2E handlers qua Dispatcher.feed_update với fake Telegram session
 5. AI router (fallback + tool-calling) với mock OpenAI server
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,10 +56,27 @@ def t_config_formatting():
     s.bot_username = "FuckingCoolAIbot"
     check("username clean", s.bot_username_clean == "fuckingcoolaibot")
 
+    # SEARCH_BACKEND: chấp nhận viết hoa, từ chối giá trị lạ
+    old_backend = os.environ.get("SEARCH_BACKEND")
+    try:
+        os.environ["SEARCH_BACKEND"] = "TAVILY"
+        check("search_backend chuẩn hoá", Settings().search_backend == "tavily")
+        os.environ["SEARCH_BACKEND"] = "ddg"
+        try:
+            Settings()
+            check("search_backend lạ bị từ chối", False)
+        except ValueError:
+            check("search_backend lạ bị từ chối", True)
+    finally:
+        if old_backend is None:
+            os.environ.pop("SEARCH_BACKEND", None)
+        else:
+            os.environ["SEARCH_BACKEND"] = old_backend
+
     from app.core.formatting import clean_question, format_sources, split_plain
 
     q = clean_question("@FuckingCoolAIbot  giá vàng hôm nay ?", "FuckingCoolAIbot")
-    check("clean_question bỏ mention", "giá vàng hôm nay ?" in q)
+    check("clean_question bỏ mention", q == "giá vàng hôm nay", repr(q))
     parts = split_plain("y" * 10000, 3900)
     check("split_plain giữ nguyên nội dung", "".join(parts) == "y" * 10000)
     check("split_plain không quá 3900", all(len(p) <= 3900 for p in parts))
@@ -103,10 +121,192 @@ def t_reader_guard():
     check("chặn scheme lạ", validate_public_url("file:///etc/passwd") is not None)
     check("chặn rỗng", validate_public_url("") is not None)
 
+    # --- Dạng IP viết tắt mà ipaddress không parse nhưng glibc resolve về nội bộ
+    for bad in [
+        "http://127.1/x",
+        "http://127.1.2/x",  # -> 127.1.0.2
+        "http://2130706433/",  # -> 127.0.0.1
+        "http://2130706434/",  # -> 127.0.0.2
+        "http://0x7f000001/",  # -> 127.0.0.1
+        "http://0x7f.1/",  # -> 127.0.0.1
+        "http://0177.0.0.1/",  # octal -> 127.0.0.1
+        "http://0/",  # -> 0.0.0.0
+        "http://999.999.999.999/",  # số không hợp lệ
+        "http://[::ffff:127.0.0.1]/",  # IPv4-mapped loopback
+        "http://[::1]/",
+        "http://[fe80::1%25lo0]/",  # IPv6 zone index
+        "http://[2001:db8::1]/",  # dải tài liệu
+    ]:
+        check(
+            f"chặn dạng IP lạ {bad.split('/')[2][:28]}",
+            validate_public_url(bad) is not None,
+            str(validate_public_url(bad)),
+        )
+
+    # IP public dạng literal vẫn được phép (1.2.3 nở thành 1.2.0.3 — public)
+    check("cho phép ip public 8.8.8.8", validate_public_url("http://8.8.8.8/") is None)
+    check("cho phép dạng số public 1.2.3", validate_public_url("http://1.2.3/") is None)
+    check("cho phép ipv6 public", validate_public_url("http://[2606:4700:4700::1111]/") is None)
+
+
+def t_reader_dns_rebinding():
+    print("== Chống DNS-rebinding / IP pinning ==")
+    import socket
+
+    import app.search.reader as mod
+
+    real_getaddrinfo = socket.getaddrinfo
+
+    async def run():
+        def fake_resolver(*ips, error=None):
+            def _fake(host, *args, **kwargs):
+                if error is not None:
+                    raise error
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0)) for ip in ips]
+
+            return _fake
+
+        try:
+            # _is_public_ip
+            check("is_public: 8.8.8.8", mod._is_public_ip("8.8.8.8"))
+            check("is_public: 127.0.0.1", not mod._is_public_ip("127.0.0.1"))
+            check("is_public: ::ffff:127.0.0.1", not mod._is_public_ip("::ffff:127.0.0.1"))
+            check("is_public: ::1", not mod._is_public_ip("::1"))
+            check("is_public: 2606:4700::1111", mod._is_public_ip("2606:4700:4700::1111"))
+
+            # _resolve_all THẬT + getaddrinfo giả: chỉ giữ IP public
+            socket.getaddrinfo = fake_resolver("127.0.0.1")
+            check("resolve toàn bộ private -> rỗng", await mod._resolve_all("evil.nip.io") == [])
+            socket.getaddrinfo = fake_resolver("10.0.0.1", "127.0.0.1")
+            check("chỉ private -> rỗng", await mod._resolve_all("evil.sslip.io") == [])
+            socket.getaddrinfo = fake_resolver("8.8.8.8", "127.0.0.1")
+            got = await mod._resolve_all("mixed.example")
+            check("có IP public -> giữ IP public", got == ["8.8.8.8"], str(got))
+            socket.getaddrinfo = fake_resolver(error=socket.gaierror(-2, "DNS chết"))
+            check(
+                "DNS chết -> rỗng (fail-closed, không resolve lần 2)",
+                await mod._resolve_all("offline.example") == [],
+            )
+        finally:
+            socket.getaddrinfo = real_getaddrinfo
+
+    asyncio.run(run())
+
+
+def t_reader_fetch():
+    print("== Reader fetch (MockTransport, offline) ==")
+    import httpx
+
+    import app.search.reader as mod
+    from app.search.reader import read_page
+
+    requested: list[str] = []
+
+    def _html(body: str) -> bytes:
+        return f"<html><head><style>a{{}}</style></head><body>{body}</body></html>".encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        host = request.url.host
+        path = request.url.path
+        if host == "r.jina.ai":
+            return httpx.Response(429, json={"error": "rate"}, request=request)
+        if host == "ok.test":
+            if path == "/redir-public":
+                return httpx.Response(302, headers={"Location": "/final"}, request=request)
+            if path == "/redir-other":
+                return httpx.Response(
+                    302, headers={"Location": "https://other.test/landing"}, request=request
+                )
+            if path == "/redir-ssrf":
+                return httpx.Response(
+                    302, headers={"Location": "http://127.0.0.1:9999/x"}, request=request
+                )
+            if path == "/redir-shorthand":
+                return httpx.Response(
+                    302, headers={"Location": "http://2130706433/x"}, request=request
+                )
+            if path == "/big":
+                return httpx.Response(200, content=b"x" * (mod.MAX_BYTES + 100), request=request)
+            if path == "/error":
+                return httpx.Response(500, text="boom", request=request)
+            return httpx.Response(
+                200,
+                content=_html("<h1>Chào bạn</h1><p>Nội dung <b>quan trọng</b> ở đây.</p>"),
+                request=request,
+            )
+        if host in ("127.0.0.1", "2130706433"):
+            # Nếu guard lọt, transport sẽ "chạm" vào host nội bộ — test phải fail
+            return httpx.Response(200, content=b"INTERNAL-LEAK", request=request)
+        if host == "other.test":
+            return httpx.Response(200, content=_html("<p>Trang khác OK</p>"), request=request)
+        return httpx.Response(404, request=request)
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), timeout=5, follow_redirects=False
+        ) as client:
+            try:
+                text = await read_page("https://ok.test/", timeout=5, client=client)
+                check(
+                    "fallback parse html (jina 429)",
+                    "Chào bạn" in text and "quan trọng" in text and "style" not in text,
+                    text[:80],
+                )
+
+                requested.clear()
+                text = await read_page("https://ok.test/redir-public", timeout=5, client=client)
+                check("redirect public cùng host", "Chào bạn" in text, text[:80])
+
+                requested.clear()
+                text = await read_page("https://ok.test/redir-other", timeout=5, client=client)
+                check("redirect sang host public khác", "Trang khác OK" in text, text[:80])
+
+                requested.clear()
+                text = await read_page("https://ok.test/redir-ssrf", timeout=5, client=client)
+                check(
+                    "redirect vào 127.0.0.1 bị chặn",
+                    "Không tải được" in text and "INTERNAL-LEAK" not in text,
+                    text[:120],
+                )
+
+                requested.clear()
+                text = await read_page("https://ok.test/redir-shorthand", timeout=5, client=client)
+                check(
+                    "redirect dạng số lạ bị chặn",
+                    "Không tải được" in text and "INTERNAL-LEAK" not in text,
+                    text[:120],
+                )
+                check(
+                    "không request nào tới host nội bộ",
+                    not any(
+                        "127.0.0.1" in u or u.startswith("http://2130706433") for u in requested
+                    ),
+                    str(requested),
+                )
+
+                text = await read_page("https://ok.test/big", timeout=5, client=client)
+                check("trang quá lớn bị chặn", "quá lớn" in text, text[:80])
+
+                text = await read_page("https://ok.test/error", timeout=5, client=client)
+                check("HTTP 500 báo lỗi rõ", "HTTP 500" in text, text[:80])
+
+                text = await read_page("http://127.0.0.1:9999/x", timeout=5, client=client)
+                check("read_page tự chặn URL nội bộ", "Không tải được" in text, text[:80])
+            finally:
+                pass
+
+    asyncio.run(run())
+
 
 # ----------------------------------------------------------------------
-def _msg(chat_id: int, chat_type: str, text: str,
-         reply_to: "Message | None" = None) -> "Message":
+def _msg(
+    chat_id: int,
+    chat_type: str,
+    text: str,
+    reply_to: "Message | None" = None,
+    caption: str | None = None,
+) -> "Message":
     from aiogram.types import Chat, Message, User
 
     chat = Chat(id=chat_id, type=chat_type, title="G" if chat_type != "private" else None)
@@ -117,6 +317,7 @@ def _msg(chat_id: int, chat_type: str, text: str,
         chat=chat,
         from_user=sender,
         text=text,
+        caption=caption,
         reply_to_message=reply_to,
     )
 
@@ -126,8 +327,11 @@ def _mk_reply(chat, text: str, username: str) -> "Message":
 
     bot_user = User(id=99, is_bot=True, first_name="Bot", username=username)
     return Message(
-        message_id=5, date=datetime.now(timezone.utc), chat=chat,
-        from_user=bot_user, text=text,
+        message_id=5,
+        date=datetime.now(timezone.utc),
+        chat=chat,
+        from_user=bot_user,
+        text=text,
     )
 
 
@@ -147,12 +351,34 @@ def t_filters():
         check("chặn group lạ", not await allowed(_msg(-999, "supergroup", "x @FuckingCoolAIbot")))
         check("chặn private", not await allowed(_msg(1234, "private", "hi")))
         # TriggeredMessage
-        check("mention kích hoạt", await trig(_msg(-100200, "supergroup", "giá @FuckingCoolAIbot?")))
+        check(
+            "mention kích hoạt", await trig(_msg(-100200, "supergroup", "giá @FuckingCoolAIbot?"))
+        )
+        check(
+            "mention viết thường kích hoạt",
+            await trig(_msg(-100200, "supergroup", "xin chào @fuckingcoolaibot nha")),
+        )
+        check(
+            "mention cuối câu (dấu chấm) kích hoạt",
+            await trig(_msg(-100200, "supergroup", "thế @FuckingCoolAIbot.")),
+        )
+        check(
+            "mention trong caption kích hoạt",
+            await trig(
+                _msg(-100200, "supergroup", None, caption="mô tả ảnh @FuckingCoolAIbot xem giúp")
+            ),
+        )
         check("không trigger -> false", not await trig(_msg(-100200, "supergroup", "chào")))
+        check(
+            "username dài hơn (tiền tố) -> false",
+            not await trig(_msg(-100200, "supergroup", "nói gì @FuckingCoolAIbotXYZ")),
+        )
         chat = _msg(-100200, "supergroup", "x").chat
         reply_bot = _mk_reply(chat, "câu trả lời", "FuckingCoolAIbot")
-        check("reply tin bot kích hoạt",
-              await trig(_msg(-100200, "supergroup", "tiếp theo?", reply_to=reply_bot)))
+        check(
+            "reply tin bot kích hoạt",
+            await trig(_msg(-100200, "supergroup", "tiếp theo?", reply_to=reply_bot)),
+        )
         chat2 = _msg(-100200, "supergroup", "x").chat
         # reply tin của người khác, không mention -> không trigger
         m_other = _mk_reply(chat2, "tin thành viên", "some_user")
@@ -189,7 +415,13 @@ def t_e2e_handlers():
     print("== E2E handlers (feed_update + fake session) ==")
     from aiogram import Bot, Dispatcher
     from aiogram.types import (
-        Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, Update, User,
+        Chat,
+        ChatMemberLeft,
+        ChatMemberMember,
+        ChatMemberUpdated,
+        Message,
+        Update,
+        User,
     )
 
     from app.config import Settings
@@ -205,6 +437,8 @@ def t_e2e_handlers():
 
         async def ask(self, question, history=None, quoted=None):
             self.received.append({"q": question, "quoted": quoted})
+            if question == "LONGTEXT":
+                return Answer(text="y" * 8000, provider="gemini", searched=False, sources=[])
             txt = f"TRẢ LỜI: {question[:30]}"
             if quoted:
                 txt += f" [đã đọc tin reply: {quoted[:30]}]"
@@ -244,9 +478,13 @@ def t_e2e_handlers():
         up = mk_update(-100200, "supergroup", "giá vàng @FuckingCoolAIbot?", update_id=2)
         await dp.feed_update(bot, up)
         sent = [c for c in session.calls if c[0] == "SendMessage"]
-        check("E2E: mention trả lời", any("TRẢ LỜI: giá vàng" in c[1].get("text", "") for c in sent))
-        check("E2E: memory đã lưu câu hỏi",
-              memory.history_for(-100200) and memory.history_for(-100200)[-1]["role"] == "assistant")
+        check(
+            "E2E: mention trả lời", any("TRẢ LỜI: giá vàng" in c[1].get("text", "") for c in sent)
+        )
+        check(
+            "E2E: memory đã lưu câu hỏi",
+            memory.history_for(-100200) and memory.history_for(-100200)[-1]["role"] == "assistant",
+        )
 
         # 3) group KHÔNG được phép -> im lặng hoàn toàn
         session.calls.clear()
@@ -268,15 +506,19 @@ def t_e2e_handlers():
         await dp.feed_update(bot, up)
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         reply_texts = [c[1].get("text", "") for c in sent]
-        check("E2E: reply tin bot đọc ngữ cảnh",
-              any("đã đọc tin reply: nội dung cũ của bot" in t for t in reply_texts),
-              str(reply_texts[:1]))
+        check(
+            "E2E: reply tin bot đọc ngữ cảnh",
+            any("đã đọc tin reply: nội dung cũ của bot" in t for t in reply_texts),
+            str(reply_texts[:1]),
+        )
 
         # 6) /status của admin
         session.calls.clear()
         chat = Chat(id=-100200, type="supergroup", title="G")
         admin_msg = Message(
-            message_id=20, date=datetime.now(timezone.utc), chat=chat,
+            message_id=20,
+            date=datetime.now(timezone.utc),
+            chat=chat,
             from_user=User(id=42, is_bot=False, first_name="Admin"),
             text="/status",
         )
@@ -299,8 +541,11 @@ def t_e2e_handlers():
         )
         await dp.feed_update(bot, Update(update_id=7, my_chat_member=upd))
         leaves = [c for c in session.calls if c[0] == "LeaveChat"]
-        check("E2E: tự rời group lạ", len(leaves) == 1 and leaves[0][1].get("chat_id") == -777,
-              str(leaves))
+        check(
+            "E2E: tự rời group lạ",
+            len(leaves) == 1 and leaves[0][1].get("chat_id") == -777,
+            str(leaves),
+        )
 
         # 8) lifecycle: bot thêm vào group ĐÚNG allowlist -> không rời
         session.calls.clear()
@@ -308,14 +553,168 @@ def t_e2e_handlers():
             chat=Chat(id=-100200, type="supergroup", title="Group Đúng"),
             from_user=User(id=9, is_bot=False, first_name="X"),
             date=datetime.now(timezone.utc),
-            old_chat_member=ChatMemberLeft(
-                user=User(id=99, is_bot=True, first_name="Bot")),
-            new_chat_member=ChatMemberMember(
-                user=User(id=99, is_bot=True, first_name="Bot")),
+            old_chat_member=ChatMemberLeft(user=User(id=99, is_bot=True, first_name="Bot")),
+            new_chat_member=ChatMemberMember(user=User(id=99, is_bot=True, first_name="Bot")),
         )
         await dp.feed_update(bot, Update(update_id=8, my_chat_member=upd2))
-        check("E2E: group đúng không bị rời",
-              not any(c[0] == "LeaveChat" for c in session.calls), str(session.calls))
+        check(
+            "E2E: group đúng không bị rời",
+            not any(c[0] == "LeaveChat" for c in session.calls),
+            str(session.calls),
+        )
+
+        # 9) /ask kèm câu hỏi -> orchestrator nhận đúng câu hỏi
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "/ask thời tiết hôm nay?", update_id=9)
+        await dp.feed_update(bot, up)
+        check(
+            "E2E: /ask có args",
+            bool(orch.received) and orch.received[-1]["q"] == "thời tiết hôm nay?",
+            str(orch.received),
+        )
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: /ask trả lời", any("TRẢ LỜI: thời tiết" in c[1].get("text", "") for c in sent))
+
+        # 10) /ask không có câu hỏi -> nhắc cách dùng
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "/ask", update_id=10)
+        await dp.feed_update(bot, up)
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: /ask trống -> hướng dẫn", any("hỏi gì" in c[1].get("text", "") for c in sent))
+        check("E2E: /ask trống không gọi orchestrator", not orch.received)
+
+        # 11) /ask@TenBot (mention đúng bot) vẫn chạy
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "/ask@FuckingCoolAIbot giá vàng?", update_id=11)
+        await dp.feed_update(bot, up)
+        check(
+            "E2E: /ask@Bot đúng mention",
+            bool(orch.received) and orch.received[-1]["q"] == "giá vàng?",
+            str(orch.received),
+        )
+
+        # 12) /ask@BotKhác -> phải IM LẶNG (không trả lời lệnh của bot khác)
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "/ask@SomeOtherBot xin chào", update_id=12)
+        await dp.feed_update(bot, up)
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check(
+            "E2E: /ask@bot khác im lặng",
+            not sent and not orch.received,
+            str([c[0] for c in session.calls]),
+        )
+
+        # 13) /status của người KHÔNG phải admin -> im lặng
+        session.calls.clear()
+        non_admin = Message(
+            message_id=21,
+            date=datetime.now(timezone.utc),
+            chat=Chat(id=-100200, type="supergroup", title="G"),
+            from_user=User(id=1, is_bot=False, first_name="Member"),
+            text="/status",
+        )
+        await dp.feed_update(bot, Update(update_id=13, message=non_admin))
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: /status non-admin im lặng", not sent, str(session.calls))
+
+        # 14) handle dài hơn username bot (@FuckingCoolAIbotXYZ) -> KHÔNG trigger
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "này @FuckingCoolAIbotXYZ là ai?", update_id=14)
+        await dp.feed_update(bot, up)
+        check(
+            "E2E: handle dài hơn không trigger",
+            not orch.received and not any(c[0] == "SendMessage" for c in session.calls),
+            str([c[0] for c in session.calls]),
+        )
+
+        # 15) lifecycle + LEARN_GROUP_ID_MODE=1: group lạ -> log, KHÔNG tự rời
+        s_learn = Settings(learn_group_id_mode=True)
+        session3 = FakeTelegramSession()
+        bot3 = Bot(token="123:test", session=session3)
+        dp3 = Dispatcher()
+        dp3.include_router(build_lifecycle_router(s_learn))
+        upd3 = ChatMemberUpdated(
+            chat=Chat(id=-666, type="supergroup", title="Group Học ID"),
+            from_user=User(id=9, is_bot=False, first_name="X"),
+            date=datetime.now(timezone.utc),
+            old_chat_member=ChatMemberLeft(user=User(id=99, is_bot=True, first_name="Bot")),
+            new_chat_member=ChatMemberMember(user=User(id=99, is_bot=True, first_name="Bot")),
+        )
+        await dp3.feed_update(bot3, Update(update_id=15, my_chat_member=upd3))
+        check(
+            "E2E: learn-mode không rời group lạ",
+            not any(c[0] == "LeaveChat" for c in session3.calls),
+            str(session3.calls),
+        )
+        await session3.close()
+
+        # 16) lifecycle: bot bị thêm vào CHANNEL lạ -> tự rời luôn
+        session.calls.clear()
+        upd4 = ChatMemberUpdated(
+            chat=Chat(id=-888, type="channel", title="Kênh Lạ"),
+            from_user=User(id=9, is_bot=False, first_name="X"),
+            date=datetime.now(timezone.utc),
+            old_chat_member=ChatMemberLeft(user=User(id=99, is_bot=True, first_name="Bot")),
+            new_chat_member=ChatMemberMember(user=User(id=99, is_bot=True, first_name="Bot")),
+        )
+        await dp.feed_update(bot, Update(update_id=16, my_chat_member=upd4))
+        leaves = [c for c in session.calls if c[0] == "LeaveChat"]
+        check(
+            "E2E: tự rời channel lạ",
+            len(leaves) == 1 and leaves[0][1].get("chat_id") == -888,
+            str(leaves),
+        )
+
+        # 17) mention trong CAPTION (tin kèm ảnh) -> vẫn hỏi được, mention bị strip
+        session.calls.clear()
+        orch.received.clear()
+        cap_msg = Message(
+            message_id=30,
+            date=datetime.now(timezone.utc),
+            chat=Chat(id=-100200, type="supergroup", title="G"),
+            from_user=User(id=1, is_bot=False, first_name="A"),
+            text=None,
+            caption="bức ảnh này chụp ở đâu @FuckingCoolAIbot?",
+        )
+        await dp.feed_update(bot, Update(update_id=17, message=cap_msg))
+        check(
+            "E2E: mention trong caption trả lời",
+            bool(orch.received) and orch.received[-1]["q"] == "bức ảnh này chụp ở đâu",
+            str(orch.received),
+        )
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: caption có tin trả lời", any("TRẢ LỜI:" in c[1].get("text", "") for c in sent))
+
+        # 18) group bật Topics + câu trả lời dài -> các phần gửi tiếp phải kèm
+        # message_thread_id của topic gốc (không rơi vào General)
+        session.calls.clear()
+        orch.received.clear()
+        topic_msg = Message(
+            message_id=31,
+            date=datetime.now(timezone.utc),
+            chat=Chat(id=-100200, type="supergroup", title="G"),
+            from_user=User(id=1, is_bot=False, first_name="A"),
+            text="LONGTEXT @FuckingCoolAIbot",
+            message_thread_id=555,
+        )
+        await dp.feed_update(bot, Update(update_id=18, message=topic_msg))
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        extra_parts = [c for c in sent if c[1].get("message_thread_id") == 555]
+        check(
+            "E2E: topic — trả lời dài cắt nhiều phần",
+            len(extra_parts) >= 1 and len(sent) >= 2,
+            str(len(sent)),
+        )
+        # phần đầu là reply (aiogram tự giữ topic), phần sau phải có thread id
+        check(
+            "E2E: topic — mọi phần sau đều có message_thread_id",
+            all(c[1].get("message_thread_id") == 555 for c in extra_parts),
+        )
 
         await session.close()
 
@@ -325,7 +724,7 @@ def t_e2e_handlers():
 # ----------------------------------------------------------------------
 def t_ai_router_mock():
     print("== AI router (mock OpenAI server) ==")
-    STATE = {"gemini": 0, "groq": 0, "plain": 0}
+    STATE = {"gemini": 0, "groq": 0, "plain": 0, "loop_n": 0, "loop_with_tools": []}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # noqa: D401
@@ -350,25 +749,68 @@ def t_ai_router_mock():
             if model == "no-tools":
                 if tools:
                     return self._send(
-                        {"error": {"message": "does not support function calling"}}, 400)
+                        {"error": {"message": "does not support function calling"}}, 400
+                    )
                 STATE["plain"] += 1
                 return self._send({"choices": [{"message": {"content": "plain answer"}}]})
+            if model == "loop-tools":
+                # model "kẹt vòng lặp": có tools thì gọi mãi, không tools mới trả lời
+                STATE["loop_n"] += 1
+                STATE["loop_with_tools"].append(tools)
+                if tools:
+                    return self._send(
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": None,
+                                        "tool_calls": [
+                                            {
+                                                "id": "c1",
+                                                "type": "function",
+                                                "function": {
+                                                    "name": "web_search",
+                                                    "arguments": '{"query":"x"}',
+                                                },
+                                            }
+                                        ],
+                                    }
+                                }
+                            ]
+                        }
+                    )
+                return self._send({"choices": [{"message": {"content": "loop-plain-answer"}}]})
             # model tool-user
             STATE["groq"] += 1
             last = req["messages"][-1]
             if last["role"] == "user":
-                return self._send({
-                    "choices": [{"message": {
-                        "content": None,
-                        "tool_calls": [{
-                            "id": "c1", "type": "function",
-                            "function": {"name": "web_search", "arguments": '{"query":"x"}'},
-                        }],
-                    }}]
-                })
+                return self._send(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": "c1",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "web_search",
+                                                "arguments": '{"query":"x"}',
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    }
+                )
             if last["role"] == "tool":
-                check("mock: tool result truyền lại model",
-                      "Kết quả" in last.get("content", ""), last.get("content", "")[:60])
+                check(
+                    "mock: tool result truyền lại model",
+                    "Kết quả" in last.get("content", ""),
+                    last.get("content", "")[:60],
+                )
                 return self._send({"choices": [{"message": {"content": "FINAL"}}]})
             return self._send({"choices": [{"message": {"content": "other"}}]})
 
@@ -380,36 +822,72 @@ def t_ai_router_mock():
         from app.ai.router import AIProviderRouter
 
         base = f"http://127.0.0.1:{port}"
-        tools = [{"type": "function", "function": {"name": "web_search",
-                                                   "parameters": {"type": "object"}}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "web_search", "parameters": {"type": "object"}},
+            }
+        ]
 
         async def ex(name, args):
             return "Kết quả tìm kiếm: 1. A"
 
         async def run():
             # fallback 429 -> tool-loop -> FINAL
-            r1 = AIProviderRouter([
-                OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5),
-                OpenAICompatProvider("groq", base, "k", "tool-user", timeout=5),
-            ])
+            r1 = AIProviderRouter(
+                [
+                    OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5),
+                    OpenAICompatProvider("groq", base, "k", "tool-user", timeout=5),
+                ]
+            )
             text, prov = await r1.complete([{"role": "user", "content": "hi"}], tools, ex)
-            check("fallback 429->groq + tool loop", text == "FINAL" and prov == "groq",
-                  f"{text}/{prov}")
+            check(
+                "fallback 429->groq + tool loop",
+                text == "FINAL" and prov == "groq",
+                f"{text}/{prov}",
+            )
 
-            # provider không hỗ trợ tools -> retry plain
-            r2 = AIProviderRouter([
-                OpenAICompatProvider("nt", base, "k", "no-tools", timeout=5)])
+            # provider không hỗ trợ tools -> retry plain, và bị tắt tools VĨNH VIỄN
+            p_nt = OpenAICompatProvider("nt", base, "k", "no-tools", timeout=5)
+            r2 = AIProviderRouter([p_nt])
             text2, prov2 = await r2.complete([{"role": "user", "content": "hi"}], tools, ex)
             check("retry không tools", text2 == "plain answer")
+            check("provider không tools bị tắt vĩnh viễn", p_nt.supports_tools is False)
 
             # tất cả 429 -> AllProvidersFailed
-            r3 = AIProviderRouter([
-                OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5)])
+            r3 = AIProviderRouter([OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5)])
             try:
                 await r3.complete([{"role": "user", "content": "hi"}], tools, ex)
                 check("AllProvidersFailed ném", False)
             except AllProvidersFailed:
                 check("AllProvidersFailed ném", True)
+
+            # model kẹt vòng lặp gọi tool: đúng max_tool_rounds lượt thực thi,
+            # sau đó retry KHÔNG tools (1 lần) và KHÔNG tắt tools vĩnh viễn
+            STATE["loop_n"] = 0
+            STATE["loop_with_tools"] = []
+            p_loop = OpenAICompatProvider("loop", base, "k", "loop-tools", timeout=5)
+            r4 = AIProviderRouter([p_loop], max_tool_rounds=2)
+            text4, prov4 = await r4.complete([{"role": "user", "content": "hi"}], tools, ex)
+            # 3 lượt gọi có tools (vòng 0,1,2 — vòng 2 dừng trước khi thực thi lượt 3)
+            # + 1 lượt retry không tools = 4 request
+            check(
+                "tool-loop: retry không tools sau khi đủ vòng",
+                text4 == "loop-plain-answer" and prov4 == "loop" and STATE["loop_n"] == 4,
+                f"{text4} n={STATE['loop_n']}",
+            )
+            check(
+                "tool-loop: supports_tools vẫn True (chỉ retry 1 lần)",
+                p_loop.supports_tools is True,
+            )
+            # request cuối cùng (retry) không kèm tools
+            check(
+                "tool-loop: request retry không có tools",
+                STATE["loop_with_tools"]
+                and STATE["loop_with_tools"][-1] is False
+                and STATE["loop_with_tools"][0] is not False,
+                str(STATE["loop_with_tools"]),
+            )
 
         asyncio.run(run())
     finally:
@@ -420,6 +898,8 @@ if __name__ == "__main__":
     t_config_formatting()
     t_core()
     t_reader_guard()
+    t_reader_dns_rebinding()
+    t_reader_fetch()
     t_filters()
     t_e2e_handlers()
     t_ai_router_mock()

@@ -1,8 +1,17 @@
 """Thống kê vận hành đơn giản (phục vụ /status)."""
+
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+
+# Container chạy mặc định UTC — "hôm nay" tính theo giờ Việt Nam (UTC+7) cho
+# đồng nhất với mốc thời gian mà model được cung cấp trong prompt.
+_VN_TZ = timezone(timedelta(hours=7))
+
+
+def _today_vn() -> date:
+    return datetime.now(_VN_TZ).date()
 
 
 class Stats:
@@ -11,7 +20,7 @@ class Stats:
         self.questions_total = 0
         self.questions_today = 0
         self.searches = 0
-        self._day = date.today()
+        self._day = _today_vn()
         self.by_provider: Counter[str] = Counter()
         self.last_provider: str | None = None
         self.last_error: str | None = None
@@ -36,7 +45,7 @@ class Stats:
             self.fallback_count += 1
 
     def _roll_day(self) -> None:
-        today = date.today()
+        today = _today_vn()
         if today != self._day:
             self._day = today
             self.questions_today = 0

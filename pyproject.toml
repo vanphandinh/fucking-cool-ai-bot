@@ -1,0 +1,9 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "venv", "build", "dist"]
+
+[tool.ruff.lint]
+# Chuẩn repo: lỗi logic (F = pyflakes) + lỗi style cơ bản (E4/E7/E9) + độ dài dòng.
+# Các rule nâng cao (UP/BLE/DTZ/PIE...) cố ý KHÔNG bật để tránh nhiễu.
+select = ["E4", "E7", "E9", "E501", "F"]

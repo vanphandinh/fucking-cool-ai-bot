@@ -1,11 +1,12 @@
 """Handlers tin nhắn + lifecycle (tự rời group lạ)."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 
 from aiogram import Bot, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import ChatMemberUpdated, Message
 
 from ..config import Settings
@@ -22,7 +23,8 @@ _HELP_TEXT = (
     "🤖 Mình là trợ lý AI của group (chạy bằng AI miễn phí + tìm kiếm web).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi, ví dụ: @{bot} giải thích blockchain là gì?\n"
-    "- Hoặc reply vào tin của mình (hoặc tin của thành viên khác) và tag @{bot} để hỏi tiếp theo ngữ cảnh.\n"
+    "- Hoặc reply vào tin của mình (hoặc tin của thành viên khác) và tag @{bot}\n"
+    "  để hỏi tiếp theo ngữ cảnh.\n"
     "- Lệnh: /ask <câu hỏi>, /help, /status (admin).\n\n"
     "Mẹo:\n"
     "- Hỏi tiếng Việt, mình trả lời tiếng Việt.\n"
@@ -58,24 +60,31 @@ def build_message_router(
     router.message.filter(AllowedChat(settings))
     chat_locks = _ChatLocks()
 
-    @router.message(Command("help", "start", ignore_mention=True))
+    # ignore_mention mặc định False: "/help@BotKhác" sẽ bị aiogram từ chối
+    # (mention không khớp username bot), tránh trả lời lệnh nhắm bot khác.
+    @router.message(Command("help", "start"))
     async def help_handler(message: Message) -> None:
         await message.reply(
-            _HELP_TEXT.format(bot=settings.bot_username, limit=settings.max_questions_per_min_per_user)
+            _HELP_TEXT.format(
+                bot=settings.bot_username,
+                limit=settings.max_questions_per_min_per_user,
+            )
         )
 
-    @router.message(Command("status", ignore_mention=True))
+    @router.message(Command("status"))
     async def status_handler(message: Message) -> None:
         if message.from_user and message.from_user.id not in settings.admin_ids_list:
             return  # im lặng với người không phải admin
+        allowed_text = settings.allowed_group_ids_list or "TRỐNG"
         lines = [
             "📊 Trạng thái bot",
-            f"- Chat hiện tại: {message.chat.id} (cho phép: {settings.allowed_group_ids_list or 'TRỐNG'})",
+            f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.questions_today})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
-            "- Phân bổ: " + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
+            "- Phân bổ: "
+            + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
             f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
             f"- Cấu hình AI: {', '.join(settings.configured_provider_names) or 'CHƯA CÓ KEY'}",
@@ -83,17 +92,25 @@ def build_message_router(
         ]
         await message.reply("\n".join(lines))
 
-    @router.message(Command("ask", ignore_mention=True))
-    async def ask_command(message: Message) -> None:
-        question = _strip_command_args(message.text or message.caption or "", "ask")
+    @router.message(Command("ask"))
+    async def ask_command(message: Message, command: CommandObject) -> None:
+        question = (command.args or "").strip()
         if not question:
             await message.reply(
                 "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
             )
             return
-        await _handle_question(message, question, quoted=None, settings=settings,
-                               orchestrator=orchestrator, memory=memory,
-                               limiter=limiter, stats=stats, chat_locks=chat_locks)
+        await _handle_question(
+            message,
+            question,
+            quoted=None,
+            settings=settings,
+            orchestrator=orchestrator,
+            memory=memory,
+            limiter=limiter,
+            stats=stats,
+            chat_locks=chat_locks,
+        )
 
     @router.message(TriggeredMessage(settings))
     async def triggered_message(message: Message) -> None:
@@ -106,9 +123,17 @@ def build_message_router(
         if not question:
             await message.reply("Mình đây! Bạn muốn hỏi gì? 🤔")
             return
-        await _handle_question(message, question, quoted=quoted, settings=settings,
-                               orchestrator=orchestrator, memory=memory,
-                               limiter=limiter, stats=stats, chat_locks=chat_locks)
+        await _handle_question(
+            message,
+            question,
+            quoted=quoted,
+            settings=settings,
+            orchestrator=orchestrator,
+            memory=memory,
+            limiter=limiter,
+            stats=stats,
+            chat_locks=chat_locks,
+        )
 
     return router
 
@@ -154,8 +179,12 @@ def build_lifecycle_router(settings: Settings) -> Router:
 
         try:
             await bot.leave_chat(chat_id)
-            logger.info("Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s type=%s",
-                        chat_id, title, update.chat.type)
+            logger.info(
+                "Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s type=%s",
+                chat_id,
+                title,
+                update.chat.type,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Không tự rời chat %s được: %s", chat_id, exc)
 
@@ -199,7 +228,8 @@ async def _handle_question(
                 "Bạn thử lại sau vài phút nhé."
             )
             return
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            stats.record_error(str(exc))
             logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
             await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
             return
@@ -229,25 +259,16 @@ async def _handle_question(
         try:
             first = parts[0]
             await message.reply(first)
+            # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
+            # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
+            extra_kwargs = {}
+            if message.message_thread_id:
+                extra_kwargs["message_thread_id"] = message.message_thread_id
             for part in parts[1:]:
-                await bot.send_message(chat_id=chat_id, text=part)
+                await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                 await asyncio.sleep(0.15)
         except Exception:  # noqa: BLE001
             logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
-
-
-def _strip_command_args(text: str, command_name: str) -> str:
-    """Lấy phần sau /ask (hỗ trợ /ask@Bot)."""
-    body = text
-    rest = ""
-    if " " in body:
-        body, rest = body.split(" ", 1)
-    token = body[1:]  # bỏ dấu '/'
-    if "@" in token:
-        token = token.split("@", 1)[0]
-    if token.lower() != command_name.lower():
-        return ""
-    return (rest or "").strip()
 
 
 async def _typing_loop(bot: Bot, chat_id: int) -> None:

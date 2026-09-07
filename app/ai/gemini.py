@@ -1,4 +1,5 @@
 """Provider Google Gemini qua endpoint OpenAI-compatible (miễn phí)."""
+
 from __future__ import annotations
 
 from ..config import Settings

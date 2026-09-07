@@ -1,4 +1,5 @@
 """Backend SearXNG tự host — gọi JSON API (gom nhiều engine, có Google)."""
+
 from __future__ import annotations
 
 import logging

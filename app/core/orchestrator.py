@@ -1,12 +1,10 @@
 """Orchestrator: prompt hệ thống + tool-calling + kết nối AI & search."""
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-
-# Giờ Việt Nam (UTC+7) — container chạy mặc định UTC nên không dùng date.today()
-_VN_TZ = timezone(timedelta(hours=7))
 
 from ..ai.base import AllProvidersFailed
 from ..ai.router import AIProviderRouter
@@ -15,6 +13,9 @@ from ..search import service as search_service
 from ..search.reader import read_page, validate_public_url
 
 logger = logging.getLogger(__name__)
+
+# Giờ Việt Nam (UTC+7) — container chạy mặc định UTC nên không dùng date.today()
+_VN_TZ = timezone(timedelta(hours=7))
 
 TOOLS: list[dict] = [
     {
@@ -110,11 +111,9 @@ class Orchestrator:
         quoted: str | None = None,
     ) -> Answer:
         messages: list[dict] = [{"role": "system", "content": self.system_prompt()}]
-        for entry in (history or [])[- (self.settings.max_context_turns * 2):]:
+        for entry in (history or [])[-(self.settings.max_context_turns * 2) :]:
             if entry.get("role") in ("user", "assistant") and entry.get("content"):
-                messages.append(
-                    {"role": entry["role"], "content": (entry["content"] or "")[:2000]}
-                )
+                messages.append({"role": entry["role"], "content": (entry["content"] or "")[:2000]})
 
         user_parts: list[str] = []
         if quoted:

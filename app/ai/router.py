@@ -1,4 +1,5 @@
 """Router AI: chạy vòng tool-calling + tự fallback giữa các provider."""
+
 from __future__ import annotations
 
 import logging
@@ -39,22 +40,25 @@ class AIProviderRouter:
         last_error: ProviderError | None = None
 
         for provider in self.providers:
-            # pass 0: có tools; nếu provider báo không hỗ trợ tools -> pass 1 không tools
+            # pass 0: có tools; pass 1 (chỉ khi pass 0 lỗi vì tools): không kèm tools
             for pass_no in (0, 1):
-                if pass_no == 1 and not last_error:
-                    break  # pass 0 không lỗi liên quan tools thì không cần pass 1
                 local_msgs = deepcopy(messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
                 try:
-                    text, _ = await self._complete_with_provider(
+                    text = await self._complete_with_provider(
                         provider, local_msgs, use_tools, tool_executor
                     )
                     return text, provider.name
                 except ProviderError as exc:
                     last_error = exc
                     if exc.unsupported_tools and provider.supports_tools:
+                        # Model không hỗ trợ tool-calling -> tắt vĩnh viễn rồi thử lại
                         provider.supports_tools = False
-                        continue  # thử lại cùng provider, không kèm tools
+                        continue
+                    if exc.retry_without_tools:
+                        # Lỗi chỉ xảy ra khi tool-calling (vd kẹt vòng lặp gọi tool):
+                        # thử lại 1 lần không kèm tools, vẫn giữ nguyên supports_tools
+                        continue
                     break  # lỗi khác -> chuyển provider kế tiếp
                 except Exception as exc:  # lỗi không lường trước -> coi như hỏng provider này
                     last_error = ProviderError(f"{provider.name}: {exc}")
@@ -68,14 +72,22 @@ class AIProviderRouter:
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
-    ) -> tuple[str, bool]:
+    ) -> str:
+        # Vòng 0 là lượt trả lời đầu tiên; mỗi vòng sau tương ứng 1 lượt thực thi
+        # tool-call. Cho phép tối đa max_tool_rounds lượt thực thi tool.
         for _round in range(self.max_tool_rounds + 1):
             resp = await provider.chat(messages, tools)
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
                 if not text:
                     raise ProviderError(f"{provider.name}: model trả về nội dung rỗng")
-                return text, False
+                return text
+            if _round >= self.max_tool_rounds:
+                raise ProviderError(
+                    f"{provider.name}: model gọi tool quá {self.max_tool_rounds} "
+                    "vòng — dừng để tránh kẹt vòng lặp",
+                    retry_without_tools=True,
+                )
 
             # Thực thi tool-calls
             messages.append(_assistant_tool_message(resp))
@@ -84,11 +96,10 @@ class AIProviderRouter:
                     output = await tool_executor(tc.name, tc.arguments)
                 except Exception as exc:  # noqa: BLE001 — lỗi tool không được làm sập bot
                     output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
-                messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": output[:6000]}
-                )
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": output[:6000]})
 
-        raise ProviderError(f"{provider.name}: vượt quá {self.max_tool_rounds} vòng gọi tool")
+        # Không thể chạm tới — vòng lặp luôn return/raise phía trên.
+        raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")
 
 
 def _assistant_tool_message(resp: ChatResponse) -> dict:

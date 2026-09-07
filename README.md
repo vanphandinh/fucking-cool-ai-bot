@@ -174,11 +174,16 @@ Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KH
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/run_tests.py     # kỳ vọng: N passed, 0 failed
+.venv/bin/python tests/run_tests.py     # kỳ vọng: 97 passed, 0 failed
 ```
 
 Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·
-guard chống SSRF · **E2E handlers qua `Dispatcher.feed_update`** (fake Telegram
-session: /help, mention, reply-tin-bot, group lạ/private im lặng, tự rời group
-lạ qua `my_chat_member`) · **AI router** với mock OpenAI server (fallback 429,
-tool-calling loop, retry-không-tools, AllProvidersFailed).
+guard chống SSRF (IP literal nội bộ, dạng viết tắt `127.1`/`2130706433`/`0x7f…`,
+IPv6 zone index & IPv4-mapped, DNS-rebinding/`nip.io`, IP pinning — resolve trước
+và chỉ kết nối IP công khai, kiểm tra lại từng chặng redirect, giới hạn dung
+lượng trang) · **E2E handlers qua `Dispatcher.feed_update`** (fake Telegram
+session: /help, /ask, /ask@bot đúng/sai mention, mention trong caption,
+reply-tin-bot, group lạ/private im lặng, non-admin /status im lặng, tự rời
+group/channel lạ qua `my_chat_member`, learn-mode không rời) · **AI router** với
+mock OpenAI server (fallback 429, tool-calling loop, retry-không-tools, tool-loop
+kẹt vòng tự retry không-tools đúng giới hạn, AllProvidersFailed).
