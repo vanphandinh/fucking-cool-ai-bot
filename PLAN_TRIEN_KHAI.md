@@ -2,6 +2,7 @@
 
 > **Trạng thái:** Kế hoạch đã được chốt theo các quyết định ở mục 0 & 16.
 > ✅ **Triển khai code Phase P1–P2 đã hoàn tất (2026-09-07)** — cấu trúc repo theo mục 6, chạy bằng `docker compose up -d --build` (xem README.md).
+> ✅ **Audit toàn diện đã thực hiện (2026-09-07)** — sửa lỗi nghiêm trọng (my_chat_member, caption, username động, đóng tài nguyên, SSRF guard…) + 39/39 kiểm thử tự động offline (`python tests/run_tests.py`).
 > ⏳ **Còn lại:** cấu hình `.env` trên VPS + chạy thử nghiệm theo checklist mục 15.
 
 ---

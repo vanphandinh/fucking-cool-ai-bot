@@ -1,16 +1,18 @@
 """Orchestrator: prompt hệ thống + tool-calling + kết nối AI & search."""
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import datetime, timedelta, timezone
+
+# Giờ Việt Nam (UTC+7) — container chạy mặc định UTC nên không dùng date.today()
+_VN_TZ = timezone(timedelta(hours=7))
 
 from ..ai.base import AllProvidersFailed
 from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import service as search_service
-from ..search.reader import read_page
+from ..search.reader import read_page, validate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -68,19 +70,18 @@ class Answer:
 
 
 class Orchestrator:
-    def __init__(
-        self,
-        settings: Settings,
-        router: AIProviderRouter,
-        bot_display_name: str,
-    ) -> None:
+    def __init__(self, settings: Settings, router: AIProviderRouter) -> None:
         self.settings = settings
         self.router = router
-        self.bot_display_name = bot_display_name
 
     # ---------- Prompt ----------
+    @property
+    def bot_display_name(self) -> str:
+        name = (self.settings.bot_username or "").strip().lstrip("@")
+        return f"@{name}" if name else "(trợ lý AI)"
+
     def system_prompt(self) -> str:
-        today = date.today().isoformat()
+        today = datetime.now(_VN_TZ).date().isoformat()
         return (
             f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một group "
             "Telegram riêng tư gồm vài chục người Việt.\n"
@@ -136,17 +137,18 @@ class Orchestrator:
                 return _format_search_results(q, results)
             if name == "fetch_url":
                 url = str(args.get("url") or "").strip()
-                if not url.startswith(("http://", "https://")):
-                    return "URL không hợp lệ."
+                reason = validate_public_url(url)
+                if reason:
+                    return f"Không thể tải trang: {reason}"
                 text = await read_page(url, timeout=self.settings.request_timeout_sec)
                 return f"Nội dung trang {url}:\n{text}"
             return f"Tool '{name}' không tồn tại."
 
         try:
             text, provider = await self.router.complete(messages, TOOLS, tool_executor)
-        except AllProvidersFailed as exc:
+        except AllProvidersFailed:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — mọi lỗi lạ đều quy về AllProvidersFailed
             logger.exception("Lỗi orchestrator")
             raise AllProvidersFailed(str(exc)) from exc
 
@@ -181,7 +183,3 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
         if len(out) >= 8:
             break
     return out
-
-
-def tools_json() -> str:
-    return json.dumps(TOOLS, ensure_ascii=False)

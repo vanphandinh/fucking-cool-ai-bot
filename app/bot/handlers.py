@@ -58,23 +58,24 @@ def build_message_router(
     router.message.filter(AllowedChat(settings))
     chat_locks = _ChatLocks()
 
-    @router.message(Command("help", "start"))
+    @router.message(Command("help", "start", ignore_mention=True))
     async def help_handler(message: Message) -> None:
         await message.reply(
             _HELP_TEXT.format(bot=settings.bot_username, limit=settings.max_questions_per_min_per_user)
         )
 
-    @router.message(Command("status"))
+    @router.message(Command("status", ignore_mention=True))
     async def status_handler(message: Message) -> None:
         if message.from_user and message.from_user.id not in settings.admin_ids_list:
             return  # im lặng với người không phải admin
         lines = [
             "📊 Trạng thái bot",
+            f"- Chat hiện tại: {message.chat.id} (cho phép: {settings.allowed_group_ids_list or 'TRỐNG'})",
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.questions_today})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
-            f"- Phân bổ: " + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
+            "- Phân bổ: " + (", ".join(f"{k}: {v}" for k, v in stats.by_provider.items()) or "chưa có"),
             f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
             f"- Cấu hình AI: {', '.join(settings.configured_provider_names) or 'CHƯA CÓ KEY'}",
@@ -82,12 +83,12 @@ def build_message_router(
         ]
         await message.reply("\n".join(lines))
 
-    @router.message(Command("ask"))
+    @router.message(Command("ask", ignore_mention=True))
     async def ask_command(message: Message) -> None:
-        question = _strip_command_args(message.text or "", "ask")
+        question = _strip_command_args(message.text or message.caption or "", "ask")
         if not question:
             await message.reply(
-                f"Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
+                "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
             )
             return
         await _handle_question(message, question, quoted=None, settings=settings,
@@ -96,7 +97,7 @@ def build_message_router(
 
     @router.message(TriggeredMessage(settings))
     async def triggered_message(message: Message) -> None:
-        text = message.text or ""
+        text = message.text or message.caption or ""
         quoted = None
         replied = message.reply_to_message
         if replied:
@@ -113,38 +114,50 @@ def build_message_router(
 
 
 def build_lifecycle_router(settings: Settings) -> Router:
-    """Xử lý sự kiện bot bị thêm vào chat -> tự rời group không thuộc allowlist."""
+    """Xử lý sự kiện BOT bị thêm vào chat -> tự rời group/channel không thuộc allowlist.
+
+    Lưu ý: sự kiện này đến dưới dạng *my_chat_member* (không phải chat_member —
+    chat_member chỉ gửi cho bot đang làm admin về các thành viên khác).
+    """
     router = Router()
 
-    @router.chat_member()
+    @router.my_chat_member()
     async def on_bot_added(update: ChatMemberUpdated, bot: Bot) -> None:
-        if update.chat.type not in ("group", "supergroup"):
+        if update.chat.type not in ("group", "supergroup", "channel"):
             return
+
+        old_status = update.old_chat_member.status
         new_status = update.new_chat_member.status
-        if new_status not in ("member", "administrator", "restricted"):
-            return  # không phải sự kiện bot được thêm/trở thành thành viên
+        # Chỉ xử lý khi bot vừa CHUYỂN thành thành viên (từ left/kicked sang member).
+        active = ("member", "administrator", "restricted")
+        if new_status not in active:
+            return  # bị kick/gỡ khỏi chat -> không cần hành động
+        if old_status in active:
+            return  # đổi quyền/thông tin, không phải sự kiện "mới được thêm"
 
         chat_id = update.chat.id
         title = update.chat.title or "(không tên)"
         if chat_id in settings.allowed_group_ids_list:
-            logger.info("Bot được thêm vào group allowlist: id=%s title=%s", chat_id, title)
+            logger.info("Bot được thêm vào chat allowlist: id=%s title=%s", chat_id, title)
             return
 
         if settings.learn_group_id_mode:
             logger.warning(
-                "GROUP_ID_LEARN: chat_id=%s title=%s username=%s — KHÔNG rời group vì "
+                "GROUP_ID_LEARN: chat_id=%s title=%s username=%s type=%s — KHÔNG rời chat vì "
                 "LEARN_GROUP_ID_MODE=1. Hãy điền chat_id này vào ALLOWED_GROUP_IDS.",
                 chat_id,
                 title,
                 update.chat.username or "-",
+                update.chat.type,
             )
             return
 
         try:
             await bot.leave_chat(chat_id)
-            logger.info("Đã tự rời group KHÔNG thuộc allowlist: id=%s title=%s", chat_id, title)
+            logger.info("Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s type=%s",
+                        chat_id, title, update.chat.type)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Không tự rời group %s được: %s", chat_id, exc)
+            logger.warning("Không tự rời chat %s được: %s", chat_id, exc)
 
     return router
 
@@ -192,6 +205,7 @@ async def _handle_question(
             return
         finally:
             typing_task.cancel()
+            await asyncio.gather(typing_task, return_exceptions=True)
 
         if not answer.text:
             await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")

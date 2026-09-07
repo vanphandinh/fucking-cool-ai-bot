@@ -11,7 +11,6 @@ from .base import (
     ChatResponse,
     OpenAICompatProvider,
     ProviderError,
-    ToolCall,
 )
 from .gemini import make_gemini_provider
 from .groq import make_groq_provider

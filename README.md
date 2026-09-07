@@ -72,7 +72,7 @@ của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Đi�
 | Biến | Bắt buộc | Ý nghĩa |
 |---|---|---|
 | `BOT_TOKEN` | ✔ | Token từ @BotFather |
-| `BOT_USERNAME` | ✔ | Username bot (mặc định `FuckingCoolAIbot`) |
+| `BOT_USERNAME` | tùy chọn | Username bot — khi khởi động bot **tự lấy từ Telegram** (`getMe`); giá trị này chỉ là fallback |
 | `ALLOWED_GROUP_IDS` | ✔ | Danh sách chat_id group được phép, cách nhau `,` |
 | `ADMIN_IDS` | | user_id admin (dùng `/status`) |
 | `LEARN_GROUP_ID_MODE` | | `1` = học chat_id thay vì tự rời group lạ |
@@ -117,6 +117,11 @@ và đính **📚 Nguồn tham khảo**; câu hỏi khái niệm/tính toán/suy
 
 **Giới hạn an toàn:** chỉ hoạt động trong `ALLOWED_GROUP_IDS` (tự rời group lạ);
 mỗi người ≤ `MAX_QUESTIONS_PER_MIN_PER_USER` câu/phút; câu hỏi > 4.000 ký tự bị cắt.
+Tool đọc web chỉ cho phép URL public (chặn IP nội bộ/localhost — chống SSRF).
+
+> 🔒 **Quyền riêng tư:** nội dung câu hỏi được gửi tới provider AI miễn phí
+> (Gemini/Groq/OpenRouter). Theo điều khoản free tier, dữ liệu **có thể được dùng
+> để huấn luyện model**. Khuyến cáo không hỏi thông tin bí mật/cá nhân trong group.
 
 ---
 
@@ -162,3 +167,18 @@ searxng/settings.example.yml
 ```
 
 Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KHAI.md](PLAN_TRIEN_KHAI.md).
+
+---
+
+## 10. Chạy bộ kiểm thử (audit, offline — không cần mạng/key)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python tests/run_tests.py     # kỳ vọng: N passed, 0 failed
+```
+
+Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·
+guard chống SSRF · **E2E handlers qua `Dispatcher.feed_update`** (fake Telegram
+session: /help, mention, reply-tin-bot, group lạ/private im lặng, tự rời group
+lạ qua `my_chat_member`) · **AI router** với mock OpenAI server (fallback 429,
+tool-calling loop, retry-không-tools, AllProvidersFailed).

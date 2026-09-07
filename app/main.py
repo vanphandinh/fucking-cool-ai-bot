@@ -19,6 +19,14 @@ from .core.stats import Stats
 logger = logging.getLogger(__name__)
 
 
+async def _close_providers(provider_router) -> None:
+    for provider in provider_router.providers:
+        try:
+            await provider.aclose()
+        except Exception:  # noqa: BLE001
+            logger.debug("Đóng provider %s lỗi (bỏ qua)", provider.name)
+
+
 async def _amain(settings: Settings) -> None:
     logging.basicConfig(
         level=settings.log_level.upper(),
@@ -44,7 +52,7 @@ async def _amain(settings: Settings) -> None:
     stats = Stats()
     memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
     limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
-    orchestrator = Orchestrator(settings, provider_router, bot_display_name=settings.bot_username)
+    orchestrator = Orchestrator(settings, provider_router)
 
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
     dp = Dispatcher()
@@ -55,28 +63,34 @@ async def _amain(settings: Settings) -> None:
     try:
         me = await bot.get_me()
         logger.info("Kết nối Telegram OK — bot @%s (%s)", me.username, me.first_name)
+        # Luôn lấy username THẬT từ Telegram làm nguồn chuẩn cho @mention
+        # (BOT_USERNAME trong .env chỉ là fallback, tránh sai typo làm hỏng trigger).
+        settings.bot_username = me.username or settings.bot_username
     except TelegramAPIError as exc:
         logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
         await bot.session.close()
+        await _close_providers(provider_router)
         return
 
     logger.info(
-        "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | Context turns: %s",
+        "Providers: %s | Search: %s | Allowed groups: %s | Admin: %s | Context turns: %s | Learn-mode: %s",
         ", ".join(settings.configured_provider_names) or "-",
         settings.search_backend,
         settings.allowed_group_ids_list or "-",
         settings.admin_ids_list or "-",
         settings.max_context_turns,
+        settings.learn_group_id_mode,
     )
 
     await bot.delete_webhook(drop_pending_updates=True)
     try:
         await dp.start_polling(
             bot,
-            allowed_updates=["message", "chat_member"],
+            allowed_updates=["message", "chat_member", "my_chat_member"],
         )
     finally:
         await bot.session.close()
+        await _close_providers(provider_router)
 
 
 def main() -> None:

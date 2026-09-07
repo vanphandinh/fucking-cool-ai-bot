@@ -1,8 +1,10 @@
 """Đọc nội dung trang web (Jina Reader trước, fallback tự parse HTML)."""
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -15,6 +17,38 @@ _UA = (
 )
 MAX_CHARS = 8000
 _RE_NEWLINES = re.compile(r"\n{3,}")
+
+
+def validate_public_url(url: str) -> str | None:
+    """Kiểm tra URL có an toàn để bot tải không (chống SSRF).
+
+    Trả về None nếu hợp lệ, ngược lại trả về lý do từ chối (tiếng Việt).
+    Chặn: scheme khác http/https, URL có user:pass, host rỗng, localhost,
+    địa chỉ IP private/loopback/link-local/reserved/multicast.
+    """
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return "URL không hợp lệ."
+    if parts.scheme not in ("http", "https"):
+        return "Chỉ cho phép URL http/https."
+    if parts.username or parts.password:
+        return "URL không được chứa thông tin đăng nhập."
+    host = (parts.hostname or "").lower().rstrip(".")
+    if not host:
+        return "URL thiếu tên miền."
+    if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
+        return "Không cho phép tải địa chỉ nội bộ (localhost/.local)."
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast
+    ):
+        return "Không cho phép tải địa chỉ IP nội bộ."
+    return None
 
 
 async def read_page(url: str, timeout: float = 30.0) -> str:

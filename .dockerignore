@@ -1,0 +1,28 @@
+# Secrets & local
+.env
+*.env
+!.env.example
+.venv/
+venv/
+
+# Git / VCS
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Docs/tests không cần trong image
+PLAN_TRIEN_KHAI.md
+README.md
+searxng/
+tests/
