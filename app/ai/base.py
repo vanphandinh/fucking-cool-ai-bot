@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field
 
 import httpx
@@ -16,6 +17,7 @@ _IMAGE_DATA_URL_RE = re.compile(
     r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=_-]+",
     flags=re.IGNORECASE,
 )
+_ASSISTANT_REPLAY_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 
 
 def _safe_error_excerpt(value: object, limit: int) -> str:
@@ -57,12 +59,14 @@ class ToolCall:
     id: str
     name: str
     arguments: dict
+    extra_content: dict | None = None
 
 
 @dataclass
 class ChatResponse:
     content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    assistant_metadata: dict = field(default_factory=dict)
 
 
 class OpenAICompatProvider:
@@ -175,9 +179,26 @@ class OpenAICompatProvider:
                     args = {}
             if not isinstance(args, dict):
                 args = {}
+            extra_content = tc.get("extra_content")
+            if not isinstance(extra_content, dict):
+                extra_content = None
             call_id = str(tc.get("id") or "").strip() or f"call_{uuid.uuid4().hex[:24]}"
-            tool_calls.append(ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args))
-        return ChatResponse(content=content, tool_calls=tool_calls)
+            tool_calls.append(
+                ToolCall(
+                    id=call_id,
+                    name=str(fn.get("name") or ""),
+                    arguments=args,
+                    extra_content=extra_content,
+                )
+            )
+        assistant_metadata = {
+            key: deepcopy(msg[key]) for key in _ASSISTANT_REPLAY_FIELDS if key in msg
+        }
+        return ChatResponse(
+            content=content,
+            tool_calls=tool_calls,
+            assistant_metadata=assistant_metadata,
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -14,6 +14,7 @@ from .base import (
     NoCapableProvider,
     OpenAICompatProvider,
     ProviderError,
+    ToolCall,
 )
 from .capabilities import ProviderCapabilities
 from .cloudflare import make_cloudflare_provider
@@ -24,6 +25,7 @@ from .openrouter import make_openrouter_provider
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
+_PROVIDER_MESSAGE_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 
 
 @dataclass
@@ -110,8 +112,9 @@ class AIProviderRouter:
                 self.last_fallbacks += 1
             attempted += 1
             already_plain = False
+            provider_messages = deepcopy(messages)
             for pass_no in (0, 1):
-                local_msgs = deepcopy(messages)
+                local_msgs = deepcopy(provider_messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
                 if use_tools is None and already_plain:
                     break
@@ -127,8 +130,8 @@ class AIProviderRouter:
                     last_error = exc
                     _record_error(provider, exc)
                     logger.warning("Provider %s lỗi: %s", provider.name, exc)
-                    if len(local_msgs) > len(messages):
-                        messages = local_msgs
+                    if len(local_msgs) > len(provider_messages):
+                        provider_messages = local_msgs
                     if exc.unsupported_tools and provider.supports_tools:
                         provider.supports_tools = False
                         continue
@@ -139,9 +142,10 @@ class AIProviderRouter:
                     last_error = ProviderError(f"{provider.name}: {exc}")
                     _record_error(provider, last_error)
                     logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
-                    if len(local_msgs) > len(messages):
-                        messages = local_msgs
+                    if len(local_msgs) > len(provider_messages):
+                        provider_messages = local_msgs
                     break
+            messages = _portable_messages(provider_messages)
 
         if attempted == 0:
             raise AllProvidersFailed("Các provider phù hợp đang cooldown hoặc unavailable")
@@ -188,19 +192,40 @@ class AIProviderRouter:
         raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")
 
 
+def _tool_call_message(tc: ToolCall) -> dict:
+    out = {
+        "id": tc.id,
+        "type": "function",
+        "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
+    }
+    if tc.extra_content is not None:
+        out["extra_content"] = deepcopy(tc.extra_content)
+    return out
+
+
 def _assistant_tool_message(resp: ChatResponse) -> dict:
-    return {
+    out = {
         "role": "assistant",
         "content": resp.content or "",
-        "tool_calls": [
-            {
-                "id": tc.id,
-                "type": "function",
-                "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
-            }
-            for tc in resp.tool_calls
-        ],
+        "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
     }
+    out.update(deepcopy(resp.assistant_metadata))
+    return out
+
+
+def _portable_messages(messages: list[dict]) -> list[dict]:
+    """Strip provider-specific metadata before cross-provider fallback."""
+    out = deepcopy(messages)
+    for message in out:
+        for field_name in _PROVIDER_MESSAGE_FIELDS:
+            message.pop(field_name, None)
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                tool_call.pop("extra_content", None)
+    return out
 
 
 def _json_dumps(data: dict) -> str:
@@ -212,12 +237,28 @@ def _json_dumps(data: dict) -> str:
 def build_provider_router(settings: Settings) -> AIProviderRouter:
     providers: list[OpenAICompatProvider] = []
 
-    if settings.gemini_api_key:
-        providers.append(make_gemini_provider(settings))
-    if settings.groq_api_key:
-        providers.append(make_groq_provider(settings))
-    if settings.openrouter_api_key:
-        providers.append(make_openrouter_provider(settings))
+    text: dict[str, OpenAICompatProvider] = {}
+    if settings.gemini_api_key and settings.gemini_model:
+        text["gemini"] = make_gemini_provider(settings)
+    if settings.groq_api_key and settings.groq_model:
+        text["groq"] = make_groq_provider(settings)
+    if settings.openrouter_api_key and settings.openrouter_model:
+        text["openrouter"] = make_openrouter_provider(settings)
+    if (
+        settings.cloudflare_account_id
+        and settings.cloudflare_api_token
+        and settings.cloudflare_text_model
+    ):
+        text["cloudflare"] = make_cloudflare_provider(
+            settings,
+            name="cloudflare_text",
+            model=settings.cloudflare_text_model,
+            vision=False,
+        )
+    for slot_name in settings.text_provider_order_list:
+        provider = text.get(slot_name)
+        if provider is not None:
+            providers.append(provider)
 
     if settings.vision_enabled:
         vision: dict[str, OpenAICompatProvider] = {}
@@ -246,7 +287,11 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
                     vision=True,
                     max_images=3,
                 )
-        if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        if (
+            settings.cloudflare_account_id
+            and settings.cloudflare_api_token
+            and settings.cloudflare_vision_model
+        ):
             vision["cloudflare"] = make_cloudflare_provider(settings)
         for slot_name in settings.vision_provider_order_list:
             provider = vision.get(slot_name)

@@ -1,7 +1,7 @@
 # Telegram vision input
 
-Tài liệu này mô tả **đúng flow vision hiện tại trong source**. Vision là route riêng; text request vẫn dùng
-text provider pool cũ và không bị chuyển sang vision slot.
+Tài liệu này mô tả **đúng flow vision hiện tại trong source**. Vision là route riêng; text request dùng
+free-tier-first text provider pool và không bị chuyển sang vision slot.
 
 ## 1. Input được hỗ trợ
 
@@ -80,13 +80,16 @@ thử provider.
 
 ### Text route
 
-Provider được tạo theo key hiện có:
+Text provider được tạo từ credential hiện có rồi xếp theo `TEXT_PROVIDER_ORDER`. Default free-tier-first:
 
 ```text
-Gemini -> Groq -> OpenRouter
+Groq GPT-OSS 120B
+  -> Cloudflare GLM-4.7-Flash
+  -> OpenRouter Free Router
+  -> Gemini 3.8 Flash
 ```
 
-Text request yêu cầu `route="text"`, nên không chạy vào Gemini/Groq vision hoặc Cloudflare vision.
+Text request yêu cầu `route="text"`, nên không chạy vào Gemini/Groq/Cloudflare vision slot.
 
 ### Vision route
 
@@ -97,7 +100,7 @@ Vision slot khả dụng:
 | `gemini` | `GEMINI_API_KEY` + `GEMINI_VISION_MODEL` | `gemini_vision` |
 | `groq_qwen38` | `GROQ_API_KEY` + model thứ 1 trong `GROQ_VISION_MODELS` | `groq_qwen38` |
 | `groq_qwen36` | `GROQ_API_KEY` + model thứ 2 trong `GROQ_VISION_MODELS` | `groq_qwen36` |
-| `cloudflare` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | `cloudflare` |
+| `cloudflare` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` + model | `cloudflare` |
 
 Thứ tự effective lấy từ `VISION_PROVIDER_ORDER`; slot không có credential/model hoặc không nằm trong order
 không được báo là configured/effective.
@@ -109,20 +112,41 @@ VISION_ENABLED=1
 GEMINI_VISION_MODEL=gemini-3.8-flash
 GROQ_VISION_MODELS=qwen/qwen3.8-27b,qwen/qwen3.6-27b
 CLOUDFLARE_VISION_MODEL=@cf/google/gemma-4-26b-a4b-it
-VISION_PROVIDER_ORDER=gemini,groq_qwen38,groq_qwen36,cloudflare
+VISION_PROVIDER_ORDER=groq_qwen38,cloudflare,groq_qwen36,gemini
 MAX_IMAGES_PER_REQUEST=3
 MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
 ```
 
+Default đặt Cloudflare giữa hai Groq vision slot để tăng provider diversity: nếu Groq gặp quota/auth/outage,
+router có cơ hội chuyển sang một provider độc lập trước khi thử Groq model thứ hai. Gemini 3.8 Flash nằm cuối
+để giữ free-tier quota làm lớp dự phòng chất lượng cao.
+
 `VISION_ENABLED=0` không thay đổi text provider pool. Image request khi không còn capable vision provider sẽ
 trả UX “chưa có model đọc ảnh được cấu hình”.
 
-## 5. Tools và fallback
+## 5. Tools, metadata, quota và fallback
 
 Vision completion vẫn được phép dùng cùng `web_search`/`fetch_url` như text completion. System prompt yêu
 cầu tách điều nhìn thấy trong ảnh khỏi dữ liệu tìm trên web và dùng search khi ảnh dẫn tới thông tin cần cập
 nhật ngoài đời.
+
+Các model mới có thể trả metadata bắt buộc phải round-trip qua tool turn. Adapter hiện giữ metadata đó trong
+**cùng provider** rồi loại bỏ trước khi chuyển transcript sang provider khác:
+
+- Gemini 3.x: giữ `tool_calls[].extra_content.google.thought_signature`;
+- OpenRouter/reasoning model: giữ assistant-level `reasoning_details`, `reasoning` hoặc `reasoning_content`;
+- khi fallback sang provider khác, các field provider-specific trên bị strip để tránh provider kế từ chối
+  unknown field.
+
+Free-tier-first defaults dùng `MAX_TOOL_ROUNDS=2` và `MAX_CONTEXT_TURNS=6` để hạn chế số request/token bị đốt
+trên free tier. Router vẫn có safety cap nội bộ tối đa 8 tool calls cho một completion và dùng chung budget
+qua retry/fallback.
+
+**Free-tier-first không đồng nghĩa code có thể bảo đảm chi phí $0.** Bot không biết billing plan của credential.
+Nếu Groq, Cloudflare hoặc Gemini project/account đã ở paid tier thì provider có thể tính phí theo policy của họ.
+Muốn vận hành $0, phải giữ các provider tương ứng trên free tier/quota phù hợp; OpenRouter slot mặc định dùng
+`openrouter/free`.
 
 Provider health/fallback:
 
@@ -130,8 +154,6 @@ Provider health/fallback:
 - `429` → cooldown theo numeric `Retry-After`, nếu không parse được thì 60 giây;
 - network/`5xx` transient → sau 2 lỗi liên tiếp cooldown 30 giây;
 - success → reset transient state/cooldown.
-
-Tool-call budget được dùng chung qua retry/fallback; không reset khi chuyển provider.
 
 ## 6. Verification
 
@@ -144,13 +166,15 @@ python -m ruff check .
 python -m compileall -q app tests
 ```
 
-`tests/test_vision.py` có regression coverage cho:
+Regression coverage gồm:
 
-- effective vision provider order;
+- effective text/vision provider order và free-tier-first model defaults (`tests/test_free_routing.py`);
+- Gemini thought-signature replay và cross-provider metadata isolation (`tests/test_free_routing.py`);
+- OpenRouter reasoning metadata replay (`tests/test_provider_metadata.py`);
 - capability routing;
 - multimodal payload;
 - Telegram media size enforcement khi `file_size` không biết trước;
 - redaction image data URL khỏi provider errors.
 
 Trước production rollout vẫn nên smoke-test bằng credential thật với ít nhất: screenshot OCR, UI screenshot,
-ảnh thường, reply-image, và image + web-search request. CI hiện không thực hiện live provider E2E.
+ảnh thường, reply-image, và image + web-search request. CI không thực hiện live provider E2E.
