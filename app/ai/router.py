@@ -37,7 +37,12 @@ class AIProviderRouter:
         self.max_tool_rounds = max_tool_rounds
         self.last_fallbacks = 0
 
-    def capable_providers(self, *, requires_vision: bool, image_count: int = 0) -> list[OpenAICompatProvider]:
+    def capable_providers(
+        self,
+        *,
+        requires_vision: bool,
+        image_count: int = 0,
+    ) -> list[OpenAICompatProvider]:
         return [
             provider
             for provider in self.providers
