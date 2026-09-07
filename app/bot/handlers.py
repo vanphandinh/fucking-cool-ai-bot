@@ -244,8 +244,8 @@ async def _handle_question(
                         answer = await orchestrator.ask(request=request, history=history)
                     else:
                         answer = await orchestrator.ask(
-                            question,
-                            history,
+                            question=question,
+                            history=history,
                             quoted=quoted,
                         )
                 except NoCapableProvider as exc:
