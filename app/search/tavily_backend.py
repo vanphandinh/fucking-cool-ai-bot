@@ -16,10 +16,12 @@ async def search_tavily(query: str, settings: Settings, limit: int) -> list[dict
         raise RuntimeError("TAVILY_API_KEY chưa được cấu hình")
     timeout = max(5.0, min(float(settings.request_timeout_sec), 30.0))
     async with httpx.AsyncClient(timeout=timeout) as client:
+        # Tavily hiện chỉ chấp nhận key qua header `Authorization: Bearer`
+        # (key dev tier từ chối dạng cũ `api_key` trong body) — theo docs chính thức.
         resp = await client.post(
             "https://api.tavily.com/search",
+            headers={"Authorization": f"Bearer {settings.tavily_api_key}"},
             json={
-                "api_key": settings.tavily_api_key,
                 "query": query,
                 "max_results": limit,
                 "search_depth": "basic",

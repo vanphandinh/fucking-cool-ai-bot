@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass, field
 
 import httpx
@@ -119,8 +120,13 @@ class OpenAICompatProvider:
                 args = {}
             if not isinstance(args, dict):
                 args = {}
+            # Một số API để trống/bớt `id` của tool call; gửi lại tool_call_id rỗng
+            # sẽ bị API từ chối ở vòng kế tiếp -> tự sinh id thay thế.
+            call_id = str(tc.get("id") or "").strip()
+            if not call_id:
+                call_id = f"call_{uuid.uuid4().hex[:24]}"
             tool_calls.append(
-                ToolCall(id=tc.get("id") or "", name=fn.get("name") or "", arguments=args)
+                ToolCall(id=call_id, name=fn.get("name") or "", arguments=args)
             )
         return ChatResponse(content=content, tool_calls=tool_calls)
 
