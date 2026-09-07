@@ -42,14 +42,15 @@ async def _amain(settings: Settings) -> int:
     if not settings.configured_provider_names:
         logger.error(
             "Chưa cấu hình API key text nào "
-            "(GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
+            "(GROQ_API_KEY / CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
+            "OPENROUTER_API_KEY / GEMINI_API_KEY)."
         )
         return 1
 
     if settings.cloudflare_api_token and not settings.cloudflare_account_id:
         logger.warning(
             "Có CLOUDFLARE_API_TOKEN nhưng thiếu CLOUDFLARE_ACCOUNT_ID — "
-            "bỏ qua Cloudflare vision."
+            "bỏ qua Cloudflare text/vision."
         )
     if settings.vision_enabled and not settings.configured_vision_provider_names:
         logger.warning(
