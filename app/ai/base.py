@@ -57,6 +57,7 @@ class ToolCall:
     id: str
     name: str
     arguments: dict
+    extra_content: dict | None = None
 
 
 @dataclass
@@ -175,8 +176,18 @@ class OpenAICompatProvider:
                     args = {}
             if not isinstance(args, dict):
                 args = {}
+            extra_content = tc.get("extra_content")
+            if not isinstance(extra_content, dict):
+                extra_content = None
             call_id = str(tc.get("id") or "").strip() or f"call_{uuid.uuid4().hex[:24]}"
-            tool_calls.append(ToolCall(id=call_id, name=str(fn.get("name") or ""), arguments=args))
+            tool_calls.append(
+                ToolCall(
+                    id=call_id,
+                    name=str(fn.get("name") or ""),
+                    arguments=args,
+                    extra_content=extra_content,
+                )
+            )
         return ChatResponse(content=content, tool_calls=tool_calls)
 
     async def aclose(self) -> None:
