@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# SearXNG settings thật (chứa secret_key) — dùng bản mẫu settings.example.yml
+searxng/settings.yml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

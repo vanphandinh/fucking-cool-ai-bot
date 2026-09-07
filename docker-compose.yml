@@ -1,0 +1,23 @@
+name: fucking-cool-ai-bot
+
+services:
+  bot:
+    build: .
+    container_name: fcai-bot
+    env_file: .env
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+
+  # Tùy chọn: tìm kiếm SearXNG tự host (không giới hạn quota).
+  # Bật bằng: docker compose --profile searxng up -d
+  # rồi set SEARCH_BACKEND=searxng, SEARXNG_URL=http://searxng:8080 trong .env
+  searxng:
+    image: searxng/searxng:latest
+    container_name: fcai-searxng
+    profiles: ["searxng"]
+    restart: unless-stopped
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://127.0.0.1:8080/

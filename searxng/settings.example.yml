@@ -1,0 +1,20 @@
+# SearXNG settings — BẢN MẪU.
+# Sao chép thành ./searxng/settings.yml rồi ĐỔI secret_key bằng chuỗi ngẫu nhiên dài
+# (vd: python3 -c "import secrets; print(secrets.token_hex(32))")
+use_default_settings: true
+
+server:
+  secret_key: "REPLACE_WITH_A_RANDOM_HEX_STRING_AT_LEAST_32_CHARS"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+# engines:
+#   - name: google
+#     disabled: true   # bỏ comment & để false nếu muốn chính thức dùng engine Google
