@@ -1,363 +1,176 @@
-# SearXNG production trên VPS
+# SearXNG production trên VPS — private, chỉ cho bot Telegram
 
-Tài liệu này mô tả cấu hình **production baseline** cho SearXNG trong repo này.
-Mục tiêu là chạy ổn định trên VPS, ít log lỗi vặt, an toàn hơn khi dùng cùng bot Telegram,
-và vẫn mở đường để public qua domain riêng nếu bạn cần.
+Tài liệu này mô tả cách chạy SearXNG **production** cho repo này: instance
+**PRIVATE**, chỉ phục vụ bot Telegram, **không public ra ngoài**. Mọi setting
+phục vụ mode public (limiter, Valkey, reverse proxy, trusted proxies, port
+publish, base_url, image_proxy…) đã được **lược bỏ** khỏi cấu hình để giữ
+một nguồn cấu hình duy nhất, dễ vận hành và không mở thêm bề mặt tấn công.
 
 ---
 
-## 1. Kiến trúc khuyến nghị
-
-### Mode khuyến nghị: private / internal
-
-Đây là mode phù hợp nhất với repo này:
-
-- `bot` gọi SearXNG qua Docker network: `http://searxng:8080`
-- SearXNG có `valkey` riêng cho cache và sẵn sàng cho limiter
-- host chỉ bind cổng SearXNG ra **loopback**: `127.0.0.1:18080`
-- không mở trực tiếp SearXNG ra Internet
-- nếu cần web UI thì đặt reverse proxy ở phía trước
-
-Luồng gọi:
+## 1. Kiến trúc
 
 ```text
-Telegram users -> bot -> http://searxng:8080 -> upstream search engines
+Telegram users  ──►  bot container  ──►  http://searxng:8080  ──►  upstream search engines
+                     (fcai-bot)         (fcai-searxng, Docker network, KHÔNG publish port)
 ```
 
-### Mode public qua domain riêng
+- Bot gọi SearXNG qua **Docker network nội bộ** (`http://searxng:8080`).
+- Container SearXNG **không publish cổng ra host / Internet** → không ai ngoài
+  Docker network (tức ngoài bot) truy cập được: không cần limiter, không cần
+  reverse proxy, không cần domain, không cần Valkey.
+- Nếu muốn gỡ lỗi, dùng `docker compose exec` ở ngay trong container (mục 5),
+  không mở port.
 
-Chỉ dùng khi bạn muốn cho browser/người dùng truy cập web UI SearXNG:
-
-```text
-Browser -> Nginx/Caddy/Traefik -> 127.0.0.1:18080 -> searxng -> upstream search engines
-```
-
-Ở mode này bạn nên:
-
-- bật `SEARXNG_LIMITER=true`
-- bật `SEARXNG_PUBLIC_INSTANCE=true`
-- bật `SEARXNG_IMAGE_PROXY=true`
-- đảm bảo reverse proxy truyền đúng `X-Forwarded-For` và `X-Real-IP`
+> Vì sao không cần Valkey: Valkey trong SearXNG chỉ phục vụ limiter /
+> botdetection khi instance **public** (`server.limiter: true`). Instance private
+> với `limiter: false` (mặc định) chạy tốt không cần Valkey.
 
 ---
 
-## 2. Những file đã có sẵn trong repo
+## 2. Các file liên quan trong repo
 
-Repo đã có sẵn baseline để bạn không phải tự dựng lại từ đầu:
+- `docker-compose.yml` — service `searxng` (profile `searxng`) + volume cache
+- `searxng/settings.example.yml` — mẫu cấu hình, copy thành file thật
+- `.env.example` — `SEARCH_BACKEND`, `SEARXNG_URL`, `SEARXNG_IMAGE`
 
-- `docker-compose.yml`
-- `searxng/settings.example.yml`
-- `searxng/limiter.example.toml`
-- `.env.example`
+Khi triển khai thật bạn tạo thêm:
 
-Khi triển khai thật, bạn sẽ tạo thêm:
+- `searxng/settings.yml` — cấu hình thật (chứa `secret_key`, đã ignore trong Git)
+- `.env` — từ `.env.example`
 
-- `searxng/settings.yml`
-- `searxng/limiter.toml`
-- `.env`
-
-> `searxng/settings.yml` và `searxng/limiter.toml` đã được ignore trong Git để tránh lộ secret và local overrides.
+> Không còn file `limiter.toml`: instance private không bật limiter nên không
+> cần mount cấu hình botdetection.
 
 ---
 
-## 3. Chuẩn bị file cấu hình
+## 3. Các bước triển khai
 
 Từ root repo:
 
 ```bash
-cp .env.example .env
-mkdir -p searxng
+# 1) Tạo settings.yml từ mẫu và đổi secret_key
 cp searxng/settings.example.yml searxng/settings.yml
-cp searxng/limiter.example.toml searxng/limiter.toml
+nano searxng/settings.yml          # secret_key: "<kết quả lệnh dưới>"
+openssl rand -hex 32
+
+# 2) .env: chuyển bot sang dùng SearXNG
+#    SEARCH_BACKEND=searxng
+#    SEARXNG_URL=http://searxng:8080
+nano .env
+
+# 3) Chạy (build bot + bật profile searxng)
+docker compose --profile searxng up -d --build
 ```
 
-Sinh secret:
+Nếu chỉ muốn chạy bot (không dùng SearXNG) thì giữ `SEARCH_BACKEND=ddgs` và bỏ
+`--profile searxng` như bình thường:
 
 ```bash
-openssl rand -hex 32
-```
-
-Dùng chuỗi này cho `SEARXNG_SECRET` trong `.env` hoặc `secret_key` trong `searxng/settings.yml`.
-
----
-
-## 4. Cấu hình `.env`
-
-## 4.1. Mode private / internal
-
-```env
-SEARCH_BACKEND=searxng
-SEARXNG_URL=http://searxng:8080
-SEARXNG_SECRET=<chuỗi openssl rand -hex 32>
-
-SEARXNG_BIND_IP=127.0.0.1
-SEARXNG_HOST_PORT=18080
-
-SEARXNG_LIMITER=false
-SEARXNG_PUBLIC_INSTANCE=false
-SEARXNG_IMAGE_PROXY=false
-```
-
-Giải thích:
-
-- `SEARXNG_URL=http://searxng:8080`: bot gọi service nội bộ trong Docker
-- `SEARXNG_BIND_IP=127.0.0.1`: host chỉ mở loopback, không public trực tiếp
-- `SEARXNG_LIMITER=false`: phù hợp khi chỉ bot gọi nội bộ
-
-## 4.2. Mode public qua domain
-
-```env
-SEARCH_BACKEND=searxng
-SEARXNG_URL=http://searxng:8080
-SEARXNG_SECRET=<chuỗi openssl rand -hex 32>
-
-SEARXNG_BASE_URL=https://search.example.com/
-SEARXNG_BIND_IP=127.0.0.1
-SEARXNG_HOST_PORT=18080
-
-SEARXNG_LIMITER=true
-SEARXNG_PUBLIC_INSTANCE=true
-SEARXNG_IMAGE_PROXY=true
-```
-
-Gợi ý thêm:
-
-```env
-# nên pin image cụ thể khi production nếu muốn giảm rủi ro đổi behavior từ latest
-SEARXNG_IMAGE=ghcr.io/searxng/searxng:latest
-SEARXNG_VALKEY_IMAGE=docker.io/valkey/valkey:9-alpine
+docker compose up -d --build
 ```
 
 ---
 
-## 5. Cấu hình `searxng/settings.yml`
+## 4. Giải thích cấu hình tối giản
 
-File mẫu trong repo đã được tinh chỉnh cho VPS:
+### 4.1. `docker-compose.yml` (service `searxng`)
 
-- bật `formats: [html, json]` để bot/API dùng được JSON
-- thêm `valkey.url`
-- thêm security headers cơ bản
-- tắt sẵn các engine hay gây lỗi hoặc noise log trên VPS/datacenter IP:
-  - `ahmia`
-  - `torch`
-  - `startpage`
+- **Không có `ports:`** → không mở cổng ra host. Đây là điểm mấu chốt giữ cho
+  instance private.
+- Chỉ mount `./searxng/settings.yml` (read-only) và volume `searxng-cache`
+  (cache nội bộ container, không quan trọng để backup).
+- `SEARXNG_SECRET` **không** đặt trong `.env`/compose nữa — secret nằm duy nhất
+  trong `searxng/settings.yml` (một nguồn, không lệch nhau).
+- Các biến `SEARXNG_BASE_URL` / `SEARXNG_BIND_IP` / `SEARXNG_HOST_PORT` /
+  `SEARXNG_LIMITER` / `SEARXNG_PUBLIC_INSTANCE` / `SEARXNG_IMAGE_PROXY` /
+  `SEARXNG_VALKEY_URL` và service `searxng-valkey` đã bị xóa — chúng chỉ phục vụ
+  mode public/reverse-proxy.
+- `healthcheck` gọi `/healthz` ngay trong container.
 
-Trích đoạn quan trọng:
+### 4.2. `searxng/settings.yml`
 
 ```yaml
 use_default_settings: true
 
 server:
-  secret_key: "REPLACE_WITH_A_RANDOM_HEX_STRING_AT_LEAST_32_CHARS"
-  limiter: false
-  public_instance: false
-  image_proxy: false
-
-valkey:
-  url: "valkey://searxng-valkey:6379/0"
+  secret_key: "<openssl rand -hex 32>"
 
 search:
-  autocomplete: "duckduckgo"
   formats:
     - html
     - json
 ```
 
-### Vì sao tắt `startpage`, `ahmia`, `torch`
-
-Trên VPS IP datacenter, các engine này thường gây:
-
-- lỗi load engine khi startup
-- anti-bot / CAPTCHA
-- log warning lặp lại nhưng không giúp tăng chất lượng tìm kiếm
-
-Bạn vẫn còn các engine mặc định khác từ SearXNG do `use_default_settings: true`.
-
----
-
-## 6. Cấu hình `searxng/limiter.toml`
-
-File này dùng cho botdetection / limiter.
-
-### Khi chỉ dùng nội bộ cho bot
-
-Giữ nguyên mức tối thiểu như file mẫu. Bạn có thể để:
-
-- `link_token = false`
-- `trusted_proxies` chỉ gồm loopback
-
-### Khi public qua reverse proxy
-
-- bật `SEARXNG_LIMITER=true`
-- thêm IP/CIDR của reverse proxy vào `trusted_proxies`
-- nếu proxy chạy trong Docker bridge riêng, thêm CIDR bridge đó
-
-Ví dụ:
-
-```toml
-[botdetection]
-trusted_proxies = [
-  '127.0.0.0/8',
-  '::1',
-  '172.16.0.0/12',
-]
-
-[botdetection.ip_limit]
-link_token = true
-```
-
-> Nếu không cấu hình proxy headers đúng, limiter có thể hiểu mọi request đều đến từ proxy và rate-limit sai.
+- `use_default_settings: true` → dùng toàn bộ mặc định upstream (gồm cả danh
+  sách engine được upstream bảo trì theo từng bản). Không tự disable engine —
+  tránh danh sách cũ gây lỗi khi nâng cấp.
+- `search.formats: [html, json]` → **bắt buộc** có `json` để bot gọi JSON API
+  (`format=json`); mặc định upstream chỉ bật `html`.
+- Mọi thứ khác (limiter, public_instance, image_proxy, valkey, ui, security
+  headers…) giữ mặc định an toàn của SearXNG: `limiter: false`,
+  `public_instance: false`, không valkey — đủ và đúng cho instance private.
 
 ---
 
-## 7. Chạy stack
+## 5. Vận hành & kiểm tra
 
 ```bash
-docker compose --profile searxng up -d --build
+docker compose --profile searxng ps
+docker compose logs --tail=100 searxng          # log SearXNG
+docker compose logs --tail=100 bot              # log bot (tìm dòng search OK/ERR)
+
+# Healthcheck nội bộ (không cần mở port):
+docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz
+# kỳ vọng: OK
+
+# Test đúng đường bot đi — JSON API qua Docker network:
+docker compose --profile searxng exec searxng wget -qO- 'http://127.0.0.1:8080/search?q=test&format=json' | head -c 500
 ```
 
-Kiểm tra:
-
-```bash
-docker compose ps
-docker compose logs --tail=100 searxng
-docker compose logs --tail=100 searxng-valkey
-curl -fsS http://127.0.0.1:18080/healthz
-```
-
-Nếu bot dùng SearXNG, kiểm tra thêm log bot:
-
-```bash
-docker compose logs --tail=100 bot
-```
+Bot dùng SearXNG thành công khi log bot không còn báo
+`Search backend 'searxng' lỗi` và câu trả lời có kèm 📚 nguồn tham khảo.
 
 ---
 
-## 8. Reverse proxy mẫu với Nginx
+## 6. Xử lý sự cố thường gặp
 
-Nếu bạn muốn mở giao diện ra domain riêng:
-
-```nginx
-server {
-    listen 80;
-    server_name search.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:18080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Khuyến nghị production thực tế:
-
-- thêm HTTPS bằng Let's Encrypt
-- redirect HTTP -> HTTPS
-- chỉ public Nginx/Caddy/Traefik, **không public trực tiếp Valkey**
-- không đổi `SEARXNG_URL` của bot; bot vẫn nên gọi nội bộ `http://searxng:8080`
+| Triệu chứng | Nguyên nhân & cách xử lý |
+|---|---|
+| `docker compose --profile searxng up` dừng ngay, log SearXNG báo `/etc/searxng/settings.yml is not a valid file` | Chưa tạo `searxng/settings.yml` (chưa copy từ `settings.example.yml`) |
+| Log SearXNG cảnh báo `missing config file: /etc/searxng/limiter.toml` | Vô hại: instance private không bật limiter, không cần file này — bỏ qua |
+| Gọi `format=json` bị lỗi 4xx | Thiếu `search.formats: [html, json]` trong `searxng/settings.yml` (mẫu mới đã có sẵn) |
+| Đang nâng cấp từ cấu hình cũ (có service `searxng-valkey`, `valkey.url`, env `SEARXNG_*`) | Copy lại `searxng/settings.yml` từ mẫu mới, hoặc xóa các block `valkey:`/limiter — repo không còn service `searxng-valkey`; các biến `SEARXNG_*` cũ trong `.env` giờ vô dụng (có thể xóa) |
+| Bot báo `Search backend 'searxng' lỗi ... Connection refused` | Bot và SearXNG không cùng Docker network / chưa chạy `--profile searxng`; kiểm tra `SEARXNG_URL=http://searxng:8080` |
+| Engine upstream trả CAPTCHA/block (IP datacenter) | SearXNG tự chuyển engine khác; nếu ảnh hưởng chất lượng, dùng thêm backend fallback `ddgs`/`tavily` |
+| Muốn xem UI để debug | Không mở port; dùng `docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/` (HTML) |
 
 ---
 
-## 9. Những lỗi thường gặp
+## 7. Cập nhật & backup
 
-### `missing config file: /etc/searxng/limiter.toml`
-
-Nguyên nhân:
-- bạn chưa copy `searxng/limiter.example.toml` thành `searxng/limiter.toml`
-
-Cách xử lý:
-
-```bash
-cp searxng/limiter.example.toml searxng/limiter.toml
-docker compose --profile searxng up -d
-```
-
-### `X-Forwarded-For nor X-Real-IP header is set!`
-
-Nguyên nhân thường gặp:
-- đang public qua reverse proxy nhưng chưa forward headers đúng
-
-Cách xử lý:
-- thêm `proxy_set_header X-Real-IP $remote_addr;`
-- thêm `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
-- rà lại `trusted_proxies` trong `limiter.toml`
-
-### `startpage ... JSONDecodeError`
-
-Nguyên nhân:
-- upstream Startpage trả trang anti-bot / abuse page thay vì dữ liệu mà engine mong đợi
-
-Trong baseline của repo, `startpage` đã bị disable sẵn.
-
-### `ahmia` / `torch` can't register engine
-
-Đây là các engine dễ fail lúc startup trên một số image / môi trường. Baseline của repo đã disable sẵn.
-
-### `wikipedia ... 400`
-
-Repo đã bỏ hard-code `language=vi` trong backend gọi SearXNG để giảm lỗi ép query sang `vi.wikipedia.org`.
+- Cập nhật code: `git pull && docker compose --profile searxng up -d --build`
+- Cập nhật image: đổi `SEARXNG_IMAGE` trong `.env` sang tag ngày mới (khuyến
+  nghị pin tag khi production) rồi `docker compose --profile searxng pull && docker compose --profile searxng up -d`
+- Backup tối thiểu: `.env` + `searxng/settings.yml`. Cache SearXNG không cần backup.
 
 ---
 
-## 10. Cập nhật và backup
+## 8. Checklist production
 
-### Cập nhật code repo
-
-```bash
-git pull
-docker compose --profile searxng up -d --build
-```
-
-### Cập nhật image
-
-Nếu bạn dùng tag pinned, đổi tag rồi chạy:
-
-```bash
-docker compose --profile searxng pull
-docker compose --profile searxng up -d
-```
-
-### Backup tối thiểu
-
-Nên backup:
-
-- `.env`
-- `searxng/settings.yml`
-- `searxng/limiter.toml`
-
-Thường **không cần** backup cache SearXNG hay dữ liệu Valkey cho use case của repo này.
+- [ ] `searxng/settings.yml` đã tạo từ mẫu và `secret_key` đã đổi khỏi placeholder
+- [ ] `.env` có `SEARCH_BACKEND=searxng` và `SEARXNG_URL=http://searxng:8080`
+- [ ] Chạy bằng `docker compose --profile searxng up -d --build`
+- [ ] Container SearXNG **không** publish port (`docker compose --profile searxng ps` không có cột PORTS)
+- [ ] `docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz` → `OK`
+- [ ] Log bot không báo lỗi search; câu trả lời có 📚 nguồn
 
 ---
 
-## 11. Checklist production ngắn
+## 9. Nếu sau này bạn muốn public SearXNG
 
-Trước khi coi là xong, kiểm tra các mục sau:
-
-- [ ] `SEARXNG_SECRET` đã đổi khỏi giá trị mặc định
-- [ ] `searxng/settings.yml` và `searxng/limiter.toml` đã được tạo từ file mẫu
-- [ ] bot dùng `SEARXNG_URL=http://searxng:8080`
-- [ ] host chỉ bind SearXNG ra `127.0.0.1`
-- [ ] Valkey không public ra Internet
-- [ ] nếu có reverse proxy: đã forward `X-Real-IP` và `X-Forwarded-For`
-- [ ] nếu public thật sự: đã bật `SEARXNG_LIMITER=true`
-- [ ] `curl http://127.0.0.1:18080/healthz` trả OK
-- [ ] `docker compose logs --tail=100 searxng` không còn warning tránh được như thiếu `limiter.toml`
-
----
-
-## 12. Kết luận
-
-Với repo này, cấu hình production hợp lý nhất trên VPS là:
-
-1. giữ SearXNG ở **private/internal mode**
-2. cho bot gọi nội bộ qua Docker network
-3. chỉ mở ra domain riêng khi thật sự cần
-4. nếu public thì dùng reverse proxy + limiter + trusted proxy headers đúng chuẩn
-
-Nếu bạn muốn, bước tiếp theo nên làm là tạo thêm:
-
-- cấu hình **Nginx HTTPS hoàn chỉnh**
-- hoặc cấu hình **Caddy / Traefik** tương đương
+Cấu hình trong repo **cố tình không dành cho mode public** (không publish port,
+không limiter, không valkey). Muốn public cho browser/người dùng thì đừng chỉ
+thêm `ports:` vào service này — hãy làm theo hướng dẫn chính thức của SearXNG:
+reverse proxy + HTTPS + `server.limiter: true` + Valkey + `trusted_proxies`,
+tốt nhất dùng bộ `searxng-docker` riêng. Repo này chỉ cần instance private cho bot.

@@ -1,59 +1,33 @@
-# SearXNG settings — production baseline cho VPS.
-# Sao chép thành ./searxng/settings.yml rồi ĐỔI secret_key bằng chuỗi ngẫu nhiên dài:
-#   openssl rand -hex 32
+# SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
 #
-# Repo này dùng SearXNG chủ yếu làm backend search cho bot Telegram,
-# nên mặc định để PRIVATE / INTERNAL (không public ra Internet).
-# Nếu bạn mở cho người ngoài truy cập qua domain riêng, hãy xem README để bật
-# limiter + reverse proxy + trusted_proxies.
+# CÁCH DÙNG (bắt buộc trước khi chạy profile searxng):
+#   1) cp searxng/settings.example.yml searxng/settings.yml
+#   2) Sửa searxng/settings.yml -> đổi secret_key thành chuỗi ngẫu nhiên:
+#        openssl rand -hex 32
+#   3) docker compose --profile searxng up -d
+#
+# Vì sao file này chỉ gọn như vậy (đã lược bỏ các setting thừa):
+# - Bot gọi JSON API nội bộ qua http://searxng:8080; container KHÔNG publish cổng ra
+#   host/Internet => instance không public => KHÔNG cần limiter / public_instance /
+#   image_proxy / valkey / trusted_proxies / base_url / reverse proxy (mặc định an toàn
+#   của SearXNG đã là false hết).
+# - Không cần bộ nhớ cache ngoài (Valkey): Valkey chỉ được SearXNG dùng cho limiter/
+#   botdetection khi bật public.
+# - Không disable engine nào: mặc định của từng bản SearXNG (use_default_settings) đã
+#   được upstream bảo trì, tránh danh sách engine cũ gây lỗi khi nâng cấp.
 
 use_default_settings: true
 
-general:
-  debug: false
-  instance_name: "Private SearXNG for fucking-cool-ai-bot"
-
 server:
-  # Thường sẽ bị override bởi biến môi trường SEARXNG_BASE_URL / SEARXNG_SECRET
-  # trong docker-compose.yml. Giữ lại giá trị an toàn ở đây để dễ đọc file.
-  secret_key: "REPLACE_WITH_A_RANDOM_HEX_STRING_AT_LEAST_32_CHARS"
-  limiter: false
-  public_instance: false
-  image_proxy: false
-  method: "GET"
-  default_http_headers:
-    X-Content-Type-Options: nosniff
-    X-Download-Options: noopen
-    X-Robots-Tag: noindex, nofollow
-    Referrer-Policy: no-referrer
-
-valkey:
-  # Dùng cho cache và sẵn sàng cho limiter nếu sau này bạn muốn bật public mode.
-  url: "valkey://searxng-valkey:6379/0"
+  # BẮT BUỘC đổi thành chuỗi ngẫu nhiên:  openssl rand -hex 32
+  # (searxng/settings.yml đã nằm trong .gitignore nên secret không bị commit.
+  #  Muốn đặt qua biến môi trường thì thêm SEARXNG_SECRET cho service searxng — giá trị
+  #  env sẽ override dòng này — nhưng repo không dùng để tránh hai nguồn secret.)
+  secret_key: "REPLACE_WITH_openssl_rand_-hex_32"
 
 search:
-  safe_search: 0
-  autocomplete: "duckduckgo"
-  default_lang: ""
-  ban_time_on_fail: 5
-  max_ban_time_on_fail: 120
-  suspended_times:
-    SearxEngineAccessDenied: 86400
-    SearxEngineCaptcha: 86400
-    SearxEngineTooManyRequests: 3600
+  # Bot gọi API dạng format=json nên bắt buộc có json. html giữ lại để xem UI khi debug
+  # nội bộ (docker compose exec ... wget ...). Mặc định upstream chỉ bật html.
   formats:
     - html
     - json
-
-ui:
-  default_theme: simple
-  infinite_scroll: false
-
-# Giảm noise / engine lỗi phổ biến trên VPS IP datacenter.
-engines:
-  - name: ahmia
-    disabled: true
-  - name: torch
-    disabled: true
-  - name: startpage
-    disabled: true

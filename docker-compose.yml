@@ -9,11 +9,12 @@ services:
     init: true
     stop_grace_period: 30s
 
-  # Tùy chọn: SearXNG tự host cho production trên VPS.
-  # - Bot gọi nội bộ qua http://searxng:8080
-  # - Host chỉ bind loopback 127.0.0.1:${SEARXNG_HOST_PORT:-18080}
-  #   để reverse proxy (Nginx/Caddy/Traefik trên VPS) có thể truy cập nếu cần.
-  # - Không nên expose trực tiếp 0.0.0.0 trừ khi bạn hiểu rõ limiter/proxy headers.
+  # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
+  # - Bật theo yêu cầu bằng profile:  docker compose --profile searxng up -d
+  # - Bot gọi nội bộ qua Docker network: http://searxng:8080
+  # - KHÔNG publish port ra host/Internet => không cần limiter, reverse proxy, valkey, domain.
+  # - Bắt buộc trước khi chạy: tạo searxng/settings.yml từ searxng/settings.example.yml
+  #   và đổi secret_key (xem DEPLOY_SEARXNG_VPS.md).
   searxng:
     image: ${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:latest}
     container_name: fcai-searxng
@@ -21,44 +22,17 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
-    depends_on:
-      searxng-valkey:
-        condition: service_healthy
-    ports:
-      - "${SEARXNG_BIND_IP:-127.0.0.1}:${SEARXNG_HOST_PORT:-18080}:8080"
     volumes:
+      # Chỉ mount file settings; không mount limiter.toml vì instance private không bật limiter.
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
-      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
       - searxng-cache:/var/cache/searxng
-    environment:
-      SEARXNG_BASE_URL: "${SEARXNG_BASE_URL:-http://searxng:8080/}"
-      SEARXNG_SECRET: "${SEARXNG_SECRET:-CHANGE_ME_IN_.env}"
-      SEARXNG_LIMITER: "${SEARXNG_LIMITER:-false}"
-      SEARXNG_PUBLIC_INSTANCE: "${SEARXNG_PUBLIC_INSTANCE:-false}"
-      SEARXNG_IMAGE_PROXY: "${SEARXNG_IMAGE_PROXY:-false}"
-      SEARXNG_VALKEY_URL: "${SEARXNG_VALKEY_URL:-valkey://searxng-valkey:6379/0}"
+    # Lưu ý: image SearXNG gốc Alpine (busybox wget) — chỉ dùng option chung busybox/GNU wget.
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-q", "--spider", "-t", "1", "-T", "5", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
 
-  searxng-valkey:
-    image: ${SEARXNG_VALKEY_IMAGE:-docker.io/valkey/valkey:9-alpine}
-    container_name: fcai-searxng-valkey
-    profiles: ["searxng"]
-    restart: unless-stopped
-    command: valkey-server --save 30 1 --loglevel warning
-    volumes:
-      - searxng-valkey-data:/data
-    healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 5s
-
 volumes:
   searxng-cache:
-  searxng-valkey-data:
