@@ -37,22 +37,24 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Text pool — defaults intentionally unchanged.
+    # Text pool — free-first defaults.
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     openrouter_api_key: str = ""
-    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    openrouter_model: str = "openrouter/free"
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+    cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
+    text_provider_order: str = "groq,cloudflare,openrouter,gemini"
 
     # Vision pool.
     vision_enabled: bool = True
     gemini_vision_model: str = "gemini-3.8-flash"
     groq_vision_models: str = "qwen/qwen3.8-27b,qwen/qwen3.6-27b"
-    cloudflare_account_id: str = ""
-    cloudflare_api_token: str = ""
     cloudflare_vision_model: str = "@cf/google/gemma-4-26b-a4b-it"
-    vision_provider_order: str = "gemini,groq_qwen38,groq_qwen36,cloudflare"
+    vision_provider_order: str = "groq_qwen38,cloudflare,groq_qwen36,gemini"
     max_images_per_request: int = Field(default=3, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
@@ -62,8 +64,8 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
-    max_context_turns: int = Field(default=10, ge=1)
-    max_tool_rounds: int = Field(default=4, ge=0)
+    max_context_turns: int = Field(default=6, ge=1)
+    max_tool_rounds: int = Field(default=2, ge=0)
     request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     question_timeout_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
     log_level: str = "INFO"
@@ -101,6 +103,10 @@ class Settings(BaseSettings):
         return self.bot_username.lower().lstrip("@")
 
     @property
+    def text_provider_order_list(self) -> list[str]:
+        return parse_csv(self.text_provider_order)
+
+    @property
     def groq_vision_models_list(self) -> list[str]:
         return parse_csv(self.groq_vision_models)
 
@@ -110,14 +116,20 @@ class Settings(BaseSettings):
 
     @property
     def configured_provider_names(self) -> list[str]:
-        names: list[str] = []
-        if self.gemini_api_key:
-            names.append("gemini")
-        if self.groq_api_key:
-            names.append("groq")
-        if self.openrouter_api_key:
-            names.append("openrouter")
-        return names
+        available: set[str] = set()
+        if self.gemini_api_key and self.gemini_model:
+            available.add("gemini")
+        if self.groq_api_key and self.groq_model:
+            available.add("groq")
+        if self.openrouter_api_key and self.openrouter_model:
+            available.add("openrouter")
+        if (
+            self.cloudflare_account_id
+            and self.cloudflare_api_token
+            and self.cloudflare_text_model
+        ):
+            available.add("cloudflare")
+        return [name for name in self.text_provider_order_list if name in available]
 
     @property
     def configured_vision_provider_names(self) -> list[str]:
@@ -132,7 +144,11 @@ class Settings(BaseSettings):
                 available.add("groq_qwen38")
             if len(models) >= 2:
                 available.add("groq_qwen36")
-        if self.cloudflare_account_id and self.cloudflare_api_token:
+        if (
+            self.cloudflare_account_id
+            and self.cloudflare_api_token
+            and self.cloudflare_vision_model
+        ):
             available.add("cloudflare")
         return [name for name in self.vision_provider_order_list if name in available]
 
