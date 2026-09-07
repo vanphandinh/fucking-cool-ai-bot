@@ -67,18 +67,19 @@ class FreeFirstRouterTests(unittest.TestCase):
         router = build_provider_router(settings)
         try:
             text = router.capable_providers(requires_vision=False)
-            self.assertEqual([provider.name for provider in text], [
-                "groq",
-                "cloudflare_text",
-                "openrouter",
-                "gemini",
-            ])
-            self.assertEqual([provider.model for provider in text], [
-                "openai/gpt-oss-120b",
-                "@cf/zai-org/glm-4.7-flash",
-                "openrouter/free",
-                "gemini-3.8-flash",
-            ])
+            self.assertEqual(
+                [provider.name for provider in text],
+                ["groq", "cloudflare_text", "openrouter", "gemini"],
+            )
+            self.assertEqual(
+                [provider.model for provider in text],
+                [
+                    "openai/gpt-oss-120b",
+                    "@cf/zai-org/glm-4.7-flash",
+                    "openrouter/free",
+                    "gemini-3.8-flash",
+                ],
+            )
         finally:
             asyncio.run(_close_router(router))
 
@@ -93,12 +94,10 @@ class FreeFirstRouterTests(unittest.TestCase):
         router = build_provider_router(settings)
         try:
             vision = router.capable_providers(requires_vision=True, image_count=1)
-            self.assertEqual([provider.name for provider in vision], [
-                "groq_qwen38",
-                "cloudflare",
-                "groq_qwen36",
-                "gemini_vision",
-            ])
+            self.assertEqual(
+                [provider.name for provider in vision],
+                ["groq_qwen38", "cloudflare", "groq_qwen36", "gemini_vision"],
+            )
         finally:
             asyncio.run(_close_router(router))
 
@@ -183,7 +182,9 @@ class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((text, name), ("done", "gemini"))
         self.assertEqual(len(requests), 2)
 
-    async def test_provider_specific_metadata_is_removed_before_cross_provider_fallback(self) -> None:
+    async def test_provider_specific_metadata_is_removed_before_cross_provider_fallback(
+        self,
+    ) -> None:
         signature = "gemini-only"
         first_requests: list[dict] = []
         second_requests: list[dict] = []
@@ -219,7 +220,11 @@ class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
                     },
                     request=request,
                 )
-            return httpx.Response(500, json={"error": {"message": "upstream failed"}}, request=request)
+            return httpx.Response(
+                500,
+                json={"error": {"message": "upstream failed"}},
+                request=request,
+            )
 
         def second_respond(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
@@ -234,19 +239,29 @@ class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
                         )
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"role": "assistant", "content": "fallback done"}}]},
+                json={
+                    "choices": [
+                        {"message": {"role": "assistant", "content": "fallback done"}}
+                    ]
+                },
                 request=request,
             )
 
-        first = OpenAICompatProvider("gemini", "https://first.example/v1", "fake", "gemini-3.8-flash")
-        second = OpenAICompatProvider("groq", "https://second.example/v1", "fake", "openai/gpt-oss-120b")
+        first = OpenAICompatProvider(
+            "gemini", "https://first.example/v1", "fake", "gemini-3.8-flash"
+        )
+        second = OpenAICompatProvider(
+            "groq", "https://second.example/v1", "fake", "openai/gpt-oss-120b"
+        )
         await first.aclose()
         await second.aclose()
         first._client = httpx.AsyncClient(
-            base_url="https://first.example/v1/", transport=httpx.MockTransport(first_respond)
+            base_url="https://first.example/v1/",
+            transport=httpx.MockTransport(first_respond),
         )
         second._client = httpx.AsyncClient(
-            base_url="https://second.example/v1/", transport=httpx.MockTransport(second_respond)
+            base_url="https://second.example/v1/",
+            transport=httpx.MockTransport(second_respond),
         )
         router = AIProviderRouter([first, second], max_tool_rounds=2)
 
