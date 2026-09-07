@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
-# Container chạy mặc định UTC — "hôm nay" tính theo giờ Việt Nam (UTC+7) cho
-# đồng nhất với mốc thời gian mà model được cung cấp trong prompt.
 _VN_TZ = timezone(timedelta(hours=7))
 
 
@@ -27,7 +25,6 @@ class Stats:
         self.fallback_count = 0
 
     def live_questions_today(self) -> int:
-        """Số câu hỏi hôm nay (VN), đã roll ngày nếu qua nửa đêm."""
         self._roll_day()
         return self.questions_today
 
@@ -43,6 +40,9 @@ class Stats:
 
     def record_search(self) -> None:
         self.searches += 1
+
+    def record_fallback(self, count: int = 1) -> None:
+        self.fallback_count += max(0, count)
 
     def record_error(self, message: str, *, fallback: bool = False) -> None:
         self.last_error = (message or "")[:300]
