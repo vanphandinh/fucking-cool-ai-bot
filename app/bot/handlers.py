@@ -62,7 +62,7 @@ def build_message_router(
 
     # ignore_mention mặc định False: "/help@BotKhác" sẽ bị aiogram từ chối
     # (mention không khớp username bot), tránh trả lời lệnh nhắm bot khác.
-    @router.message(Command("help", "start"))
+    @router.message(Command("help", "start", ignore_case=True))
     async def help_handler(message: Message) -> None:
         await message.reply(
             _HELP_TEXT.format(
@@ -71,16 +71,17 @@ def build_message_router(
             )
         )
 
-    @router.message(Command("status"))
+    @router.message(Command("status", ignore_case=True))
     async def status_handler(message: Message) -> None:
-        if message.from_user and message.from_user.id not in settings.admin_ids_list:
-            return  # im lặng với người không phải admin
+        uid = message.from_user.id if message.from_user else None
+        if uid is None or uid not in settings.admin_ids_list:
+            return  # im lặng nếu không xác định được user hoặc không phải admin
         allowed_text = settings.allowed_group_ids_list or "TRỐNG"
         lines = [
             "📊 Trạng thái bot",
             f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
-            f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.questions_today})",
+            f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
             "- Phân bổ: "
@@ -92,7 +93,7 @@ def build_message_router(
         ]
         await message.reply("\n".join(lines))
 
-    @router.message(Command("ask"))
+    @router.message(Command("ask", ignore_case=True))
     async def ask_command(message: Message, command: CommandObject) -> None:
         question = (command.args or "").strip()
         if not question:
@@ -100,10 +101,14 @@ def build_message_router(
                 "Bạn muốn hỏi gì? Gõ: /ask <câu hỏi> — ví dụ: /ask Vì sao bầu trời xanh?"
             )
             return
+        quoted = None
+        replied = message.reply_to_message
+        if replied:
+            quoted = replied.text or replied.caption or ""
         await _handle_question(
             message,
             question,
-            quoted=None,
+            quoted=quoted,
             settings=settings,
             orchestrator=orchestrator,
             memory=memory,
@@ -216,7 +221,9 @@ async def _handle_question(
 
     lock = await chat_locks.get(chat_id)
     async with lock:
-        typing_task = asyncio.create_task(_typing_loop(bot, chat_id))
+        typing_task = asyncio.create_task(
+            _typing_loop(bot, chat_id, message_thread_id=message.message_thread_id)
+        )
         try:
             history = memory.history_for(chat_id, settings.max_context_turns)
             answer = await orchestrator.ask(question=question, history=history, quoted=quoted)
@@ -241,13 +248,6 @@ async def _handle_question(
             await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
             return
 
-        stats.record_answer(answer.provider)
-        if answer.searched:
-            stats.record_search()
-
-        memory.push(chat_id, "user", question)
-        memory.push(chat_id, "assistant", answer.text)
-
         # Ghép phần trả lời + nguồn rồi gửi (cắt nếu quá dài)
         parts = split_plain(answer.text, 3900)
         if answer.searched and answer.sources:
@@ -257,24 +257,38 @@ async def _handle_question(
         if not parts:
             parts = ["..."]
         try:
-            first = parts[0]
-            await message.reply(first)
-            # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
-            # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
-            extra_kwargs = {}
-            if message.message_thread_id:
-                extra_kwargs["message_thread_id"] = message.message_thread_id
+            await message.reply(parts[0])
+        except Exception:  # noqa: BLE001
+            logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+            return
+
+        # Chỉ ghi nhớ / thống kê khi user đã nhận được ít nhất 1 phần trả lời.
+        stats.record_answer(answer.provider)
+        if answer.searched:
+            stats.record_search()
+        memory.push(chat_id, "user", question)
+        memory.push(chat_id, "assistant", answer.text)
+
+        # Group bật Topics: các phần tiếp theo phải gửi kèm message_thread_id
+        # của tin nhắn gốc, nếu không sẽ rơi vào topic General.
+        extra_kwargs = {}
+        if message.message_thread_id:
+            extra_kwargs["message_thread_id"] = message.message_thread_id
+        try:
             for part in parts[1:]:
                 await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                 await asyncio.sleep(0.15)
         except Exception:  # noqa: BLE001
-            logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+            logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
 
 
-async def _typing_loop(bot: Bot, chat_id: int) -> None:
+async def _typing_loop(bot: Bot, chat_id: int, message_thread_id: int | None = None) -> None:
+    kwargs: dict = {}
+    if message_thread_id:
+        kwargs["message_thread_id"] = message_thread_id
     while True:
         try:
-            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await bot.send_chat_action(chat_id=chat_id, action="typing", **kwargs)
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(4.0)

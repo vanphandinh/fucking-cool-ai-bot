@@ -67,23 +67,53 @@ def t_config_formatting():
             check("search_backend lạ bị từ chối", False)
         except ValueError:
             check("search_backend lạ bị từ chối", True)
+        os.environ["SEARCH_BACKEND"] = "ddgs"
+        os.environ["LOG_LEVEL"] = "WARN"
+        check("log_level WARN -> WARNING", Settings().log_level == "WARNING")
+        os.environ["LOG_LEVEL"] = "NOPE"
+        try:
+            Settings()
+            check("log_level lạ bị từ chối", False)
+        except ValueError:
+            check("log_level lạ bị từ chối", True)
+        os.environ.pop("LOG_LEVEL", None)
+        try:
+            Settings(request_timeout_sec=-1)
+            check("timeout âm bị từ chối", False)
+        except ValueError:
+            check("timeout âm bị từ chối", True)
     finally:
         if old_backend is None:
             os.environ.pop("SEARCH_BACKEND", None)
         else:
             os.environ["SEARCH_BACKEND"] = old_backend
+        os.environ.pop("LOG_LEVEL", None)
 
     from app.core.formatting import clean_question, format_sources, split_plain
 
     q = clean_question("@FuckingCoolAIbot  giá vàng hôm nay ?", "FuckingCoolAIbot")
     check("clean_question bỏ mention", q == "giá vàng hôm nay", repr(q))
+    q_neg = clean_question("@bot -1 + 2 bằng bao nhiêu", "bot")
+    check("clean_question giữ số âm", q_neg == "-1 + 2 bằng bao nhiêu", repr(q_neg))
+    check("clean_question mention-only thành rỗng", clean_question("@bot...", "bot") == "")
+    check("clean_question bỏ chấm cuối", clean_question("@bot giá vàng.", "bot") == "giá vàng")
     parts = split_plain("y" * 10000, 3900)
     check("split_plain giữ nguyên nội dung", "".join(parts) == "y" * 10000)
     check("split_plain không quá 3900", all(len(p) <= 3900 for p in parts))
+    from app.core.formatting import _utf16_len
+
+    emoji_parts = split_plain("😀" * 2500, 3900)
+    check(
+        "split_plain emoji theo UTF-16 Telegram",
+        len(emoji_parts) >= 2 and all(_utf16_len(p) <= 3900 for p in emoji_parts),
+        str([_utf16_len(p) for p in emoji_parts]),
+    )
     footer = format_sources(
         [{"title": "A", "url": "https://a.com"}, {"title": "B", "url": "https://a.com"}]
     )
     check("format_sources dedupe", footer.count("https://") == 1 and "📚" in footer)
+    js_footer = format_sources([{"title": "x", "url": "javascript:alert(1)"}])
+    check("format_sources bỏ javascript:", js_footer == "")
 
 
 def t_core():
@@ -97,14 +127,33 @@ def t_core():
         m.push(1, r, c)
     h = m.history_for(1)
     check("context giới hạn cặp", len(h) <= 4 and h[-1]["content"] == "h2")
+    check("context limit 0 rỗng", m.history_for(1, 0) == [])
 
     rl = RateLimiter(max_requests_per_min=2)
     check("rate limit allow 2", rl.allow(7)[0] and rl.allow(7)[0] and not rl.allow(7)[0])
+    rl0 = RateLimiter(max_requests_per_min=0)
+    check("rate limit 0 không crash, từ chối", rl0.allow(1) == (False, 60.0))
 
     st = Stats()
     st.record_question()
     st.record_answer("gemini")
     check("stats ghi nhận", st.questions_total == 1 and st.last_provider == "gemini")
+    from datetime import timedelta
+
+    st._day = st._day - timedelta(days=1)
+    check(
+        "stats hôm nay roll qua nửa đêm",
+        st.live_questions_today() == 0 and st.questions_total == 1,
+    )
+
+    from app.core.orchestrator import _format_search_results
+
+    empty = _format_search_results("xyz", [])
+    check(
+        "search rỗng không bảo dựa vào kết quả",
+        "Không có kết quả" in empty and "dựa vào" not in empty,
+        empty,
+    )
 
 
 def t_reader_guard():
@@ -120,6 +169,8 @@ def t_reader_guard():
     check("chặn userinfo", validate_public_url("http://user:pass@example.com/") is not None)
     check("chặn scheme lạ", validate_public_url("file:///etc/passwd") is not None)
     check("chặn rỗng", validate_public_url("") is not None)
+    check("IPv6 cụt không nổ", validate_public_url("http://[::1") is not None)
+    check("host khoảng trắng bị từ chối", validate_public_url("http:// ") is not None)
 
     # --- Dạng IP viết tắt mà ipaddress không parse nhưng glibc resolve về nội bộ
     for bad in [
@@ -187,8 +238,93 @@ def t_reader_dns_rebinding():
                 "DNS chết -> rỗng (fail-closed, không resolve lần 2)",
                 await mod._resolve_all("offline.example") == [],
             )
+            socket.getaddrinfo = fake_resolver(error=OSError("resolver exploded"))
+            check(
+                "OSError resolve -> rỗng (fail-closed)",
+                await mod._resolve_all("boom.example") == [],
+            )
         finally:
             socket.getaddrinfo = real_getaddrinfo
+
+        # Backend thật phải pin IP public vào inner AnyIOBackend, không dùng lớp abstract.
+        class FakeInner:
+            def __init__(self) -> None:
+                self.hosts: list[str] = []
+
+            async def connect_tcp(
+                self, host, port, timeout=None, local_address=None, socket_options=None
+            ):
+                self.hosts.append(host)
+                return f"stream:{host}:{port}"
+
+            async def sleep(self, seconds: float) -> None:
+                return None
+
+        inner = FakeInner()
+        backend = mod.SSRFCheckBackend(inner)  # type: ignore[arg-type]
+        try:
+            await backend.connect_tcp("127.0.0.1", 80)
+            check("backend chặn IP private", False)
+        except mod.SSRFBlocked:
+            check("backend chặn IP private", True)
+        check("backend private không gọi inner", inner.hosts == [])
+
+        inner.hosts.clear()
+        got = await backend.connect_tcp("8.8.8.8", 443)
+        check(
+            "backend IP public ủy quyền inner",
+            inner.hosts == ["8.8.8.8"] and got == "stream:8.8.8.8:443",
+            str(inner.hosts),
+        )
+
+        def fake_pub(host, *args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 0))]
+
+        socket.getaddrinfo = fake_pub
+        try:
+            inner.hosts.clear()
+            b2 = mod.SSRFCheckBackend(inner)  # type: ignore[arg-type]
+            await b2.connect_tcp("example.com", 443)
+            check("backend hostname pin IP public", inner.hosts == ["1.2.3.4"], str(inner.hosts))
+        finally:
+            socket.getaddrinfo = real_getaddrinfo
+
+        def fake_priv(host, *args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 0))]
+
+        socket.getaddrinfo = fake_priv
+        try:
+            inner.hosts.clear()
+            b3 = mod.SSRFCheckBackend(inner)  # type: ignore[arg-type]
+            try:
+                await b3.connect_tcp("evil.nip.io", 80)
+                check("backend hostname private bị chặn", False)
+            except mod.SSRFBlocked:
+                check("backend hostname private bị chặn", True)
+            check("backend hostname private không kết nối", inner.hosts == [])
+        finally:
+            socket.getaddrinfo = real_getaddrinfo
+
+        import httpcore
+
+        check(
+            "inner mặc định là AnyIOBackend (không phải lớp abstract)",
+            isinstance(mod.SSRFCheckBackend()._backend, httpcore.AnyIOBackend),
+        )
+
+        client = mod._build_client(5.0)
+        try:
+            check(
+                "_build_client không tạo pool mặc định rồi thay",
+                isinstance(client._transport, mod._PinnedTransport),
+            )
+            pool = client._transport._pool
+            check(
+                "_build_client pool dùng SSRFCheckBackend",
+                isinstance(pool._network_backend, mod.SSRFCheckBackend),
+            )
+        finally:
+            await client.aclose()
 
     asyncio.run(run())
 
@@ -438,6 +574,7 @@ def t_e2e_handlers():
         async def ask(self, question, history=None, quoted=None):
             self.received.append({"q": question, "quoted": quoted})
             if question == "LONGTEXT":
+                await asyncio.sleep(0.05)  # cho typing loop kịp gửi chat action
                 return Answer(text="y" * 8000, provider="gemini", searched=False, sources=[])
             txt = f"TRẢ LỜI: {question[:30]}"
             if quoted:
@@ -472,6 +609,12 @@ def t_e2e_handlers():
         await dp.feed_update(bot, up)
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /help trả lời", any("trợ lý AI" in c[1].get("text", "") for c in sent))
+
+        session.calls.clear()
+        up = mk_update(-100200, "supergroup", "/HELP", update_id=101)
+        await dp.feed_update(bot, up)
+        sent = [c for c in session.calls if c[0] == "SendMessage"]
+        check("E2E: /HELP ignore_case", any("trợ lý AI" in c[1].get("text", "") for c in sent))
 
         # 2) mention câu hỏi -> trả lời, ghi memory
         session.calls.clear()
@@ -575,6 +718,22 @@ def t_e2e_handlers():
         )
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /ask trả lời", any("TRẢ LỜI: thời tiết" in c[1].get("text", "") for c in sent))
+
+        session.calls.clear()
+        orch.received.clear()
+        chat_ask = Chat(id=-100200, type="supergroup", title="G")
+        reply_for_ask = _mk_reply(chat_ask, "nội dung cũ của bot", "FuckingCoolAIbot")
+        up = mk_update(
+            -100200, "supergroup", "/ask thế còn VN?", reply=reply_for_ask, update_id=102
+        )
+        await dp.feed_update(bot, up)
+        check(
+            "E2E: /ask khi reply đọc quoted",
+            bool(orch.received)
+            and orch.received[-1]["q"] == "thế còn VN?"
+            and orch.received[-1]["quoted"] == "nội dung cũ của bot",
+            str(orch.received),
+        )
 
         # 10) /ask không có câu hỏi -> nhắc cách dùng
         session.calls.clear()
@@ -715,6 +874,12 @@ def t_e2e_handlers():
             "E2E: topic — mọi phần sau đều có message_thread_id",
             all(c[1].get("message_thread_id") == 555 for c in extra_parts),
         )
+        actions = [c for c in session.calls if c[0] == "SendChatAction"]
+        check(
+            "E2E: topic — typing có message_thread_id",
+            any(c[1].get("message_thread_id") == 555 for c in actions),
+            str(actions[:2]),
+        )
 
         await session.close()
 
@@ -757,6 +922,10 @@ def t_ai_router_mock():
                 # model "kẹt vòng lặp": có tools thì gọi mãi, không tools mới trả lời
                 STATE["loop_n"] += 1
                 STATE["loop_with_tools"].append(tools)
+                if not tools:
+                    STATE["loop_retry_has_tool_msg"] = any(
+                        isinstance(m, dict) and m.get("role") == "tool" for m in req["messages"]
+                    )
                 if tools:
                     return self._send(
                         {
@@ -888,10 +1057,26 @@ def t_ai_router_mock():
                 and STATE["loop_with_tools"][0] is not False,
                 str(STATE["loop_with_tools"]),
             )
+            check(
+                "tool-loop: retry giữ transcript tool",
+                STATE.get("loop_retry_has_tool_msg") is True,
+            )
 
         asyncio.run(run())
     finally:
         server.shutdown()
+
+
+def t_normalize_content():
+    print("== AI content normalize ==")
+    from app.ai.base import _normalize_content
+
+    check("_normalize_content str", _normalize_content("hi") == "hi")
+    check(
+        "_normalize_content list parts",
+        _normalize_content([{"type": "text", "text": "A"}, {"text": "B"}]) == "AB",
+    )
+    check("_normalize_content None", _normalize_content(None) is None)
 
 
 if __name__ == "__main__":
@@ -903,5 +1088,6 @@ if __name__ == "__main__":
     t_filters()
     t_e2e_handlers()
     t_ai_router_mock()
+    t_normalize_content()
     print(f"\nKẾT QUẢ: {PASSED} passed, {FAILED} failed")
     sys.exit(1 if FAILED else 0)

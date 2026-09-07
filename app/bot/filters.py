@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from aiogram.filters import Filter
 from aiogram.types import Message
 
 from ..config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class AllowedChat(Filter):
@@ -19,12 +22,27 @@ class AllowedChat(Filter):
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        self._learn_logged: set[int] = set()
 
     async def __call__(self, message: Message) -> bool:
         chat = message.chat
         if chat.type not in ("group", "supergroup"):
             return False
-        return chat.id in self._settings.allowed_group_ids_list
+        if chat.id in self._settings.allowed_group_ids_list:
+            return True
+        # Bot đã nằm sẵn trong group (không có sự kiện my_chat_member) — vẫn
+        # log chat_id một lần khi learn-mode để admin điền ALLOWED_GROUP_IDS.
+        if self._settings.learn_group_id_mode and chat.id not in self._learn_logged:
+            self._learn_logged.add(chat.id)
+            logger.warning(
+                "GROUP_ID_LEARN: chat_id=%s title=%s username=%s type=%s — KHÔNG rời chat vì "
+                "LEARN_GROUP_ID_MODE=1. Hãy điền chat_id này vào ALLOWED_GROUP_IDS.",
+                chat.id,
+                chat.title or "(không tên)",
+                chat.username or "-",
+                chat.type,
+            )
+        return False
 
 
 def _has_mention(text: str, username: str) -> bool:

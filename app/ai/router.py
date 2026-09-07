@@ -41,9 +41,14 @@ class AIProviderRouter:
 
         for provider in self.providers:
             # pass 0: có tools; pass 1 (chỉ khi pass 0 lỗi vì tools): không kèm tools
+            already_plain = False
             for pass_no in (0, 1):
                 local_msgs = deepcopy(messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
+                if use_tools is None and already_plain:
+                    break  # pass 0 đã chạy không-tools — không gọi trùng
+                if use_tools is None:
+                    already_plain = True
                 try:
                     text = await self._complete_with_provider(
                         provider, local_msgs, use_tools, tool_executor
@@ -51,6 +56,11 @@ class AIProviderRouter:
                     return text, provider.name
                 except ProviderError as exc:
                     last_error = exc
+                    logger.warning("Provider %s lỗi: %s", provider.name, exc)
+                    # Giữ transcript tool đã chạy: retry không-tools / provider kế
+                    # phải thấy kết quả search, không tìm lại từ đầu.
+                    if len(local_msgs) > len(messages):
+                        messages = local_msgs
                     if exc.unsupported_tools and provider.supports_tools:
                         # Model không hỗ trợ tool-calling -> tắt vĩnh viễn rồi thử lại
                         provider.supports_tools = False
@@ -62,6 +72,9 @@ class AIProviderRouter:
                     break  # lỗi khác -> chuyển provider kế tiếp
                 except Exception as exc:  # lỗi không lường trước -> coi như hỏng provider này
                     last_error = ProviderError(f"{provider.name}: {exc}")
+                    logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
+                    if len(local_msgs) > len(messages):
+                        messages = local_msgs
                     break
 
         raise AllProvidersFailed(str(last_error) if last_error else "Tất cả provider đều lỗi")

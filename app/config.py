@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SEARCH_BACKENDS = ("ddgs", "searxng", "tavily")
+_LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -56,10 +57,10 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
 
     # --- Giới hạn sử dụng ---
-    max_questions_per_min_per_user: int = 3
-    max_context_turns: int = 10
-    max_tool_rounds: int = 4
-    request_timeout_sec: float = 60.0
+    max_questions_per_min_per_user: int = Field(default=3, ge=0)
+    max_context_turns: int = Field(default=10, ge=1)
+    max_tool_rounds: int = Field(default=4, ge=0)
+    request_timeout_sec: float = Field(default=60.0, gt=0)
 
     log_level: str = "INFO"
 
@@ -72,6 +73,17 @@ class Settings(BaseSettings):
             allowed = " | ".join(_SEARCH_BACKENDS)
             raise ValueError(f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})")
         return backend
+
+    @field_validator("log_level")
+    @classmethod
+    def _check_log_level(cls, value: str) -> str:
+        level = (value or "INFO").strip().upper()
+        if level == "WARN":
+            level = "WARNING"
+        if level not in _LOG_LEVELS:
+            allowed = " | ".join(_LOG_LEVELS)
+            raise ValueError(f"LOG_LEVEL không hợp lệ: {value!r} (cho phép: {allowed})")
+        return level
 
     # ---------- Các tiện ích ----------
     @property

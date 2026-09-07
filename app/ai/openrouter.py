@@ -15,5 +15,8 @@ def make_openrouter_provider(settings: Settings) -> OpenAICompatProvider:
         api_key=settings.openrouter_api_key,
         model=settings.openrouter_model,
         timeout=settings.request_timeout_sec,
-        extra_headers={"X-Title": "FuckingCoolAI bot"},
+        extra_headers={
+            "X-Title": "FuckingCoolAI bot",
+            "HTTP-Referer": "https://github.com/vanphandinh/fucking-cool-ai-bot",
+        },
     )

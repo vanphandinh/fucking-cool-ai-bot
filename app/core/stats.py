@@ -26,6 +26,11 @@ class Stats:
         self.last_error: str | None = None
         self.fallback_count = 0
 
+    def live_questions_today(self) -> int:
+        """Số câu hỏi hôm nay (VN), đã roll ngày nếu qua nửa đêm."""
+        self._roll_day()
+        return self.questions_today
+
     def record_question(self) -> None:
         self._roll_day()
         self.questions_total += 1

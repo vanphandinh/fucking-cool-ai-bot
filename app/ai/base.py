@@ -78,7 +78,10 @@ class OpenAICompatProvider:
         if tools and self.supports_tools:
             payload["tools"] = tools
 
-        resp = await self._client.post("chat/completions", json=payload)
+        try:
+            resp = await self._client.post("chat/completions", json=payload)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.name}: lỗi mạng ({exc})") from exc
         if resp.status_code >= 400:
             body = resp.text[:500]
             unsupported = resp.status_code == 400 and (
@@ -89,19 +92,32 @@ class OpenAICompatProvider:
                 unsupported_tools=unsupported,
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            raise ProviderError(
+                f"{self.name}: phản hồi không phải JSON: {resp.text[:200]}"
+            ) from exc
         try:
             msg = data["choices"][0]["message"]
-        except (KeyError, IndexError) as exc:
+        except (KeyError, IndexError, TypeError) as exc:
             raise ProviderError(f"{self.name}: phản hồi thiếu choices: {str(data)[:200]}") from exc
+        if not isinstance(msg, dict):
+            raise ProviderError(f"{self.name}: message không phải object: {str(msg)[:200]}")
 
-        content = msg.get("content")
+        content = _normalize_content(msg.get("content"))
         tool_calls: list[ToolCall] = []
         for tc in msg.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
             fn = tc.get("function") or {}
+            if not isinstance(fn, dict):
+                fn = {}
             try:
                 args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
+                args = {}
+            if not isinstance(args, dict):
                 args = {}
             tool_calls.append(
                 ToolCall(id=tc.get("id") or "", name=fn.get("name") or "", arguments=args)
@@ -110,3 +126,22 @@ class OpenAICompatProvider:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+def _normalize_content(content: object) -> str | None:
+    """Chuẩn hoá ``message.content`` (string, list parts, hoặc None) thành str."""
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+        return "".join(parts)
+    return str(content)
