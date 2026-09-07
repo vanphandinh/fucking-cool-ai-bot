@@ -13,5 +13,9 @@ class ProviderCapabilities:
 
     def accepts(self, *, requires_vision: bool, image_count: int) -> bool:
         if requires_vision:
-            return self.route == "vision" and self.supports_vision and self.max_images >= image_count
+            return (
+                self.route == "vision"
+                and self.supports_vision
+                and self.max_images >= image_count
+            )
         return self.route == "text"
