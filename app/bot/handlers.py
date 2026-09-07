@@ -80,13 +80,11 @@ def build_message_router(
             return
         allowed_text = settings.allowed_group_ids_list or "TRỐNG"
         cooling = []
-        for provider in orchestrator.router.providers:
-            if not provider.health.available():
-                state = (
-                    "disabled"
-                    if provider.health.disabled
-                    else f"{provider.health.cooldown_seconds()}s"
-                )
+        provider_router = getattr(orchestrator, "router", None)
+        for provider in getattr(provider_router, "providers", []):
+            health = getattr(provider, "health", None)
+            if health is not None and not health.available():
+                state = "disabled" if health.disabled else f"{health.cooldown_seconds()}s"
                 cooling.append(f"{provider.name}={state}")
         distribution = (
             ", ".join(f"{k}: {v}" for k, v in stats.by_provider.items())
@@ -241,7 +239,14 @@ async def _handle_question(
                 )
                 try:
                     history = memory.history_for(chat_id, settings.max_context_turns)
-                    answer = await orchestrator.ask(request=request, history=history)
+                    if images:
+                        answer = await orchestrator.ask(request=request, history=history)
+                    else:
+                        answer = await orchestrator.ask(
+                            question,
+                            history,
+                            quoted=quoted,
+                        )
                 except NoCapableProvider as exc:
                     stats.record_error(str(exc))
                     await message.reply("Hiện chưa có model đọc ảnh được cấu hình.")
@@ -276,7 +281,7 @@ async def _handle_question(
                     return
 
                 stats.record_answer(answer.provider)
-                stats.record_fallback(answer.fallbacks)
+                stats.record_fallback(getattr(answer, "fallbacks", 0))
                 if answer.searched:
                     stats.record_search()
                 memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question
