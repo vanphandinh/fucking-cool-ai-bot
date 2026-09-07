@@ -1,256 +1,387 @@
 # 🤖 fucking-cool-ai-bot
 
-Bot Telegram AI chạy trong **group được chỉ định**, deploy bằng **Docker Compose** trên VPS.
-Trả lời bằng **AI miễn phí** (Google Gemini → Groq → OpenRouter `:free`), có **tìm kiếm web**
-(DuckDuckGo / SearXNG / Tavily), chỉ nói chuyện với các group nằm trong danh sách cho phép.
+Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
+Bot hỗ trợ cả **text + image understanding**, có tool tìm/đọc web, fallback AI theo capability,
+và chỉ xử lý message trong phạm vi group được cấu hình.
 
-> 📄 Kế hoạch triển khai chi tiết: [PLAN_TRIEN_KHAI.md](PLAN_TRIEN_KHAI.md)
-> 📘 Hướng dẫn SearXNG production trên VPS: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md)
-> ✅ Trạng thái code: **Phase P1–P2 đã viết** (MVP + web search + fallback AI).
+Tài liệu đang duy trì:
 
----
+- [Telegram vision input](docs/telegram-vision-input.md) — luồng ảnh, routing và giới hạn an toàn.
+- [SearXNG production trên VPS](DEPLOY_SEARXNG_VPS.md) — profile SearXNG private trong Docker.
 
-## 1. Yêu cầu trước khi chạy
-
-| Thứ | Trạng thái | Ghi chú |
-|---|---|---|
-| Bot Telegram `@FuckingCoolAIbot` | ✅ đã tạo | **Privacy Mode phải OFF** (`/setprivacy` → Disable) |
-| VPS Ubuntu 22.04/24.04 + Docker & Compose plugin | cần làm | `docker --version`, `docker compose version` |
-| Key AI miễn phí | cần làm | tối thiểu **Gemini**: https://aistudio.google.com/apikey |
-| Group riêng tư | ✅ đã add bot | cần lấy **chat_id** (bước 4) |
-
-> ⚠️ Nếu đã add bot vào group **trước** khi tắt Privacy Mode → gỡ bot rồi add lại để có hiệu lực.
+> `README.md`, `.env.example`, source code, Docker/CI là source of truth cho trạng thái hiện tại.
+> Các kế hoạch/audit snapshot cũ được giữ trong Git/PR history thay vì duy trì thành tài liệu sống.
 
 ---
 
-## 2. Cài đặt nhanh trên VPS
+## 1. Khả năng hiện tại
+
+- Chỉ hoạt động trong `group`/`supergroup` thuộc `ALLOWED_GROUP_IDS`.
+- Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; khi không ở learn-mode bot tự rời chat lạ lúc được add.
+- Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
+- Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
+- Text route: Gemini → Groq → OpenRouter, chỉ dùng provider có key.
+- Vision route tách riêng, chọn theo `VISION_PROVIDER_ORDER`: Gemini vision, tối đa 2 Groq vision slot,
+  và Cloudflare Workers AI reserve.
+- Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
+- Ở flow Telegram hiện tại, một request có thể lấy ảnh từ **message hiện tại + message được reply**
+  (tối đa 2 ảnh thực tế). `MAX_IMAGES_PER_REQUEST` là trần capability/config, không tự thêm album support.
+- Model có thể gọi `web_search` và `fetch_url`; search backend được chọn bằng `SEARCH_BACKEND`.
+- `/status` cho admin hiển thị uptime, provider, fallback, search, lỗi gần nhất và provider cooldown.
+- CI kiểm tra Python 3.11/3.12, lint, tests, dependency audit và Docker build.
+
+---
+
+## 2. Kiến trúc runtime
+
+```text
+Telegram group
+   │
+   ├─ allowlist / trigger / rate-limit
+   │
+   ├─ TelegramMediaLoader ──► UserRequest(text, quoted_text, ephemeral images)
+   │
+   ▼
+Orchestrator
+   │
+   ├─ text request  ──► text-capable provider pool
+   ├─ image request ──► vision-capable provider pool
+   │
+   └─ tools ──► web_search / fetch_url
+                  │
+                  └─ SEARCH_BACKEND = ddgs | searxng | tavily
+```
+
+Provider router lọc theo capability trước khi fallback. Text request không rơi sang vision slot và image
+request không rơi sang text-only slot.
+
+---
+
+## 3. Yêu cầu trước khi chạy
+
+- Python runtime trong Docker: **3.12**.
+- Docker + Docker Compose plugin trên VPS.
+- Telegram bot token từ BotFather.
+- Tối thiểu một text provider key trong `GEMINI_API_KEY`, `GROQ_API_KEY` hoặc `OPENROUTER_API_KEY`.
+- Privacy Mode nên tắt nếu muốn bot đọc message/reply trong group theo workflow hiện tại.
+
+Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo các default
+đang được cấu hình trong source và `.env.example`.
+
+---
+
+## 4. Cài đặt nhanh
 
 ```bash
-# 1) Clone repo
-git clone <url-của-repo> && cd fucking-cool-ai-bot
+git clone https://github.com/vanphandinh/fucking-cool-ai-bot.git
+cd fucking-cool-ai-bot
 
-# 2) Tạo .env từ mẫu và điền key
 cp .env.example .env
 nano .env
-#   - BOT_TOKEN=<token từ BotFather>
-#   - GEMINI_API_KEY=<key từ aistudio.google.com>
-#   - GROQ_API_KEY / OPENROUTER_API_KEY (khuyến nghị — để fallback khi Gemini hết quota)
-#   - ADMIN_IDS=<id telegram của bạn, xem @userinfobot>
-#   - ALLOWED_GROUP_IDS=<để trống ban đầu nếu dùng chế độ học chat_id ở bước 4>
 
-# 3) Build & chạy bot
+# tối thiểu điền:
+# BOT_TOKEN=...
+# GEMINI_API_KEY=...   # hoặc GROQ_API_KEY / OPENROUTER_API_KEY
+# ADMIN_IDS=...
+# ALLOWED_GROUP_IDS=...  # hoặc dùng learn-mode ở mục 5
+
 docker compose up -d --build
-docker compose logs -f bot        # theo dõi log
-```
-
----
-
-## 3. Lấy chat_id của group (làm 1 lần)
-
-Có **2 cách**:
-
-**Cách A — chế độ học id (đơn giản nhất):**
-```bash
-# Trong .env: LEARN_GROUP_ID_MODE=1 (ALLOWED_GROUP_IDS để trống)
-docker compose up -d --build
-```
-Thêm bot vào group riêng tư của bạn → xem log:
-```bash
 docker compose logs -f bot
-# Tìm dòng: GROUP_ID_LEARN: chat_id=-1001234567890 title=...
 ```
-Sửa `.env`: `ALLOWED_GROUP_IDS=-1001234567890`, đặt `LEARN_GROUP_ID_MODE=0`, rồi `docker compose up -d`.
 
-**Cách B — dùng bot RawDataBot:** mở chat **@RawDataBot**, forward 1 tin bất kỳ từ group
-của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Điền vào `ALLOWED_GROUP_IDS`.
-
-> Bot sẽ **tự rời** mọi group không nằm trong `ALLOWED_GROUP_IDS` (trừ khi đang ở chế độ học id).
+Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc các giá trị số có constraint, app sẽ fail-fast
+khi load `Settings` thay vì chạy với cấu hình mơ hồ.
 
 ---
 
-## 4. Cấu hình & biến môi trường
+## 5. Lấy `chat_id` và allowlist
 
-| Biến | Bắt buộc | Ý nghĩa |
-|---|---|---|
-| `BOT_TOKEN` | ✔ | Token từ @BotFather |
-| `BOT_USERNAME` | tùy chọn | Username bot — khi khởi động bot **tự lấy từ Telegram** (`getMe`); giá trị này chỉ là fallback |
-| `ALLOWED_GROUP_IDS` | ✔ | Danh sách chat_id group được phép, cách nhau `,` |
-| `ADMIN_IDS` | | user_id admin (dùng `/status`) |
-| `LEARN_GROUP_ID_MODE` | | `1` = học chat_id thay vì tự rời group lạ |
-| `GEMINI_API_KEY` | ✔ (1 key tối thiểu) | Nguồn AI chính (free ~1.500 req/ngày) |
-| `GROQ_API_KEY` | khuyến nghị | Fallback khi Gemini lỗi/quá tải |
-| `OPENROUTER_API_KEY` | tùy chọn | Fallback cuối |
-| `SEARCH_BACKEND` | | `ddgs` (mặc định) · `searxng` · `tavily` |
-| `SEARXNG_URL` | khi dùng searxng | URL nội bộ bot gọi tới SearXNG, mặc định `http://searxng:8080` (Docker network) |
-| `SEARXNG_IMAGE` | | tùy chọn: pin image SearXNG theo tag ngày khi production (mặc định `ghcr.io/searxng/searxng:latest`) |
-| `GRANIAN_BLOCKING_THREADS` | | Python blocking threads/worker của SearXNG (mặc định `1`, dành cho VPS nhỏ) |
-| `GRANIAN_BACKPRESSURE` | | Giới hạn request đồng thời/worker SearXNG (mặc định `2`; giữ 1 worker) |
-| `TAVILY_API_KEY` | khi dùng tavily | app.tavily.com (free ~1.000 credit/tháng) |
-| `MAX_QUESTIONS_PER_MIN_PER_USER` | | Chống spam (mặc định 3) |
-| `REQUEST_TIMEOUT_SEC` | | Timeout HTTP; reader áp dụng cho toàn bộ lần đọc trang (mặc định 60 giây) |
-| `QUESTION_TIMEOUT_SEC` | | Tổng thời gian chờ/xử lý một câu hỏi, gồm xếp hàng và fallback (mặc định 180 giây) |
-| `LOG_LEVEL` | | `INFO` mặc định |
-
----
-
-## 5. Bật SearXNG production (private — chỉ cho bot, không public)
-
-Cấu hình SearXNG trong repo đã được dựng sẵn theo hướng **production, private**:
-
-- bot gọi nội bộ qua Docker network: `http://searxng:8080`
-- container SearXNG **không publish port ra host/Internet**; chỉ dành cho mạng tin cậy
-  (host/container cùng network vẫn có thể truy cập); không cần Valkey / reverse proxy / domain
-- đặt rõ `limiter: false`, `public_instance: false`; vẫn mount `limiter.toml` vì
-  SearXNG đọc cấu hình botdetection ngay cả khi limiter tắt
-- mẫu loại `ahmia`/`torch` (không dùng Tor), tạm loại `startpage`/`wikipedia` do lỗi
-  upstream đã báo; có thể bật lại hai engine sau khi cập nhật image và kiểm tra
-- giới hạn Granian cho VPS nhỏ, không dùng biến `UWSGI_*`
-- hướng dẫn đầy đủ và giải thích từng log: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md)
-
-### 5.1. Tạo file config thật và đổi secret
-
-```bash
-# Chỉ dành cho cài mới; không ghi đè file đang có secret thật
-cp -i searxng/settings.example.yml searxng/settings.yml
-openssl rand -hex 32
-nano searxng/settings.yml       # đổi secret_key bằng kết quả lệnh trên
-```
-
-**Đã có `settings.yml`?** Merge thay đổi từ mẫu, giữ secret và recreate container;
-chỉ cập nhật file mẫu hoặc `restart` là chưa đủ để áp dụng mount/env mới.
-Xem mục 3.2 trong [hướng dẫn nâng cấp](DEPLOY_SEARXNG_VPS.md).
-
-### 5.2. Điền trong `.env`
+Khi chưa biết `chat_id`:
 
 ```env
-SEARCH_BACKEND=searxng
-SEARXNG_URL=http://searxng:8080
+LEARN_GROUP_ID_MODE=1
+ALLOWED_GROUP_IDS=
 ```
 
-### 5.3. Chạy & kiểm tra
+Khởi động bot rồi xem log:
 
 ```bash
-docker compose --profile searxng up -d --build
+docker compose up -d --build
+docker compose logs -f bot
+# GROUP_ID_LEARN: chat_id=-1001234567890 ...
+```
 
+Sau đó khóa lại phạm vi:
+
+```env
+LEARN_GROUP_ID_MODE=0
+ALLOWED_GROUP_IDS=-1001234567890
+```
+
+Có thể cấu hình nhiều group bằng danh sách phân tách dấu phẩy.
+
+---
+
+## 6. Cách dùng
+
+| Flow | Ví dụ / hành vi |
+|---|---|
+| `/ask` | `/ask giải thích blockchain ngắn gọn` |
+| Mention | `@FuckingCoolAIbot giá vàng hôm nay?` |
+| Reply bot | Reply vào tin của bot rồi nhập câu hỏi; không bắt buộc mention lại |
+| Reply thành viên | Cần `@mention` hoặc dùng `/ask` để trigger |
+| Ảnh hiện tại | Telegram photo hoặc JPEG/PNG/WebP document + caption trigger bot |
+| Ảnh được reply | Reply ảnh rồi dùng `@mention` hoặc `/ask <câu hỏi>` |
+| `/help` | Hướng dẫn ngắn trong Telegram |
+| `/status` | Chỉ admin trong `ADMIN_IDS` |
+
+Plain image không có text/caption trigger sẽ không tự gọi bot.
+
+### Vision hiện hỗ trợ gì?
+
+- Telegram photo được coi là `image/jpeg`.
+- Document chỉ nhận `image/jpeg`, `image/png`, `image/webp`.
+- Loader lấy ảnh ở message hiện tại và/hoặc message được reply.
+- Raw image bytes chỉ tồn tại trong request RAM; khi lưu ChatMemory chỉ lưu marker dạng
+  `[kèm N ảnh] <câu hỏi>`, không lưu bytes/base64.
+- Base64 data URL chỉ được tạo tại provider boundary.
+- Provider error excerpt được redact image data URL trước khi có thể đi vào log/status.
+
+Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
+
+---
+
+## 7. Cấu hình
+
+### 7.1 Telegram
+
+| Biến | Default | Ý nghĩa |
+|---|---|---|
+| `BOT_TOKEN` | trống | Bắt buộc để chạy |
+| `BOT_USERNAME` | `FuckingCoolAIbot` | Fallback; startup gọi Telegram `getMe()` và đồng bộ username thực |
+| `ALLOWED_GROUP_IDS` | trống | Danh sách group/supergroup được phép |
+| `ADMIN_IDS` | trống | User ID được dùng `/status` |
+| `LEARN_GROUP_ID_MODE` | `0` | Log `chat_id` để bootstrap allowlist |
+
+### 7.2 Text provider pool
+
+| Biến | Default model | Vai trò |
+|---|---|---|
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-2.5-flash` | Text provider ưu tiên 1 |
+| `GROQ_API_KEY` / `GROQ_MODEL` | `llama-3.3-70b-versatile` | Text fallback |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `meta-llama/llama-3.3-70b-instruct:free` | Text fallback cuối |
+
+Startup yêu cầu **ít nhất một** text provider key.
+
+### 7.3 Vision provider pool
+
+| Biến | Default | Ý nghĩa |
+|---|---|---|
+| `VISION_ENABLED` | `1` | Bật/tắt toàn bộ vision slot; text route không bị ảnh hưởng |
+| `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Model của Gemini vision slot |
+| `GROQ_VISION_MODELS` | `qwen/qwen3.8-27b,qwen/qwen3.6-27b` | Tối đa hai Groq vision slot theo thứ tự list |
+| `CLOUDFLARE_ACCOUNT_ID` | trống | Bắt buộc cùng API token để tạo Cloudflare vision slot |
+| `CLOUDFLARE_API_TOKEN` | trống | Token Workers AI |
+| `CLOUDFLARE_VISION_MODEL` | `@cf/google/gemma-4-26b-a4b-it` | Cloudflare vision model |
+| `VISION_PROVIDER_ORDER` | `gemini,groq_qwen38,groq_qwen36,cloudflare` | Thứ tự fallback vision hiệu lực |
+| `MAX_IMAGES_PER_REQUEST` | `3` | Capability/config ceiling; Telegram loader hiện chỉ cung cấp current + reply |
+| `MAX_IMAGE_BYTES` | `8388608` | Trần bytes cho từng ảnh |
+| `MAX_TOTAL_IMAGE_BYTES` | `12582912` | Trần tổng bytes ảnh trong một request |
+
+`configured_vision_provider_names` chỉ báo các slot vừa có credential/model phù hợp vừa nằm trong
+`VISION_PROVIDER_ORDER`.
+
+### 7.4 Web search
+
+| Biến | Default | Ý nghĩa |
+|---|---|---|
+| `SEARCH_BACKEND` | `ddgs` | Chọn đúng một backend: `ddgs`, `searxng`, `tavily` |
+| `SEARXNG_URL` | `http://searxng:8080` trong `.env.example` | URL JSON API khi chọn SearXNG |
+| `TAVILY_API_KEY` | trống | Bắt buộc khi chọn Tavily |
+
+Search layer **không tự fallback** giữa DDGS/SearXNG/Tavily. Nếu backend đã chọn lỗi, tool trả lỗi về model;
+đó là luồng khác với fallback AI provider.
+
+Các biến Compose-only cho SearXNG:
+
+- `SEARXNG_IMAGE`
+- `GRANIAN_BLOCKING_THREADS` (default `1`)
+- `GRANIAN_BACKPRESSURE` (default `2`)
+
+### 7.5 Limits / runtime
+
+| Biến | Default | Ý nghĩa |
+|---|---|---|
+| `MAX_QUESTIONS_PER_MIN_PER_USER` | `3` | Rate-limit RAM theo user; `0` = chặn toàn bộ câu hỏi |
+| `MAX_CONTEXT_TURNS` | `10` | Số cặp hỏi/đáp gần nhất giữ theo chat |
+| `MAX_TOOL_ROUNDS` | `4` | Số vòng tool tối đa trong completion |
+| `REQUEST_TIMEOUT_SEC` | `60.0` | Timeout HTTP/provider/reader |
+| `QUESTION_TIMEOUT_SEC` | `180.0` | Deadline tổng của một câu hỏi, gồm chờ chat lock |
+| `LOG_LEVEL` | `INFO` | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` (`WARN` được normalize) |
+
+Router còn có safety cap nội bộ tối đa 8 tool calls cho một completion, dùng chung qua retry/fallback.
+
+---
+
+## 8. Routing, fallback và provider health
+
+### Text
+
+Thứ tự được tạo cố định theo key đã cấu hình:
+
+```text
+Gemini -> Groq -> OpenRouter
+```
+
+### Vision
+
+Vision slot được tạo từ credential hiện có rồi xếp theo `VISION_PROVIDER_ORDER`.
+Cloudflare hiện chỉ là **vision provider**, không nằm trong text pool.
+
+Provider health là state trong RAM:
+
+- `401/403`: disable slot đến khi process restart.
+- `429`: cooldown theo numeric `Retry-After`; nếu không parse được thì mặc định 60 giây.
+- Network/`5xx` transient: sau 2 lỗi liên tiếp thì cooldown 30 giây.
+- Thành công reset transient counter/cooldown.
+
+Fallback giữ chung tool budget của request; provider không hỗ trợ tools có thể retry plain mode theo error
+classification thay vì làm hỏng toàn bộ route.
+
+---
+
+## 9. Web search và đọc trang
+
+Orchestrator expose hai tool:
+
+- `web_search(query)` — gọi backend đang chọn.
+- `fetch_url(url)` — đọc một URL cụ thể.
+
+`fetch_url` chỉ chấp nhận destination public; reader kiểm tra URL/DNS/redirect để chặn localhost, private
+network và các address class không được hỗ trợ. Reader cũng giới hạn body/deadline và từ chối compressed
+response trong đường đọc trực tiếp để tránh memory amplification.
+
+### SearXNG private
+
+Profile `searxng` không publish port ra host. Bot gọi nội bộ `http://searxng:8080`.
+Trước khi bật profile phải tạo file thật:
+
+```bash
+cp -i searxng/settings.example.yml searxng/settings.yml
+openssl rand -hex 32
+nano searxng/settings.yml   # thay secret_key
+
+docker compose --profile searxng up -d --build
+```
+
+Hướng dẫn vận hành/nâng cấp: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md).
+
+---
+
+## 10. Security và dữ liệu
+
+- `.env` và `searxng/settings.yml` chứa secret và đã nằm trong `.gitignore`.
+- Docker image chạy bằng user non-root (`appuser`).
+- Bot không có database; context, stats, rate-limit và provider health đều là in-memory state.
+- Image bytes không được ghi vào ChatMemory và không persist bởi app.
+- Nội dung user/ảnh vẫn phải được gửi tới AI provider được chọn để model xử lý; không gửi dữ liệu nhạy cảm
+  nếu policy của provider/tổ chức không cho phép.
+- Web reader có SSRF guard và không dùng URL nội bộ/localhost làm tool target.
+- Startup giữ pending Telegram updates (`drop_pending_updates=False`); shutdown hủy/join handler đang chạy
+  trước khi đóng Telegram/provider clients.
+
+---
+
+## 11. Vận hành
+
+```bash
+docker compose ps
+docker compose logs --tail=100 bot
+docker compose restart bot
+docker compose up -d --build
+```
+
+Nếu dùng SearXNG:
+
+```bash
 docker compose --profile searxng ps
 docker compose logs --tail=100 searxng
-docker compose logs --tail=100 bot
-
-# healthcheck nội bộ (không cần mở port ra host):
 docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz
 ```
 
----
+Các lỗi startup đáng chú ý:
 
-## 6. Cách dùng trong group
-
-| Cách gọi | Ví dụ |
-|---|---|
-| @mention | `@FuckingCoolAIbot giá vàng hôm nay bao nhiêu?` |
-| Reply tin của bot / của thành viên + tag | reply tin cũ: `thế còn ở VN thì sao? @FuckingCoolAIbot` |
-| Lệnh `/ask` | `/ask giải thích ngắn blockchain là gì` |
-| `/help`, `/status` (admin) | trợ giúp / trạng thái vận hành |
-
-Bot **tự quyết định** khi nào cần tìm web: câu hỏi thời sự/giá cả/thời tiết → tự search
-và đính **📚 Nguồn tham khảo**; câu hỏi khái niệm/tính toán/suy luận → trả lời thẳng.
-
-**Giới hạn an toàn:** chỉ hoạt động trong `ALLOWED_GROUP_IDS` (tự rời group lạ);
-mỗi người ≤ `MAX_QUESTIONS_PER_MIN_PER_USER` câu/phút; câu hỏi > 4.000 ký tự bị cắt.
-Tool đọc web chỉ cho phép URL public (chặn IP nội bộ/localhost — chống SSRF).
-
-> 🔒 **Quyền riêng tư:** nội dung câu hỏi được gửi tới provider AI miễn phí
-> (Gemini/Groq/OpenRouter). Theo điều khoản free tier, dữ liệu **có thể được dùng
-> để huấn luyện model**. Khuyến cáo không hỏi thông tin bí mật/cá nhân trong group.
+- thiếu `BOT_TOKEN` → dừng.
+- không có text provider key → dừng.
+- vision bật nhưng không có vision provider hợp lệ → warning; text bot vẫn chạy.
+- `SEARCH_BACKEND=searxng` nhưng URL trống hoặc `tavily` nhưng thiếu key → warning lúc startup; tool sẽ lỗi khi dùng.
 
 ---
 
-## 7. Vận hành
+## 12. Tests và CI
+
+Cài dependency ứng dụng và tool kiểm tra giống CI:
 
 ```bash
-docker compose ps                        # trạng thái
-docker compose logs --tail=100 bot       # log gần nhất của bot
-docker compose logs --tail=100 searxng   # log SearXNG
-# Healthcheck SearXNG nội bộ (không mở port ra host — dùng exec):
-docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz
-docker compose restart bot               # khởi động lại bot
-docker compose up -d --build             # cập nhật code mới
-docker compose --profile searxng down    # tắt bot + searxng profile
+python -m pip install -r requirements.txt
+python -m pip install ruff==0.16.6 pip-audit==2.10.1
 ```
 
-Không có database — muốn "backup" chỉ cần giữ bản sao `.env`. Khi `GEMINI_API_KEY` hết
-quota (log báo 429), bot tự chuyển sang Groq/OpenRouter nếu đã cấu hình.
+Chạy full verification:
+
+```bash
+python tests/run_tests.py
+python -m unittest discover -s tests -p 'test_*.py' -v
+python -m ruff check .
+python -m compileall -q app tests
+python -m pip check
+python -m pip_audit --progress-spinner off
+```
+
+Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull request hoặc `workflow_dispatch`:
+
+- Python 3.11 + 3.12.
+- Ruff, `pip check`, `compileall`.
+- Cả hai test suites.
+- `pip-audit`.
+- Production Docker build trên Python 3.12 job.
+
+Tests dùng fake Telegram/provider transports và local fixtures; CI không chứng minh live credential/provider
+E2E trong môi trường production.
 
 ---
 
-## 8. Xử lý sự cố thường gặp
+## 13. Cấu trúc repo
 
-| Triệu chứng | Nguyên nhân & cách xử lý |
-|---|---|
-| Bot im lặng trong group | `ALLOWED_GROUP_IDS` chưa đúng chat_id (kiểm tra log `GROUP_ID_LEARN`); hoặc Privacy Mode vẫn ON (gỡ + add lại bot) |
-| Log báo `BOT_TOKEN không hợp lệ` | Sai token; tạo lại ở @BotFather |
-| Log báo `Thiếu/Chưa cấu hình API key` | Điền `GEMINI_API_KEY` (hoặc Groq/OpenRouter) vào `.env` rồi restart |
-| Trả lời "không tìm kiếm được web" | Backend `ddgs` bị chặn tạm thời → bật SearXNG (mục 5) hoặc Tavily |
-| Granian cảnh báo `spawning up to 4 Python threads` | Compose mới dùng 1 blocking thread + backpressure 2 cho VPS nhỏ; cần recreate để nhận env mới |
-| Log SearXNG báo `missing config file: /etc/searxng/limiter.toml` | Botdetection vẫn đọc file dù limiter tắt; mount `searxng/limiter.toml` có sẵn rồi recreate |
-| Log SearXNG báo thiếu `X-Forwarded-For` / `X-Real-IP` | Có thể chấp nhận với kết nối trực tiếp private và limiter/public_instance đều tắt; không giả IP ở bot. Nếu dùng proxy/public phải cấu hình header đúng (xem tài liệu triển khai) |
-| `ahmia`/`torch` không load; Startpage parse JSON lỗi; Wikipedia HTTP 400 | Mẫu mới loại các engine này (hai engine sau là workaround). Phải merge vào **file thật** `settings.yml`; xem chẩn đoán `unresponsive_engines` ở tài liệu triển khai |
-| Log SearXNG báo `... settings.yml is not a valid file` | Chưa tạo `searxng/settings.yml` từ `settings.example.yml` (mục 5.1) |
-| Bị 429 khi nhóm dùng nhiều | Hết quota Gemini phút/ngày → tự fallback; bớt tần suất hoặc thêm key Groq/OpenRouter |
-
----
-
-## 9. Cấu trúc repo
-
-```
+```text
 app/
-├── main.py              # khởi động bot (polling)
-├── config.py            # đọc .env (pydantic-settings)
-├── bot/                 # filters (allowlist, trigger) + handlers + lifecycle (tự rời group lạ)
-├── core/                # orchestrator (tool-calling), context, rate-limit, stats, formatting
-├── ai/                  # provider Gemini/Groq/OpenRouter + router fallback
-└── search/              # backend ddgs/searxng/tavily + reader (Jina/HTMLParser)
-Dockerfile · docker-compose.yml · requirements.txt · .env.example
-searxng/settings.example.yml · searxng/limiter.toml
+├── main.py                # startup, polling, cleanup
+├── config.py              # pydantic-settings
+├── ai/
+│   ├── base.py            # OpenAI-compatible transport + provider errors
+│   ├── capabilities.py    # text/vision capability metadata
+│   ├── health.py          # cooldown/disable state
+│   ├── router.py          # capability-aware fallback + tool budget
+│   ├── multimodal.py      # image bytes -> data URL tại provider boundary
+│   └── gemini.py / groq.py / openrouter.py / cloudflare.py
+├── bot/
+│   ├── filters.py         # allowlist + trigger
+│   ├── handlers.py        # /ask, /help, /status, lifecycle
+│   └── media.py           # Telegram image validation/download bounds
+├── core/                  # request, orchestrator, memory, rate-limit, stats, formatting
+└── search/                # ddgs/searxng/tavily + safe page reader
+
+tests/
+├── run_tests.py
+├── test_audit_regressions.py
+└── test_vision.py
+
+.github/workflows/audit.yml
+Dockerfile
+docker-compose.yml
+.env.example
+searxng/settings.example.yml
+searxng/limiter.toml
+docs/telegram-vision-input.md
 DEPLOY_SEARXNG_VPS.md
 ```
-
-Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KHAI.md](PLAN_TRIEN_KHAI.md).
-
----
-
-## 10. Chạy bộ kiểm thử (audit, offline — không cần mạng/key)
-
-```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/run_tests.py     # kỳ vọng: 194 passed, 0 failed
-.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
-```
-
-Bộ test gồm: config/formatting/context/rate-limit/stats · filters aiogram ·
-guard chống SSRF (IP literal nội bộ, dạng viết tắt `127.1`/`2130706433`/`0x7f…`,
-IPv6 zone index & IPv4-mapped, dải CGNAT/unspecified/broadcast/link-local,
-DNS-rebinding/`nip.io`, IP pinning — resolve trước và chỉ kết nối IP công khai,
-kiểm tra lại từng chặng redirect, chặn redirect loop, giới hạn dung lượng
-trang, Jina-reader 200/404) · **E2E handlers qua `Dispatcher.feed_update`**
-(fake Telegram session: /help, /ask, /ask@bot đúng/sai mention, mention trong
-caption, reply-tin-bot, group lạ/private im lặng, non-admin /status im lặng, tự
-rời group/channel lạ qua `my_chat_member`, learn-mode không rời, rate-limit
-chống spam, AllProvidersFailed/lỗi lạ/answer-rỗng) · **AI router** với mock
-OpenAI server (fallback 429, tool-calling loop, retry-không-tools, tool-loop
-kẹt vòng tự retry không-tools đúng giới hạn, unsupported-tools ở cả 2 pass,
-tool call thiếu `id` tự sinh id thay thế, AllProvidersFailed) · **search
-backends** (Tavily `Authorization: Bearer`, SearXNG JSON API, metadata lỗi
-`unresponsive_engines` không làm mất kết quả tốt, không giả IP forwarded,
-HTTP 403/JSON không hợp lệ vẫn báo lỗi) · **main
-fail-fast** (thiếu BOT_TOKEN/AI key dừng ngay, không gọi mạng).
-
-Các regression test bổ sung kiểm tra quota tool dùng chung qua retry/fallback,
-không chạy tool khi đã tắt, lỗi sinh tool không làm mất khả năng tìm web vĩnh viễn,
-deadline gồm cả xếp hàng, giữ pending updates khi restart và đóng handler trước client.
-Reader yêu cầu `Accept-Encoding: identity`, từ chối trang vẫn gửi dữ liệu nén để
-chặn decompression bomb; các địa chỉ IPv6 chuyển đổi/tunnel không được hỗ trợ.
-
-Workflow [Audit checks](.github/workflows/audit.yml) chạy test trên Python 3.11/3.12,
-Ruff, kiểm tra dependency, `pip-audit` và build image khi push/PR. Có thể chạy lại
-từ GitHub Actions bằng `workflow_dispatch`. Test ứng dụng dùng dữ liệu giả;
-cài dependency, tra advisory và Docker build cần mạng.
