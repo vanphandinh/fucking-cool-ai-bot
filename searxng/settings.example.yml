@@ -1,20 +1,59 @@
-# SearXNG settings — BẢN MẪU.
-# Sao chép thành ./searxng/settings.yml rồi ĐỔI secret_key bằng chuỗi ngẫu nhiên dài
-# (vd: python3 -c "import secrets; print(secrets.token_hex(32))")
+# SearXNG settings — production baseline cho VPS.
+# Sao chép thành ./searxng/settings.yml rồi ĐỔI secret_key bằng chuỗi ngẫu nhiên dài:
+#   openssl rand -hex 32
+#
+# Repo này dùng SearXNG chủ yếu làm backend search cho bot Telegram,
+# nên mặc định để PRIVATE / INTERNAL (không public ra Internet).
+# Nếu bạn mở cho người ngoài truy cập qua domain riêng, hãy xem README để bật
+# limiter + reverse proxy + trusted_proxies.
+
 use_default_settings: true
 
+general:
+  debug: false
+  instance_name: "Private SearXNG for fucking-cool-ai-bot"
+
 server:
+  # Thường sẽ bị override bởi biến môi trường SEARXNG_BASE_URL / SEARXNG_SECRET
+  # trong docker-compose.yml. Giữ lại giá trị an toàn ở đây để dễ đọc file.
   secret_key: "REPLACE_WITH_A_RANDOM_HEX_STRING_AT_LEAST_32_CHARS"
   limiter: false
+  public_instance: false
   image_proxy: false
+  method: "GET"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+valkey:
+  # Dùng cho cache và sẵn sàng cho limiter nếu sau này bạn muốn bật public mode.
+  url: "valkey://searxng-valkey:6379/0"
 
 search:
   safe_search: 0
-  autocomplete: ""
+  autocomplete: "duckduckgo"
+  default_lang: ""
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+  suspended_times:
+    SearxEngineAccessDenied: 86400
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
   formats:
     - html
     - json
 
-# engines:
-#   - name: google
-#     disabled: true   # bỏ comment & để false nếu muốn chính thức dùng engine Google
+ui:
+  default_theme: simple
+  infinite_scroll: false
+
+# Giảm noise / engine lỗi phổ biến trên VPS IP datacenter.
+engines:
+  - name: ahmia
+    disabled: true
+  - name: torch
+    disabled: true
+  - name: startpage
+    disabled: true

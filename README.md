@@ -5,6 +5,7 @@ Trả lời bằng **AI miễn phí** (Google Gemini → Groq → OpenRouter `:f
 (DuckDuckGo / SearXNG / Tavily), chỉ nói chuyện với các group nằm trong danh sách cho phép.
 
 > 📄 Kế hoạch triển khai chi tiết: [PLAN_TRIEN_KHAI.md](PLAN_TRIEN_KHAI.md)
+> 📘 Hướng dẫn SearXNG production trên VPS: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md)
 > ✅ Trạng thái code: **Phase P1–P2 đã viết** (MVP + web search + fallback AI).
 
 ---
@@ -80,26 +81,120 @@ của bạn vào → tìm `forward_from_chat` → `id` (dạng `-100…`). Đi�
 | `GROQ_API_KEY` | khuyến nghị | Fallback khi Gemini lỗi/quá tải |
 | `OPENROUTER_API_KEY` | tùy chọn | Fallback cuối |
 | `SEARCH_BACKEND` | | `ddgs` (mặc định) · `searxng` · `tavily` |
-| `SEARXNG_URL` | khi dùng searxng | `http://searxng:8080` |
+| `SEARXNG_URL` | khi dùng searxng | URL nội bộ bot gọi tới SearXNG, mặc định `http://searxng:8080` |
+| `SEARXNG_BASE_URL` | khuyến nghị khi bật searxng | URL public của SearXNG nếu có reverse proxy/domain, vd `https://search.example.com/` |
+| `SEARXNG_SECRET` | khuyến nghị khi bật searxng | secret ngẫu nhiên dài (`openssl rand -hex 32`) |
+| `SEARXNG_HOST_PORT` | | cổng loopback trên VPS để reverse proxy local trỏ vào (mặc định `18080`) |
+| `SEARXNG_LIMITER` | | `false` cho bot-only/internal · `true` khi instance thật sự nhận traffic từ browser/người dùng |
 | `TAVILY_API_KEY` | khi dùng tavily | app.tavily.com (free ~1.000 credit/tháng) |
 | `MAX_QUESTIONS_PER_MIN_PER_USER` | | Chống spam (mặc định 3) |
 | `LOG_LEVEL` | | `INFO` mặc định |
 
 ---
 
-## 5. Bật thêm SearXNG (tùy chọn — tìm kiếm không giới hạn, có engine Google)
+## 5. Bật thêm SearXNG theo kiểu production trên VPS
+
+> Muốn hướng dẫn đầy đủ hơn cho production, reverse proxy, limiter và checklist:
+> xem [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md).
+
+Repo này đã có **baseline production** cho SearXNG theo hướng an toàn nhất cho bot:
+
+- **bot gọi nội bộ** qua `http://searxng:8080`
+- SearXNG có **Valkey** riêng cho cache / sẵn sàng limiter
+- host chỉ bind ra **`127.0.0.1:${SEARXNG_HOST_PORT:-18080}`**
+- phù hợp khi VPS có **Nginx/Caddy/Traefik** đứng trước, hoặc khi bạn chỉ muốn bot dùng nội bộ
+
+### 5.1. Tạo file config thật từ mẫu
 
 ```bash
-# 1) Tạo settings thật từ mẫu và đổi secret_key
-mkdir -p searxng && cp searxng/settings.example.yml searxng/settings.yml
-nano searxng/settings.yml        # đổi secret_key bằng chuỗi ngẫu nhiên 32+ ký tự
-
-# 2) Chạy kèm profile searxng
-docker compose --profile searxng up -d --build
-
-# 3) Trong .env: SEARCH_BACKEND=searxng và SEARXNG_URL=http://searxng:8080
-docker compose up -d
+mkdir -p searxng
+cp searxng/settings.example.yml searxng/settings.yml
+cp searxng/limiter.example.toml searxng/limiter.toml
+nano searxng/settings.yml
+nano searxng/limiter.toml
 ```
+
+Ít nhất hãy đổi `secret_key` trong `searxng/settings.yml` **hoặc** điền `SEARXNG_SECRET` trong `.env`:
+
+```bash
+openssl rand -hex 32
+```
+
+### 5.2. Điền các biến cần thiết trong `.env`
+
+```env
+SEARCH_BACKEND=searxng
+SEARXNG_URL=http://searxng:8080
+SEARXNG_SECRET=<output của openssl rand -hex 32>
+
+# nếu có domain/reverse proxy thì điền URL public thật:
+SEARXNG_BASE_URL=https://search.example.com/
+
+# bot-only / internal: giữ false
+SEARXNG_LIMITER=false
+SEARXNG_PUBLIC_INSTANCE=false
+SEARXNG_IMAGE_PROXY=false
+
+# host chỉ mở loopback cho reverse proxy local trên VPS
+SEARXNG_BIND_IP=127.0.0.1
+SEARXNG_HOST_PORT=18080
+```
+
+### 5.3. Chạy stack
+
+```bash
+docker compose --profile searxng up -d --build
+```
+
+Kiểm tra:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 searxng
+docker compose logs --tail=100 searxng-valkey
+curl -fsS http://127.0.0.1:18080/healthz
+```
+
+### 5.4. Chế độ khuyến nghị: private/internal cho bot
+
+Đây là mode phù hợp nhất với repo này. Khi đó:
+
+- **không expose trực tiếp** SearXNG ra Internet
+- bot vẫn gọi được qua `SEARXNG_URL=http://searxng:8080`
+- tránh bị abuse từ bên ngoài
+- tránh phải xử lý `X-Forwarded-For` / `X-Real-IP` phức tạp nếu bạn chưa có reverse proxy chuẩn
+
+### 5.5. Nếu muốn mở giao diện SearXNG ra domain riêng
+
+Khuyến nghị đặt **reverse proxy** phía trước rồi mới public. Ví dụ Nginx trên VPS:
+
+```nginx
+server {
+    listen 80;
+    server_name search.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:18080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Khi public thật sự cho người dùng/browser, đổi thêm trong `.env`:
+
+```env
+SEARXNG_BASE_URL=https://search.example.com/
+SEARXNG_LIMITER=true
+SEARXNG_PUBLIC_INSTANCE=true
+SEARXNG_IMAGE_PROXY=true
+```
+
+Và trong `searxng/limiter.toml`, thêm CIDR/IP của reverse proxy vào `trusted_proxies` nếu proxy không chạy trực tiếp trên loopback.
+
+> Lưu ý: `limiter=true` chỉ hữu ích khi SearXNG nhận request trực tiếp từ client/browser và proxy truyền đúng `X-Forwarded-For` / `X-Real-IP`. Nếu chỉ có **bot container** gọi nội bộ thì cứ giữ `false`.
 
 ---
 
@@ -129,10 +224,12 @@ Tool đọc web chỉ cho phép URL public (chặn IP nội bộ/localhost — c
 
 ```bash
 docker compose ps                        # trạng thái
-docker compose logs --tail=100 bot       # log gần nhất
-docker compose restart bot               # khởi động lại
+docker compose logs --tail=100 bot       # log gần nhất của bot
+docker compose logs --tail=100 searxng   # log SearXNG
+curl -fsS http://127.0.0.1:18080/healthz # healthcheck local trên VPS (khi bật profile)
+docker compose restart bot               # khởi động lại bot
 docker compose up -d --build             # cập nhật code mới
-docker compose --profile searxng down    # tắt cả searxng
+docker compose --profile searxng down    # tắt bot + searxng profile
 ```
 
 Không có database — muốn "backup" chỉ cần giữ bản sao `.env`. Khi `GEMINI_API_KEY` hết
@@ -148,6 +245,8 @@ quota (log báo 429), bot tự chuyển sang Groq/OpenRouter nếu đã cấu h�
 | Log báo `BOT_TOKEN không hợp lệ` | Sai token; tạo lại ở @BotFather |
 | Log báo `Thiếu/Chưa cấu hình API key` | Điền `GEMINI_API_KEY` (hoặc Groq/OpenRouter) vào `.env` rồi restart |
 | Trả lời "không tìm kiếm được web" | Backend `ddgs` bị chặn tạm thời → bật SearXNG (mục 5) hoặc Tavily |
+| Log SearXNG báo `missing config file: /etc/searxng/limiter.toml` | Bạn chưa copy `searxng/limiter.example.toml` thành `searxng/limiter.toml` |
+| Log SearXNG báo lỗi `startpage` / `ahmia` / `torch` | Baseline mới đã disable sẵn các engine này trong `searxng/settings.example.yml`; nếu vẫn còn hãy kiểm tra bạn đã copy lại file mẫu chưa |
 | Bị 429 khi nhóm dùng nhiều | Hết quota Gemini phút/ngày → tự fallback; bớt tần suất hoặc thêm key Groq/OpenRouter |
 
 ---
@@ -163,7 +262,8 @@ app/
 ├── ai/                  # provider Gemini/Groq/OpenRouter + router fallback
 └── search/              # backend ddgs/searxng/tavily + reader (Jina/BS4)
 Dockerfile · docker-compose.yml · requirements.txt · .env.example
-searxng/settings.example.yml
+searxng/settings.example.yml · searxng/limiter.example.toml
+DEPLOY_SEARXNG_VPS.md
 ```
 
 Chi tiết thiết kế, hạn mức free tier & lộ trình: xem [PLAN_TRIEN_KHAI.md](PLAN_TRIEN_KHAI.md).

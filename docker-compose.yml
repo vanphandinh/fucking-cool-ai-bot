@@ -9,15 +9,56 @@ services:
     init: true
     stop_grace_period: 30s
 
-  # Tùy chọn: tìm kiếm SearXNG tự host (không giới hạn quota).
-  # Bật bằng: docker compose --profile searxng up -d
-  # rồi set SEARCH_BACKEND=searxng, SEARXNG_URL=http://searxng:8080 trong .env
+  # Tùy chọn: SearXNG tự host cho production trên VPS.
+  # - Bot gọi nội bộ qua http://searxng:8080
+  # - Host chỉ bind loopback 127.0.0.1:${SEARXNG_HOST_PORT:-18080}
+  #   để reverse proxy (Nginx/Caddy/Traefik trên VPS) có thể truy cập nếu cần.
+  # - Không nên expose trực tiếp 0.0.0.0 trừ khi bạn hiểu rõ limiter/proxy headers.
   searxng:
-    image: searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:latest}
     container_name: fcai-searxng
     profiles: ["searxng"]
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      searxng-valkey:
+        condition: service_healthy
+    ports:
+      - "${SEARXNG_BIND_IP:-127.0.0.1}:${SEARXNG_HOST_PORT:-18080}:8080"
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+      - searxng-cache:/var/cache/searxng
     environment:
-      - SEARXNG_BASE_URL=http://127.0.0.1:8080/
+      SEARXNG_BASE_URL: "${SEARXNG_BASE_URL:-http://searxng:8080/}"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-CHANGE_ME_IN_.env}"
+      SEARXNG_LIMITER: "${SEARXNG_LIMITER:-false}"
+      SEARXNG_PUBLIC_INSTANCE: "${SEARXNG_PUBLIC_INSTANCE:-false}"
+      SEARXNG_IMAGE_PROXY: "${SEARXNG_IMAGE_PROXY:-false}"
+      SEARXNG_VALKEY_URL: "${SEARXNG_VALKEY_URL:-valkey://searxng-valkey:6379/0}"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  searxng-valkey:
+    image: ${SEARXNG_VALKEY_IMAGE:-docker.io/valkey/valkey:9-alpine}
+    container_name: fcai-searxng-valkey
+    profiles: ["searxng"]
+    restart: unless-stopped
+    command: valkey-server --save 30 1 --loglevel warning
+    volumes:
+      - searxng-valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  searxng-cache:
+  searxng-valkey-data:
