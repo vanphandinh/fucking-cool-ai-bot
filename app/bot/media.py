@@ -24,6 +24,19 @@ class ImageTooLarge(MediaValidationError):
     pass
 
 
+class _BoundedBytesIO(io.BytesIO):
+    """BytesIO destination that rejects a Telegram download before it exceeds the limit."""
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__()
+        self._max_bytes = max_bytes
+
+    def write(self, data: bytes) -> int:
+        if self.tell() + len(data) > self._max_bytes:
+            raise ImageTooLarge("Ảnh quá lớn")
+        return super().write(data)
+
+
 class TelegramMediaLoader:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -74,9 +87,11 @@ class TelegramMediaLoader:
         if declared_size is not None and declared_size > self.settings.max_image_bytes:
             raise ImageTooLarge("Ảnh quá lớn")
 
-        buf = io.BytesIO()
+        buf = _BoundedBytesIO(self.settings.max_image_bytes)
         try:
             await message.bot.download(file_id, destination=buf)
+        except ImageTooLarge:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise MediaValidationError("Không tải được ảnh từ Telegram") from exc
         data = buf.getvalue()
