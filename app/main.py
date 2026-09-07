@@ -41,20 +41,26 @@ async def _amain(settings: Settings) -> int:
         return 1
     if not settings.configured_provider_names:
         logger.error(
-            "Chưa cấu hình API key text nào (GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
+            "Chưa cấu hình API key text nào "
+            "(GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY)."
         )
         return 1
 
     if settings.cloudflare_api_token and not settings.cloudflare_account_id:
         logger.warning(
-            "Có CLOUDFLARE_API_TOKEN nhưng thiếu CLOUDFLARE_ACCOUNT_ID — bỏ qua Cloudflare vision."
+            "Có CLOUDFLARE_API_TOKEN nhưng thiếu CLOUDFLARE_ACCOUNT_ID — "
+            "bỏ qua Cloudflare vision."
         )
     if settings.vision_enabled and not settings.configured_vision_provider_names:
-        logger.warning("Vision đang bật nhưng chưa có vision provider hợp lệ; text bot vẫn hoạt động.")
+        logger.warning(
+            "Vision đang bật nhưng chưa có vision provider hợp lệ; "
+            "text bot vẫn hoạt động."
+        )
 
     if not settings.allowed_group_ids_list and not settings.learn_group_id_mode:
         logger.warning(
-            "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> bot sẽ không trả lời ở bất kỳ đâu."
+            "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> "
+            "bot sẽ không trả lời ở bất kỳ đâu."
         )
     if settings.search_backend == "searxng" and not settings.searxng_url.strip():
         logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
