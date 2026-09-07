@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import threading
 from datetime import datetime, timezone
@@ -112,10 +113,51 @@ def t_config_formatting():
         [{"title": "A", "url": "https://a.com"}, {"title": "B", "url": "https://a.com"}]
     )
     check("format_sources dedupe", footer.count("https://") == 1 and "📚" in footer)
+    check(
+        "format_sources nhúng link HTML",
+        '<a href="https://a.com">A</a>' in footer and "\n   https://" not in footer,
+        footer,
+    )
     js_footer = format_sources([{"title": "x", "url": "javascript:alert(1)"}])
     check("format_sources bỏ javascript:", js_footer == "")
     js_footer2 = format_sources([{"title": "x", "url": "data:text/html,hi"}])
     check("format_sources bỏ data:", js_footer2 == "")
+
+    long_url = "https://example.com/this/is/a/very/long/path?q=1&x=2&utm=abc"
+    long_footer = format_sources([{"title": "Giá vàng hôm nay", "url": long_url}])
+    visible = re.sub(r"<[^>]+>", "", long_footer)
+    check(
+        "format_sources không in URL dài ra text",
+        "Giá vàng hôm nay" in visible
+        and "this/is/a/very/long/path" not in visible
+        and "&utm=" not in visible,
+        visible,
+    )
+    check(
+        "format_sources escape & trong href",
+        "q=1&amp;x=2" in long_footer and 'href="' in long_footer,
+        long_footer,
+    )
+    esc_footer = format_sources([{"title": "A <B> & C", "url": "https://a.com/"}])
+    check(
+        "format_sources escape title HTML",
+        "A &lt;B&gt; &amp; C" in esc_footer and "<B>" not in esc_footer,
+        esc_footer,
+    )
+    host_footer = format_sources(
+        [
+            {
+                "title": "https://www.vnexpress.net/a/b?c=1",
+                "url": "https://www.vnexpress.net/a/b?c=1",
+            }
+        ]
+    )
+    host_visible = re.sub(r"<[^>]+>", "", host_footer)
+    check(
+        "format_sources fallback hostname khi title là URL",
+        "vnexpress.net" in host_visible and "/a/b" not in host_visible,
+        host_visible,
+    )
 
     # split_plain: text emoji KHÔNG có delimiter nào — vẫn phải cắt đúng UTF-16
     emoji_nod = "a😀b" * 1500
@@ -650,6 +692,18 @@ def t_e2e_handlers():
             if question == "LONGTEXT":
                 await asyncio.sleep(0.05)  # cho typing loop kịp gửi chat action
                 return Answer(text="y" * 8000, provider="gemini", searched=False, sources=[])
+            if question == "SOURCES":
+                return Answer(
+                    text="Tóm tắt giá vàng",
+                    provider="gemini",
+                    searched=True,
+                    sources=[
+                        {
+                            "title": "Giá vàng hôm nay",
+                            "url": "https://example.com/this/is/a/very/long/path?q=1&utm=abc",
+                        }
+                    ],
+                )
             txt = f"TRẢ LỜI: {question[:30]}"
             if quoted:
                 txt += f" [đã đọc tin reply: {quoted[:30]}]"
@@ -1077,6 +1131,40 @@ def t_e2e_handlers():
             str(sent_e),
         )
         await session_e.close()
+
+        # 23) Có nguồn web -> tin nguồn gửi HTML, tiêu đề bấm được, không in URL dài
+        session.calls.clear()
+        orch.received.clear()
+        up = mk_update(-100200, "supergroup", "SOURCES @FuckingCoolAIbot", update_id=23)
+        await dp.feed_update(bot, up)
+        sent_src = [c for c in session.calls if c[0] == "SendMessage"]
+        body_src = [c for c in sent_src if "Tóm tắt giá vàng" in c[1].get("text", "")]
+        html_src = [
+            c
+            for c in sent_src
+            if str(c[1].get("parse_mode") or "") == "HTML"
+            or getattr(c[1].get("parse_mode"), "value", None) == "HTML"
+        ]
+        check("E2E: nguồn — vẫn gửi câu trả lời plain", bool(body_src), str(sent_src))
+        check(
+            "E2E: nguồn — tin nguồn dùng parse_mode HTML",
+            len(html_src) == 1 and "Giá vàng hôm nay" in html_src[0][1].get("text", ""),
+            str(html_src),
+        )
+        src_text = html_src[0][1].get("text", "") if html_src else ""
+        src_visible = re.sub(r"<[^>]+>", "", src_text)
+        check(
+            "E2E: nguồn — không in URL dài ra text",
+            "this/is/a/very/long/path" not in src_visible and "<a href=" in src_text,
+            src_visible,
+        )
+        preview = html_src[0][1].get("link_preview_options") if html_src else None
+        preview_off = False
+        if isinstance(preview, dict):
+            preview_off = bool(preview.get("is_disabled"))
+        elif preview is not None:
+            preview_off = bool(getattr(preview, "is_disabled", False))
+        check("E2E: nguồn — tắt link preview", preview_off, str(preview))
 
         await session.close()
 

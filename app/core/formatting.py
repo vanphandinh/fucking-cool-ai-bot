@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import re
+from urllib.parse import urlparse
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -79,8 +81,33 @@ def _find_cut(text: str, limit: int) -> int:
     return max_i
 
 
+def _hostname(url: str) -> str:
+    """Lấy hostname ngắn (bỏ www.) để làm nhãn khi không có tiêu đề."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001 — URL lạ thì thôi, không nổ
+        return ""
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _source_label(title: str, url: str) -> str:
+    """Nhãn ngắn để bấm: ưu tiên tiêu đề trang, không dùng URL dài."""
+    title = _WHITESPACE_RE.sub(" ", (title or "").strip())
+    if title and title != url and not title.lower().startswith(("http://", "https://")):
+        if len(title) > 90:
+            title = title[:87] + "..."
+        return title
+    return _hostname(url) or "Nguồn"
+
+
 def format_sources(sources: list[dict[str, str]]) -> str:
-    """Danh sách nguồn dạng văn bản thường (URL được Telegram tự link)."""
+    """Danh sách nguồn HTML: tiêu đề ngắn bấm được, không in URL dài.
+
+    Gửi kèm parse_mode=HTML. Mỗi mục là <a href="...">nhãn</a> — Telegram hiện
+    chữ xanh để bấm, ẩn path/query dài.
+    """
     lines = ["📚 Nguồn tham khảo:"]
     seen: set[str] = set()
     n = 0
@@ -90,10 +117,10 @@ def format_sources(sources: list[dict[str, str]]) -> str:
             continue
         seen.add(url)
         n += 1
-        title = (src.get("title") or url).strip()
-        if len(title) > 90:
-            title = title[:87] + "..."
-        lines.append(f"{n}. {title}\n   {url}")
+        label = _source_label(src.get("title") or "", url)
+        safe_label = html.escape(label, quote=False)
+        safe_url = html.escape(url, quote=True)
+        lines.append(f'{n}. <a href="{safe_url}">{safe_label}</a>')
         if n >= 6:
             break
     return "\n".join(lines) if n else ""
