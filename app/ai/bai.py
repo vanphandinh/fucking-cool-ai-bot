@@ -1,5 +1,12 @@
 """B.AI provider integration for the currently promoted zero-credit models."""
 
+from __future__ import annotations
+
+from ..config import Settings
+from .base import OpenAICompatProvider
+from .capabilities import ProviderCapabilities
+
+_BASE_URL = "https://api.b.ai/v1"
 SUPPORTED_PROMO_MODELS = frozenset(
     {
         "qwen3.8-flash",
@@ -13,3 +20,33 @@ _VISION_MODELS = frozenset({"qwen3.8-flash", "mimo-v2.5", "glm-5.3-flash"})
 
 def model_supports_vision(model: str) -> bool:
     return model in _VISION_MODELS
+
+
+def _validate_model(model: str, *, vision: bool) -> None:
+    if model not in SUPPORTED_PROMO_MODELS:
+        raise ValueError(f"B.AI model không thuộc promotion được hỗ trợ: {model!r}")
+    if vision and not model_supports_vision(model):
+        raise ValueError(f"B.AI model không hỗ trợ vision: {model!r}")
+
+
+def make_bai_provider(
+    settings: Settings,
+    *,
+    name: str = "bai",
+    model: str | None = None,
+    vision: bool = False,
+) -> OpenAICompatProvider:
+    selected_model = model or (settings.bai_vision_model if vision else settings.bai_text_model)
+    _validate_model(selected_model, vision=vision)
+    return OpenAICompatProvider(
+        name=name,
+        base_url=_BASE_URL,
+        api_key=settings.bai_api_key,
+        model=selected_model,
+        timeout=settings.bai_request_timeout_sec,
+        capabilities=ProviderCapabilities(
+            route="vision" if vision else "text",
+            supports_vision=vision,
+            max_images=1 if vision else 0,
+        ),
+    )
