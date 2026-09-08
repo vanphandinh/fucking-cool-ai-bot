@@ -88,6 +88,24 @@ class BaiProviderModuleTests(unittest.TestCase):
 
 
 class BaiRoutingTests(unittest.TestCase):
+    def test_unordered_bai_config_does_not_affect_existing_router(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            bai_api_key="b",
+            bai_text_model="not-promoted",
+            bai_vision_model="hy3",
+            groq_api_key="g",
+            vision_enabled=False,
+        )
+        router = build_provider_router(settings)
+        try:
+            self.assertEqual(
+                [provider.name for provider in router.capable_providers(requires_vision=False)],
+                ["groq"],
+            )
+        finally:
+            asyncio.run(_close_router(router))
+
     def test_bai_is_available_only_when_explicitly_ordered(self) -> None:
         settings = Settings(
             _env_file=None,
