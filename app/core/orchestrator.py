@@ -11,8 +11,8 @@ from ..ai.multimodal import build_user_content
 from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import image_service, service as search_service, url_service
-from .formatting import canonicalize_source_url, source_family_key
 from .request import UserRequest
+from .source_policy import select_diverse_sources
 
 logger = logging.getLogger(__name__)
 _VN_TZ = timezone(timedelta(hours=7))
@@ -282,28 +282,7 @@ def _format_image_results(query: str, results: list[dict]) -> str:
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
-    seen_urls: set[str] = set()
-    seen_families: set[str] = set()
-    out: list[dict] = []
-    for src in sources:
-        if not isinstance(src, dict):
-            continue
-        url = canonicalize_source_url(src.get("url"))
-        family = source_family_key(url)
-        if not url or not family or url in seen_urls or family in seen_families:
-            continue
-        seen_urls.add(url)
-        seen_families.add(family)
-        out.append(
-            {
-                "title": str(src.get("title") or ""),
-                "url": url,
-                "snippet": str(src.get("snippet") or ""),
-            }
-        )
-        if len(out) >= 8:
-            break
-    return out
+    return select_diverse_sources(sources, limit=8)
 
 
 def _dedupe_images(images: list[dict], limit: int) -> list[dict]:
