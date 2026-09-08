@@ -186,10 +186,15 @@ async def _get_json_bounded(
                 raise XFetchError("X upstream response is too large")
 
         body = bytearray()
-        async for chunk in response.aiter_raw():
-            body.extend(chunk)
+        if response.is_stream_consumed:
+            body.extend(response.content)
             if len(body) > MAX_X_RESPONSE_BYTES:
                 raise XFetchError("X upstream response is too large")
+        else:
+            async for chunk in response.aiter_raw():
+                body.extend(chunk)
+                if len(body) > MAX_X_RESPONSE_BYTES:
+                    raise XFetchError("X upstream response is too large")
 
     try:
         return json.loads(body)
