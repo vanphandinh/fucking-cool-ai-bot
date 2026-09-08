@@ -231,6 +231,8 @@ def _extract_facebook_publisher(parsed: SplitResult) -> str | None:
     if first in {"profile.php", "story.php", "permalink.php"}:
         publisher_id = _query_value(parsed, "id")
         return f"id:{publisher_id}" if publisher_id.isdigit() else None
+    if first.endswith(".php"):
+        return None
 
     if first == "groups":
         if len(segments) < 2:
