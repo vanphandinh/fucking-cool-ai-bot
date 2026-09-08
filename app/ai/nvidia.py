@@ -24,12 +24,15 @@ def make_nvidia_provider(
         request_defaults.update(
             {
                 "max_tokens": settings.nvidia_nim_max_tokens,
-                "thinking_token_budget": settings.nvidia_nim_thinking_token_budget,
                 "chat_template_kwargs": {
                     "enable_thinking": settings.nvidia_nim_enable_thinking,
                 },
             }
         )
+        if settings.nvidia_nim_enable_thinking:
+            request_defaults["thinking_token_budget"] = (
+                settings.nvidia_nim_thinking_token_budget
+            )
 
     return OpenAICompatProvider(
         name=name,
