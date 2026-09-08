@@ -50,7 +50,9 @@ cp -i searxng/settings.example.yml searxng/settings.yml
 openssl rand -hex 32
 nano searxng/settings.yml          # thay secret_key bằng kết quả lệnh trên
 
-# .env: SEARCH_BACKEND=searxng, SEARXNG_URL=http://searxng:8080
+# Khuyến nghị: auto ưu tiên SearXNG rồi fallback DDGS cho cả web + image search.
+# Có thể dùng SEARCH_BACKEND=searxng nếu muốn khóa cứng vào SearXNG.
+# SEARXNG_URL=http://searxng:8080
 # Nếu chưa có .env: cp -i .env.example .env, rồi điền token/key như README
 nano .env
 
@@ -59,10 +61,10 @@ docker compose --profile searxng up -d --build
 ```
 
 `GRANIAN_BLOCKING_THREADS=1` và `GRANIAN_BACKPRESSURE=2` là mặc định trong
-Compose; không bắt buộc thêm chúng vào `.env` cũ. Muốn dùng backend khác,
-giữ `SEARCH_BACKEND=ddgs`/`tavily` và chạy `docker compose up -d --build`.
+Compose; không bắt buộc thêm chúng vào `.env` cũ. `SEARCH_BACKEND` hiện hỗ trợ
+`auto`, `searxng`, `ddgs`; `auto` là mặc định và ưu tiên SearXNG khi có URL.
 
-### 3.2. Đã chạy bản cũ (các log ngày 2026-09-07)
+### 3.2. Đã chạy bản cũ (các log ngày 2026-09-07/08)
 
 **Sửa file mẫu không tự cập nhật file thật** `searxng/settings.yml` vì file thật
 được ignore trong Git và đang bind-mount vào container.
@@ -82,7 +84,8 @@ giữ `SEARCH_BACKEND=ddgs`/`tavily` và chạy `docker compose up -d --build`.
    - **Giữ nguyên `secret_key` thật và các tùy chỉnh cần thiết**. Không chép
      placeholder từ mẫu, không thêm trùng các key YAML `server`/`search`.
    - Nếu có override engine cũ ở `engines:`, bỏ các entry `ahmia`, `torch`,
-     `startpage`, `wikipedia` khỏi đó: override có thể thêm lại engine vừa `remove`.
+     `startpage`, `startpage news`, `startpage images`, `wikipedia` khỏi đó:
+     override có thể thêm lại engine vừa `remove`.
    - Nếu service `searxng` còn env `SEARXNG_LIMITER`/`SEARXNG_PUBLIC_INSTANCE`
      từ cấu hình riêng, bỏ chúng hoặc đặt `false`; env có thể ghi đè YAML.
 3. Recreate để áp dụng cả mount/env mới, đồng thời build bot có log chẩn đoán:
@@ -131,6 +134,8 @@ use_default_settings:
       - ahmia
       - torch
       - startpage
+      - startpage news
+      - startpage images
       - wikipedia
 
 server:
@@ -144,15 +149,18 @@ search:
     - json
 ```
 
-- Vẫn kế thừa mặc định upstream, chỉ **loại bốn engine theo tên**. `remove`
-  không thêm định nghĩa engine mới nên tên đã bị upstream xóa sẽ được bỏ qua.
+- Vẫn kế thừa mặc định upstream, chỉ **loại sáu engine theo tên**. `remove`
+  so khớp chính xác `engine.name`; nó không loại mọi engine cùng dùng một module.
 - `ahmia`, `torch`: engine onion cần Tor, không dùng trong kiến trúc này.
   `disabled: true` chỉ bỏ chọn engine mặc định, không đảm bảo tránh quá trình
   load/register; vì vậy dùng `remove`.
-- `startpage`, `wikipedia`: **workaround tạm thời** cho lỗi parse JSON / HTTP 400
-  trong log đã báo, không phải sửa parser/API upstream. Có thể bỏ hai tên này
-  khỏi `remove` sau khi cập nhật image và kiểm tra chúng hoạt động trên VPS.
-  Những engine khác vẫn có thể trả liên kết Wikipedia.
+- SearXNG định nghĩa `startpage`, `startpage news`, `startpage images` thành ba
+  engine name riêng. Vì vậy chỉ remove `startpage` vẫn để `startpage images`
+  chạy khi bot gọi `categories=images`. Cả ba đang là **workaround tạm thời**
+  cho lỗi parser JSON từ response Startpage; chỉ bật lại sau khi image SearXNG
+  đã được cập nhật và kiểm tra live trên VPS.
+- `wikipedia`: workaround tạm thời cho HTTP 400 đã quan sát; các engine khác vẫn
+  có thể trả liên kết Wikipedia.
 - `search.formats` phải có `json`, nếu không `/search?format=json` có thể bị 403.
 - Không thêm `SEARXNG_SECRET` ở service searxng: secret nằm duy nhất trong file thật.
 
@@ -203,30 +211,36 @@ from app.config import Settings
 url = Settings().searxng_url.strip().rstrip("/")
 if not url:
     raise SystemExit("Thiếu SEARXNG_URL trong container bot")
-response = httpx.get(
-    f"{url}/search",
-    params={"q": "Hà Nội", "format": "json"},
-    headers={"Accept": "application/json"},
-    timeout=30,
-)
-print("HTTP:", response.status_code)
-response.raise_for_status()
-data = response.json()
-print("results:", len(data.get("results") or []))
-print("unresponsive_engines:", data.get("unresponsive_engines") or [])
+for category in (None, "images"):
+    params = {"q": "Hà Nội", "format": "json"}
+    if category:
+        params["categories"] = category
+    response = httpx.get(
+        f"{url}/search",
+        params=params,
+        headers={"Accept": "application/json"},
+        timeout=30,
+    )
+    print("category:", category or "general", "HTTP:", response.status_code)
+    response.raise_for_status()
+    data = response.json()
+    print("results:", len(data.get("results") or []))
+    print("unresponsive_engines:", data.get("unresponsive_engines") or [])
 PY
 ```
 
 - HTTP 200, JSON hợp lệ, `results > 0`: có kết quả tìm kiếm.
-- `unresponsive_engines` có dữ liệu nhưng vẫn có `results`: lỗi **một phần**;
+- Kiểm tra cả `general` và `images`; sau workaround không nên còn thấy
+  `startpage images` trong `unresponsive_engines`/log vì engine đã bị remove.
+- `unresponsive_engines` có engine khác nhưng vẫn có `results`: lỗi **một phần**;
   bot giữ kết quả tốt và log metadata engine lỗi, không coi cả request thất bại.
 - Không có kết quả: thử một truy vấn phổ biến khác và xem metadata/log engine.
   Kết quả rỗng không tự động có nghĩa container chết.
 - 403/429, JSON không hợp lệ, lỗi kết nối hoặc timeout: kiểm tra cấu hình /
   limiter/network, không chỉ nhìn `/healthz`.
 
-Bot tìm kiếm thành công khi câu trả lời sử dụng được kết quả web và có 📚 nguồn;
-việc chỉ không thấy `Search backend 'searxng' lỗi` chưa đủ để xác nhận.
+Bot tìm kiếm thành công khi câu trả lời sử dụng được kết quả web/ảnh phù hợp;
+việc chỉ không thấy warning backend chưa đủ để xác nhận.
 
 ---
 
@@ -239,16 +253,17 @@ việc chỉ không thấy `Search backend 'searxng' lỗi` chưa đủ để x�
 | `ahmia` / `torch`: `can't register engine (loading engine failed)` | Với cấu hình mặc định không có Tor, các engine onion không được nạp. Loại chúng bằng `use_default_settings.engines.remove`. Nếu vẫn xảy ra, kiểm tra file thật và override `engines:`. |
 | `missing config file: /etc/searxng/limiter.toml` | Botdetection vẫn đọc file dù limiter tắt. Mount file `searxng/limiter.toml` có sẵn trong repo rồi recreate. Không cần bật limiter hay cài Valkey. |
 | `X-Forwarded-For nor X-Real-IP header is set!` | Có thể chấp nhận ở mô hình private gọi trực tiếp, limiter/public_instance đều tắt (mục 4.3). Sau restart có thể xuất hiện lại. Nếu dùng proxy/public, phải cấu hình header/trusted proxies đúng; không giả IP ở bot. |
-| Startpage `JSONDecodeError: Extra data` | Nội dung upstream không khớp parser; có thể do thay đổi response hoặc trang chặn, log này chưa xác định nguyên nhân cụ thể. `409` trong `ErrorContext(..., 409, ...)` là **số dòng Python**, không phải HTTP 409. Tạm remove `startpage`, cập nhật/pin image đã kiểm tra rồi thử bật lại. |
+| `startpage images` + `JSONDecodeError: Extra data` | Startpage response không khớp parser hiện tại. `409` trong `ErrorContext(..., 409, ...)` là **số dòng Python**, không phải HTTP 409. SearXNG có ba engine name riêng: `startpage`, `startpage news`, `startpage images`; phải remove đủ cả ba vì `remove` so khớp tên chính xác. Sau khi sửa file thật, recreate rồi test category `images`. |
 | Wikipedia `HTTPError ... 400 ... vi.wikipedia.org` | HTTP 400 từ API Wikipedia; cần query/response cụ thể để biết nguyên nhân, không đủ căn cứ kết luận tiếng Việt không được hỗ trợ. Tạm remove `wikipedia`; không cần đổi ngôn ngữ toàn bộ bot sang tiếng Anh. |
 | `/etc/searxng/settings.yml is not a valid file` | Chưa tạo file thật hoặc Docker đã tạo directory ở đường dẫn bind-mount. Kiểm tra `test -f searxng/settings.yml` và tạo từ mẫu nếu chưa có file. |
 | `/search?format=json` bị 403 | Kiểm tra `search.formats` có `json` trong file thật; nếu đã có, xem thêm limiter/proxy đang dùng. Không phải mọi 4xx đều do thiếu format. |
 | Bot báo `Connection refused` / lỗi DNS | Kiểm tra profile đã chạy, container khỏe, cùng Docker network và `SEARXNG_URL=http://searxng:8080`. |
-| CAPTCHA / block IP datacenter / lỗi một vài engine | Các engine khác có thể vẫn trả kết quả. Xem `unresponsive_engines`, thử image đã cập nhật; nếu cần chuyển backend, đổi `SEARCH_BACKEND=ddgs`/`tavily` (Tavily cần key) và recreate bot. |
+| CAPTCHA / block IP datacenter / lỗi một vài engine | Các engine khác có thể vẫn trả kết quả. Với `SEARCH_BACKEND=auto`, nếu SearXNG lỗi hoặc không có kết quả usable thì bot fallback DDGS; với `SEARCH_BACKEND=searxng`, backend được khóa cứng và không fallback. |
 
-**Bot hiện không tự fallback giữa backend tìm kiếm** SearXNG → DDGS → Tavily.
-Fallback Gemini/Groq/OpenRouter là luồng AI riêng. Không cài lại bot/Telegram
-hoặc thêm Valkey để sửa parser Startpage hay HTTP 400 của Wikipedia.
+`SEARCH_BACKEND=auto` dùng cùng policy cho web + image search: ưu tiên SearXNG
+khi `SEARXNG_URL` có cấu hình, sau đó fallback DDGS nếu SearXNG lỗi hoặc không
+có kết quả usable. Fallback AI provider là luồng riêng. Không cài lại Telegram,
+thêm Valkey hay đổi AI model để sửa parser Startpage.
 
 Đối chiếu upstream:
 [Granian](https://docs.searxng.org/admin/installation-granian.html),
@@ -280,13 +295,13 @@ hoặc thêm Valkey để sửa parser Startpage hay HTTP 400 của Wikipedia.
 ## 8. Checklist production
 
 - [ ] File thật `searxng/settings.yml` có secret ngẫu nhiên, không phải placeholder
-- [ ] File thật có `limiter: false`, `public_instance: false`, format `json` và engine removals
+- [ ] File thật có `limiter: false`, `public_instance: false`, format `json` và đủ engine removals (`startpage`, `startpage news`, `startpage images`)
 - [ ] `searxng/limiter.toml` được mount read-only, không còn warning thiếu file
-- [ ] `.env` có `SEARCH_BACKEND=searxng`, `SEARXNG_URL=http://searxng:8080`
+- [ ] `.env` có `SEARXNG_URL=http://searxng:8080`; `SEARCH_BACKEND=auto` (khuyến nghị) hoặc `searxng` nếu muốn khóa cứng
 - [ ] Container đã recreate sau khi sửa mount/env trong Compose
 - [ ] Không có port mapping `HOST:PORT->8080/tcp` (`8080/tcp` đơn thuần là expose, không phải publish)
-- [ ] `/healthz` → `OK`; test JSON từ container bot có kết quả
-- [ ] Đã xem `unresponsive_engines`, log bot và thử câu hỏi cần tìm web trong Telegram
+- [ ] `/healthz` → `OK`; test JSON từ container bot có kết quả cho cả general + images
+- [ ] Đã xem `unresponsive_engines`, log bot và thử câu hỏi cần tìm web/ảnh trong Telegram
 
 ---
 

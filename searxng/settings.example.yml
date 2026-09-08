@@ -18,10 +18,13 @@ use_default_settings:
       # remove loại khỏi quá trình load, không chỉ bỏ chọn như disabled: true.
       - ahmia
       - torch
-      # Workaround cho log 2026-09-07: Startpage lỗi parse JSON, Wikipedia trả 400.
-      # Không phải sửa lỗi upstream. Sau khi cập nhật image và kiểm tra trên VPS,
-      # có thể xóa hai dòng này để bật lại; các engine còn lại vẫn dùng mặc định.
+      # Workaround cho Startpage parser lỗi JSON. SearXNG định nghĩa web/news/images
+      # là ba engine name riêng và `remove` so khớp chính xác theo `name`, vì vậy
+      # phải remove đủ cả ba để tránh Startpage Images vẫn chạy và ghi warning.
       - startpage
+      - startpage news
+      - startpage images
+      # Wikipedia đang trả HTTP 400 trên deployment đã quan sát.
       - wikipedia
 
 server:
