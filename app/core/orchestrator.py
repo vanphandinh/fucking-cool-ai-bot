@@ -23,8 +23,10 @@ TOOLS: list[dict] = [
         "function": {
             "name": "web_search",
             "description": (
-                "Tìm kiếm trên web để lấy thông tin MỚI hoặc kiểm chứng: tin tức, thời sự, "
-                "giá cả, thời tiết, sự kiện hiện tại, số liệu gần đây."
+                "Tìm kiếm web khi câu trả lời cần thông tin bên ngoài conversation, đặc biệt "
+                "thông tin mới/hiện tại, kiểm chứng hoặc tìm nguồn. Không dùng chỉ để dịch, "
+                "tóm tắt, viết lại, sửa ngữ pháp, trích xuất hoặc định dạng nội dung người dùng "
+                "đã cung cấp đầy đủ."
             ),
             "parameters": {
                 "type": "object",
@@ -77,9 +79,14 @@ class Orchestrator:
             f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một group "
             "Telegram riêng tư.\n"
             "QUY TẮC BẮT BUỘC:\n"
-            "1. Luôn trả lời bằng TIẾNG VIỆT trừ khi user yêu cầu ngôn ngữ khác.\n"
+            "1. Luôn trả lời bằng TIẾNG VIỆT trừ khi user yêu cầu ngôn ngữ khác. "
+            "Nếu user chỉ yêu cầu dịch mà không nêu ngôn ngữ đích, mặc định dịch sang TIẾNG VIỆT.\n"
             "2. Ngắn gọn, dễ đọc, không lan man; không dùng markdown/HTML trong nội dung chính.\n"
-            "3. Thông tin mới hoặc không chắc chắn -> bắt buộc dùng web_search.\n"
+            "3. Chỉ dùng web_search khi câu trả lời cần thông tin bên ngoài conversation, như "
+            "thông tin mới/hiện tại, kiểm chứng, tìm nguồn hoặc nghiên cứu thêm. Không dùng "
+            "web_search chỉ để dịch, tóm tắt, viết lại, sửa ngữ pháp, trích xuất hoặc định dạng "
+            "nội dung người dùng đã cung cấp. Nếu thiếu nội dung cần xử lý, hãy yêu cầu user cung "
+            "cấp thay vì tự tìm một nội dung khác trên web.\n"
             "4. Khi có ảnh: chỉ khẳng định chi tiết nhìn rõ; OCR mơ hồ phải nói phần không chắc.\n"
             "5. Không đoán danh tính người trong ảnh khi không có bằng chứng đủ.\n"
             "6. Nếu ảnh chứa thông tin cần cập nhật ngoài đời, xem ảnh trước rồi dùng web_search.\n"
