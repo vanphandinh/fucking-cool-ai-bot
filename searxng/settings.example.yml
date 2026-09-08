@@ -24,6 +24,10 @@ use_default_settings:
       - startpage
       - startpage news
       - startpage images
+      # DuckDuckGo HTML hiện thường trả CAPTCHA trên datacenter egress. Engine
+      # thay thế `duckduckgo web` cũng đang có upstream bot-detection/KeyError
+      # và mặc định đã disabled, nên không enable override cho nó ở đây.
+      - duckduckgo
       # Wikipedia đang trả HTTP 400 trên deployment đã quan sát.
       - wikipedia
 
