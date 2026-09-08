@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import ChatMemberUpdated, LinkPreviewOptions, Message
 
 from ..ai.base import AllProvidersFailed, NoCapableProvider
 from ..config import Settings
 from ..core.context import ChatMemory
-from ..core.formatting import clean_question, format_sources, split_plain
+from ..core.formatting import clean_question, format_sources
 from ..core.orchestrator import Orchestrator
 from ..core.rate_limiter import RateLimiter
 from ..core.request import UserRequest
 from ..core.stats import Stats
+from ..core.telegram_formatting import split_telegram_html, telegram_html_to_plain
 from .filters import AllowedChat, TriggeredMessage
 from .image_results import send_image_results
 from .media import (
@@ -196,6 +199,84 @@ def build_lifecycle_router(settings: Settings) -> Router:
     return router
 
 
+def _is_html_parse_error(exc: TelegramBadRequest) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "can't parse entities",
+            "cant parse entities",
+            "can't find end tag",
+            "unsupported start tag",
+            "entity",
+        )
+    )
+
+
+def _delivery_payload(text: str) -> tuple[str, bool]:
+    """Return Telegram payload plus whether HTML parsing is actually needed."""
+    plain = telegram_html_to_plain(text)
+    if html.escape(plain, quote=False) == text:
+        return plain, False
+    return text, True
+
+
+async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
+    if not parts:
+        return False
+
+    preview = LinkPreviewOptions(is_disabled=True)
+
+    async def send_first(text: str) -> None:
+        payload, needs_html = _delivery_payload(text)
+        kwargs = {"link_preview_options": preview}
+        if needs_html:
+            kwargs["parse_mode"] = "HTML"
+        try:
+            await message.reply(payload, **kwargs)
+        except TelegramBadRequest as exc:
+            if not needs_html or not _is_html_parse_error(exc):
+                raise
+            await message.reply(telegram_html_to_plain(text))
+
+    try:
+        await send_first(parts[0])
+    except Exception:  # noqa: BLE001
+        logger.exception("Gửi câu trả lời đầu tiên thất bại (chat %s)", message.chat.id)
+        return False
+
+    extra_kwargs = {}
+    if message.message_thread_id:
+        extra_kwargs["message_thread_id"] = message.message_thread_id
+
+    try:
+        for part in parts[1:]:
+            payload, needs_html = _delivery_payload(part)
+            send_kwargs = {
+                "chat_id": message.chat.id,
+                "text": payload,
+                "link_preview_options": preview,
+                **extra_kwargs,
+            }
+            if needs_html:
+                send_kwargs["parse_mode"] = "HTML"
+            try:
+                await message.bot.send_message(**send_kwargs)
+            except TelegramBadRequest as exc:
+                if not needs_html or not _is_html_parse_error(exc):
+                    raise
+                await message.bot.send_message(
+                    chat_id=message.chat.id,
+                    text=telegram_html_to_plain(part),
+                    **extra_kwargs,
+                )
+            await asyncio.sleep(0.15)
+    except Exception:  # noqa: BLE001
+        logger.exception("Gửi phần tiếp theo thất bại (chat %s)", message.chat.id)
+        return False
+    return True
+
+
 async def _handle_question(
     message: Message,
     question: str,
@@ -276,11 +357,8 @@ async def _handle_question(
                     await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
                     return
 
-                parts = split_plain(answer.text, 3900) or ["..."]
-                try:
-                    await message.reply(parts[0])
-                except Exception:  # noqa: BLE001
-                    logger.exception("Gửi câu trả lời thất bại (chat %s)", chat_id)
+                parts = split_telegram_html(answer.text, 3900) or ["..."]
+                if not await _send_answer_parts(message, parts):
                     return
 
                 stats.record_answer(answer.provider)
@@ -289,15 +367,12 @@ async def _handle_question(
                     stats.record_search()
                 memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question
                 memory.push(chat_id, "user", memory_text)
-                memory.push(chat_id, "assistant", answer.text)
+                memory.push(chat_id, "assistant", telegram_html_to_plain(answer.text))
 
                 extra_kwargs = {}
                 if message.message_thread_id:
                     extra_kwargs["message_thread_id"] = message.message_thread_id
                 try:
-                    for part in parts[1:]:
-                        await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
-                        await asyncio.sleep(0.15)
                     if getattr(answer, "images", None):
                         await send_image_results(
                             bot,
