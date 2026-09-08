@@ -16,7 +16,10 @@ class XReaderMalformedUpstreamTests(unittest.IsolatedAsyncioTestCase):
             if request.url.host == "api.fxtwitter.com":
                 return httpx.Response(
                     200,
-                    json={"code": {}, "message": "malformed upstream payload"},
+                    json={
+                        "code": {"unexpected": 1},
+                        "message": "malformed upstream payload",
+                    },
                     request=request,
                 )
             return httpx.Response(
