@@ -10,8 +10,7 @@ from ..ai.base import AllProvidersFailed, NoCapableProvider
 from ..ai.multimodal import build_user_content
 from ..ai.router import AIProviderRouter
 from ..config import Settings
-from ..search import image_service, service as search_service
-from ..search.reader import read_page, validate_public_url
+from ..search import image_service, service as search_service, url_service
 from .request import UserRequest
 
 logger = logging.getLogger(__name__)
@@ -58,11 +57,22 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "fetch_url",
-            "description": "Đọc nội dung của một trang web cụ thể lấy từ kết quả web_search.",
+            "description": (
+                "Đọc một URL cụ thể do user cung cấp hoặc lấy từ web_search. Ưu tiên tool này "
+                "trước web_search khi đã có URL. Với X/Twitter status, hệ thống tự dùng X-specific "
+                "resolver; dùng mode=x_thread chỉ khi user yêu cầu đọc cả X/thread."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "URL http/https."}
+                    "url": {"type": "string", "description": "URL http/https."},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["auto", "x_thread"],
+                        "description": (
+                            "Mặc định auto; x_thread chỉ dùng cho toàn thread X/Twitter."
+                        ),
+                    },
                 },
                 "required": ["url"],
             },
@@ -109,7 +119,11 @@ class Orchestrator:
             "thông tin mới/hiện tại, kiểm chứng, tìm nguồn hoặc nghiên cứu thêm. Không dùng "
             "web_search chỉ để dịch, tóm tắt, viết lại, sửa ngữ pháp, trích xuất hoặc định dạng "
             "nội dung người dùng đã cung cấp. Nếu thiếu nội dung cần xử lý, hãy yêu cầu user cung "
-            "cấp thay vì tự tìm một nội dung khác trên web.\n"
+            "cấp thay vì tự tìm một nội dung khác trên web. Nếu user đã cung cấp một URL cụ thể "
+            "cần đọc/giải thích/tóm tắt, dùng fetch_url trực tiếp trước web_search. Với URL status "
+            "X/Twitter, fetch_url có resolver riêng; không tìm mirror fxtwitter/nitter/fixupx hoặc "
+            "search exact quote để tìm lại cùng post trừ khi fetch_url báo không lấy đủ nội dung. "
+            "Nếu user yêu cầu đọc cả X/thread, gọi fetch_url với mode=x_thread.\n"
             "4. Dùng image_search khi user chủ động yêu cầu tìm/xem/cung cấp hình ảnh từ Internet. "
             "Không dùng image_search chỉ vì user gửi ảnh để bạn phân tích. Khi đã có kết quả ảnh, "
             "hệ thống sẽ tự gửi ảnh; không cần in raw image URL trong nội dung chính.\n"
@@ -149,6 +163,7 @@ class Orchestrator:
         searched = False
         sources: list[dict] = []
         image_results: list[dict] = []
+        url_cache: dict[tuple[str, str], str] = {}
 
         async def tool_executor(name: str, args: dict) -> str:
             nonlocal searched
@@ -185,14 +200,19 @@ class Orchestrator:
                 return _format_image_results(q, results)
             if name == "fetch_url":
                 url = str(args.get("url") or "").strip()
-                reason = validate_public_url(url)
-                if reason:
-                    return f"Không thể tải trang: {reason}"
-                text = await read_page(url, timeout=self.settings.request_timeout_sec)
-                if text and not text.startswith("Không tải được trang"):
+                mode = str(args.get("mode") or "auto").strip().lower()
+                key = (url, mode)
+                if key in url_cache:
+                    return url_cache[key]
+                result = await url_service.read_url(url, self.settings, mode)
+                if result.ok:
                     searched = True
-                    sources.append({"title": url, "url": url, "snippet": ""})
-                return f"Nội dung trang {url}:\n{text}"
+                    sources.append(
+                        {"title": result.source_url, "url": result.source_url, "snippet": ""}
+                    )
+                payload = f"Nội dung URL {result.source_url}:\n{result.text}"
+                url_cache[key] = payload
+                return payload
             return f"Tool '{name}' không tồn tại."
 
         try:
