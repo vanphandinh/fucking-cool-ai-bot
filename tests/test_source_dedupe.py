@@ -249,6 +249,23 @@ class SourceDedupeTests(unittest.TestCase):
         )
         self.assertEqual(len(sources), 2)
 
+    def test_unknown_facebook_php_route_does_not_merge_unrelated_urls(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Photo 1",
+                    "url": "https://facebook.com/photo.php?fbid=111",
+                    "snippet": "",
+                },
+                {
+                    "title": "Photo 2",
+                    "url": "https://facebook.com/photo.php?fbid=222",
+                    "snippet": "",
+                },
+            ]
+        )
+        self.assertEqual(len(sources), 2)
+
     def test_supplied_rawdata_collapses_by_publisher_not_platform_domain(self):
         sources = _dedupe_sources(_RAWDATA_SOURCES)
 
