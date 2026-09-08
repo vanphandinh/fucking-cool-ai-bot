@@ -26,7 +26,7 @@ class NvidiaLatencyDefaultsTests(unittest.TestCase):
 
 
 class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
-    async def test_lightning_request_uses_supported_reasoning_budget_parameter(self) -> None:
+    async def test_hosted_lightning_uses_reasoning_budget_parameter(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -62,7 +62,41 @@ class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("thinking_token_budget", payload)
         self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": True})
 
-    async def test_fast_mode_omits_reasoning_budget(self) -> None:
+    async def test_self_hosted_lightning_uses_thinking_token_budget_parameter(self) -> None:
+        requests: list[dict] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            nvidia_nim_base_url="http://nim.internal.local/v1",
+            vision_enabled=False,
+        )
+        provider = make_nvidia_provider(settings)
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="http://nim.internal.local/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+        try:
+            response = await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await provider.aclose()
+
+        self.assertEqual(response.content, "ok")
+        payload = requests[0]
+        self.assertEqual(payload["thinking_token_budget"], 2048)
+        self.assertNotIn("reasoning_budget", payload)
+        self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": True})
+
+    async def test_fast_mode_omits_reasoning_budget_fields(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
