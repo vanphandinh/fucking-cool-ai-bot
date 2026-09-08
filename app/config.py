@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     search_backend: str = "auto"
     searxng_url: str = ""
     image_search_max_results: int = Field(default=4, ge=1, le=8)
+    x_fetch_enabled: bool = True
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
