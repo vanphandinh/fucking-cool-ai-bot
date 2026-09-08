@@ -176,9 +176,15 @@ async def _fetch_fxtwitter(
         data = response.json()
     except ValueError as exc:
         raise XFetchError("FxTwitter returned non-JSON data") from exc
-    if not isinstance(data, dict) or int(data.get("code") or 0) != 200:
-        code = data.get("code") if isinstance(data, dict) else "invalid"
-        raise XFetchError(f"FxTwitter API code={code}")
+    if not isinstance(data, dict):
+        raise XFetchError("FxTwitter returned invalid JSON")
+    raw_code = data.get("code")
+    try:
+        code = int(raw_code or 0)
+    except (TypeError, ValueError) as exc:
+        raise XFetchError(f"FxTwitter API returned invalid code type: {type(raw_code).__name__}") from exc
+    if code != 200:
+        raise XFetchError(f"FxTwitter API code={raw_code}")
     if mode == "x_thread":
         text = _format_thread(data)
         if not text:
