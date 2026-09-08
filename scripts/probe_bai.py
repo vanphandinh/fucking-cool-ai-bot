@@ -16,6 +16,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import random
 import sys
 import time
 from typing import Any
@@ -115,6 +116,9 @@ def _response_summary(response: httpx.Response, elapsed_sec: float) -> dict[str,
             message = choice.get("message")
             if isinstance(message, dict):
                 summary["message_keys"] = sorted(message.keys())
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    summary["content_preview"] = content.strip()[:240]
                 tool_calls = message.get("tool_calls")
                 if isinstance(tool_calls, list):
                     summary["tool_call_count"] = len(tool_calls)
@@ -126,13 +130,43 @@ def _response_summary(response: httpx.Response, elapsed_sec: float) -> dict[str,
     return summary
 
 
+def _retry_delay_seconds(
+    response: httpx.Response,
+    retry_index: int,
+    base_delay: float,
+) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            pass
+
+    backoff = base_delay * (2**retry_index)
+    return backoff + random.uniform(0.0, backoff * 0.25)
+
+
 async def _post_chat(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
+    *,
+    max_retries: int = 3,
+    retry_base_delay: float = 1.0,
 ) -> tuple[httpx.Response, dict[str, Any]]:
     started = time.perf_counter()
-    response = await client.post("chat/completions", json=payload)
-    return response, _response_summary(response, time.perf_counter() - started)
+    retry_count = 0
+
+    while True:
+        response = await client.post("chat/completions", json=payload)
+        if response.status_code != 429 or retry_count >= max_retries:
+            summary = _response_summary(response, time.perf_counter() - started)
+            if retry_count:
+                summary["retry_count"] = retry_count
+            return response, summary
+
+        delay = _retry_delay_seconds(response, retry_count, retry_base_delay)
+        retry_count += 1
+        await asyncio.sleep(delay)
 
 
 async def _probe_one(
@@ -142,6 +176,8 @@ async def _probe_one(
     tools: bool,
     image_data_url: str | None,
     experimental_reasoning: bool,
+    max_retries: int = 3,
+    retry_base_delay: float = 1.0,
 ) -> tuple[list[dict[str, Any]], bool]:
     records: list[dict[str, Any]] = []
     baseline = build_chat_payload(
@@ -149,7 +185,12 @@ async def _probe_one(
         include_tool=tools,
         image_data_url=image_data_url if model_supports_vision(model) else None,
     )
-    response, summary = await _post_chat(client, baseline)
+    response, summary = await _post_chat(
+        client,
+        baseline,
+        max_retries=max_retries,
+        retry_base_delay=retry_base_delay,
+    )
     records.append({"model": model, "probe": "baseline", **summary})
     baseline_ok = response.status_code < 400
 
@@ -184,7 +225,12 @@ async def _probe_one(
                     ],
                     "tools": [_TOOL],
                 }
-                followup, followup_summary = await _post_chat(client, continuation)
+                followup, followup_summary = await _post_chat(
+                    client,
+                    continuation,
+                    max_retries=max_retries,
+                    retry_base_delay=retry_base_delay,
+                )
                 records.append(
                     {"model": model, "probe": "tool_continuation", **followup_summary}
                 )
@@ -205,7 +251,12 @@ async def _probe_one(
         if override is not None:
             experimental = build_chat_payload(model)
             experimental.update(override)
-            _, experimental_summary = await _post_chat(client, experimental)
+            _, experimental_summary = await _post_chat(
+                client,
+                experimental,
+                max_retries=max_retries,
+                retry_base_delay=retry_base_delay,
+            )
             records.append(
                 {
                     "model": model,
@@ -237,6 +288,8 @@ async def _run(args: argparse.Namespace) -> int:
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(args.timeout)
     baseline_ok = True
+    max_retries = max(0, args.max_retries)
+    retry_base_delay = max(0.0, args.retry_base_delay)
 
     async with httpx.AsyncClient(
         base_url=_BASE_URL + "/",
@@ -257,6 +310,8 @@ async def _run(args: argparse.Namespace) -> int:
                 tools=args.tools,
                 image_data_url=image_data_url,
                 experimental_reasoning=args.experimental_reasoning,
+                max_retries=max_retries,
+                retry_base_delay=retry_base_delay,
             )
             for record in records:
                 print(json.dumps(record, ensure_ascii=False))
@@ -278,6 +333,18 @@ def _parse_args() -> argparse.Namespace:
         "--experimental-reasoning",
         action="store_true",
         help="Try unverified upstream reasoning knobs; failures are informational",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum retries after HTTP 429 (default: 3)",
+    )
+    parser.add_argument(
+        "--retry-base-delay",
+        type=float,
+        default=1.0,
+        help="Base seconds for exponential 429 backoff when Retry-After is absent",
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     return parser.parse_args()
