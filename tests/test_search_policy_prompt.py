@@ -39,6 +39,23 @@ class SearchPolicyPromptTests(unittest.TestCase):
         self.assertIn("dịch", self.web_search_description)
         self.assertIn("nội dung người dùng đã cung cấp", self.web_search_description)
 
+    def test_prompt_requests_telegram_native_html(self):
+        self.assertIn("telegram", self.prompt)
+        self.assertIn("html", self.prompt)
+        for tag in ("<b>", "<i>", "<code>", "<pre>", "<blockquote>"):
+            with self.subTest(tag=tag):
+                self.assertIn(tag, self.prompt)
+
+    def test_prompt_forbids_raw_markdown_and_format_overuse(self):
+        self.assertIn("không dùng markdown", self.prompt)
+        self.assertIn("không lạm dụng", self.prompt)
+        self.assertIn("đoạn ngắn", self.prompt)
+        self.assertIn("bullet", self.prompt)
+
+    def test_prompt_keeps_sources_out_of_main_answer(self):
+        self.assertIn("hệ thống tự đính nguồn", self.prompt)
+        self.assertIn("không cần liệt kê nguồn", self.prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
