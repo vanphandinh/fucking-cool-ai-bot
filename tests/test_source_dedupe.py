@@ -129,6 +129,122 @@ class SourceDedupeTests(unittest.TestCase):
         self.assertNotIn("https://www.example.com/b", footer)
         self.assertIn("https://example.org/c", footer)
 
+    def test_x_different_publishers_remain_independent(self):
+        sources = _dedupe_sources(
+            [
+                {"title": "Alice", "url": "https://x.com/alice/status/111", "snippet": ""},
+                {"title": "Bob", "url": "https://x.com/bob/status/222", "snippet": ""},
+            ]
+        )
+        self.assertEqual(
+            [item["url"] for item in sources],
+            ["https://x.com/alice/status/111", "https://x.com/bob/status/222"],
+        )
+
+    def test_x_same_publisher_collapses_profile_status_and_media_variants(self):
+        sources = _dedupe_sources(
+            [
+                {"title": "Alice post", "url": "https://x.com/Alice/status/111", "snippet": ""},
+                {"title": "Alice video", "url": "https://x.com/alice/status/111/video/1", "snippet": ""},
+                {"title": "Alice profile", "url": "https://x.com/alice", "snippet": ""},
+            ]
+        )
+        self.assertEqual(len(sources), 1)
+
+    def test_x_platform_cap_keeps_two_publishers_then_preserves_other_sites(self):
+        sources = _dedupe_sources(
+            [
+                {"title": "Alice", "url": "https://x.com/alice/status/1", "snippet": ""},
+                {"title": "Bob", "url": "https://x.com/bob/status/2", "snippet": ""},
+                {"title": "Carol", "url": "https://x.com/carol/status/3", "snippet": ""},
+                {"title": "News", "url": "https://example.org/news", "snippet": ""},
+            ]
+        )
+        self.assertEqual(
+            [item["url"] for item in sources],
+            [
+                "https://x.com/alice/status/1",
+                "https://x.com/bob/status/2",
+                "https://example.org/news",
+            ],
+        )
+
+    def test_facebook_different_pages_and_ids_remain_independent(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Page A",
+                    "url": "https://www.facebook.com/pageA/posts/111",
+                    "snippet": "",
+                },
+                {
+                    "title": "Page B",
+                    "url": "https://m.facebook.com/pageB/posts/222",
+                    "snippet": "",
+                },
+            ]
+        )
+        self.assertEqual(len(sources), 2)
+
+    def test_facebook_same_numeric_publisher_collapses_story_variants(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Story",
+                    "url": "https://facebook.com/story.php?story_fbid=10&id=123",
+                    "snippet": "",
+                },
+                {
+                    "title": "Profile",
+                    "url": "https://facebook.com/profile.php?id=123",
+                    "snippet": "",
+                },
+            ]
+        )
+        self.assertEqual(len(sources), 1)
+
+    def test_github_same_owner_collapses_but_different_owner_survives(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Alice repo",
+                    "url": "https://github.com/alice/project",
+                    "snippet": "",
+                },
+                {
+                    "title": "Alice gist",
+                    "url": "https://gist.github.com/alice/abc",
+                    "snippet": "",
+                },
+                {
+                    "title": "Bob repo",
+                    "url": "https://github.com/bob/project",
+                    "snippet": "",
+                },
+            ]
+        )
+        self.assertEqual(
+            [item["url"] for item in sources],
+            ["https://github.com/alice/project", "https://github.com/bob/project"],
+        )
+
+    def test_unknown_social_publisher_shape_does_not_merge_unrelated_urls(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Unknown 1",
+                    "url": "https://facebook.com/share/p/AAA",
+                    "snippet": "",
+                },
+                {
+                    "title": "Unknown 2",
+                    "url": "https://facebook.com/share/p/BBB",
+                    "snippet": "",
+                },
+            ]
+        )
+        self.assertEqual(len(sources), 2)
+
     def test_supplied_rawdata_case_still_collapses_without_site_specific_rules(self):
         sources = _dedupe_sources(_RAWDATA_SOURCES)
 
