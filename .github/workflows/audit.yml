@@ -44,8 +44,22 @@ jobs:
           python -m compileall -q app tests
       - name: Offline regression and integration tests
         run: |
-          python tests/run_tests.py
-          python -m unittest discover -s tests -p 'test_*.py' -v
+          set +e
+          python tests/run_tests.py > test-output.txt 2>&1
+          legacy_status=$?
+          python -m unittest discover -s tests -p 'test_*.py' -v >> test-output.txt 2>&1
+          unittest_status=$?
+          cat test-output.txt
+          if [ "$legacy_status" -ne 0 ] || [ "$unittest_status" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Upload regression diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-output-py${{ matrix.python }}
+          path: test-output.txt
+          if-no-files-found: ignore
       - name: Audit installed dependencies
         run: python -m pip_audit --progress-spinner off
       - name: Build production image
