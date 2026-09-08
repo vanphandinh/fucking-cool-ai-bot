@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     openrouter_api_key: str = ""
     openrouter_model: str = "openrouter/free"
+    bai_api_key: str = ""
+    bai_text_model: str = "qwen3.8-flash"
+    bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
@@ -66,6 +69,7 @@ class Settings(BaseSettings):
     gemini_vision_model: str = "gemini-3.8-flash"
     groq_vision_models: str = "qwen/qwen3.8-27b,qwen/qwen3.6-27b"
     cloudflare_vision_model: str = "@cf/google/gemma-4-26b-a4b-it"
+    bai_vision_model: str = "qwen3.8-flash"
     vision_provider_order: str = "groq_qwen38,cloudflare,groq_qwen36,gemini"
     max_images_per_request: int = Field(default=3, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
@@ -137,6 +141,8 @@ class Settings(BaseSettings):
             available.add("groq")
         if self.openrouter_api_key and self.openrouter_model:
             available.add("openrouter")
+        if self.bai_api_key and self.bai_text_model:
+            available.add("bai")
         if (
             self.cloudflare_account_id
             and self.cloudflare_api_token
@@ -158,6 +164,8 @@ class Settings(BaseSettings):
                 available.add("groq_qwen38")
             if len(models) >= 2:
                 available.add("groq_qwen36")
+        if self.bai_api_key and self.bai_vision_model:
+            available.add("bai")
         if (
             self.cloudflare_account_id
             and self.cloudflare_api_token
