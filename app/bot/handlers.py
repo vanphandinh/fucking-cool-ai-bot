@@ -43,17 +43,25 @@ _HELP_TEXT = (
 )
 
 
+def _conversation_key(chat_id: int, message_thread_id: int | None) -> int | tuple[int, int]:
+    """Keep normal chats backward-compatible while isolating Telegram forum topics."""
+    if message_thread_id is None:
+        return chat_id
+    return chat_id, message_thread_id
+
+
 class _ChatLocks:
     def __init__(self) -> None:
-        self._locks: dict[int, asyncio.Lock] = {}
+        self._locks: dict[int | tuple[int, int], asyncio.Lock] = {}
         self._guard = asyncio.Lock()
 
-    async def get(self, chat_id: int) -> asyncio.Lock:
+    async def get(self, chat_id: int, message_thread_id: int | None = None) -> asyncio.Lock:
+        key = _conversation_key(chat_id, message_thread_id)
         async with self._guard:
-            lock = self._locks.get(chat_id)
+            lock = self._locks.get(key)
             if lock is None:
                 lock = asyncio.Lock()
-                self._locks[chat_id] = lock
+                self._locks[key] = lock
             return lock
 
 
@@ -291,6 +299,8 @@ async def _handle_question(
 ) -> None:
     user_id = message.from_user.id if message.from_user else 0
     chat_id = message.chat.id
+    message_thread_id = message.message_thread_id
+    conversation_key = _conversation_key(chat_id, message_thread_id)
     bot: Bot = message.bot
     active_media_loader = media_loader or TelegramMediaLoader(settings)
 
@@ -303,7 +313,7 @@ async def _handle_question(
 
     try:
         async with asyncio.timeout(settings.question_timeout_sec):
-            lock = await chat_locks.get(chat_id)
+            lock = await chat_locks.get(chat_id, message_thread_id)
             async with lock:
                 try:
                     images = await active_media_loader.load(message)
@@ -319,10 +329,10 @@ async def _handle_question(
 
                 request = UserRequest(text=question, quoted_text=quoted, images=images)
                 typing_task = asyncio.create_task(
-                    _typing_loop(bot, chat_id, message_thread_id=message.message_thread_id)
+                    _typing_loop(bot, chat_id, message_thread_id=message_thread_id)
                 )
                 try:
-                    history = memory.history_for(chat_id, settings.max_context_turns)
+                    history = memory.history_for(conversation_key, settings.max_context_turns)
                     if images:
                         answer = await orchestrator.ask(request=request, history=history)
                     else:
@@ -366,19 +376,19 @@ async def _handle_question(
                 if answer.searched:
                     stats.record_search()
                 memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question
-                memory.push(chat_id, "user", memory_text)
-                memory.push(chat_id, "assistant", telegram_html_to_plain(answer.text))
+                memory.push(conversation_key, "user", memory_text)
+                memory.push(conversation_key, "assistant", telegram_html_to_plain(answer.text))
 
                 extra_kwargs = {}
-                if message.message_thread_id:
-                    extra_kwargs["message_thread_id"] = message.message_thread_id
+                if message_thread_id:
+                    extra_kwargs["message_thread_id"] = message_thread_id
                 try:
                     if getattr(answer, "images", None):
                         await send_image_results(
                             bot,
                             chat_id,
                             answer.images,
-                            message_thread_id=message.message_thread_id,
+                            message_thread_id=message_thread_id,
                         )
                     if answer.searched and answer.sources:
                         footer = format_sources(answer.sources)
