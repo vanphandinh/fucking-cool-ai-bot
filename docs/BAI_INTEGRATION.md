@@ -88,6 +88,24 @@ Probe a JPEG/PNG/WebP against multimodal models:
 BAI_API_KEY=... python scripts/probe_bai.py --image ./probe.jpg
 ```
 
+Successful chat responses include a bounded `content_preview` field in the
+probe output when assistant text is present. This makes image probes useful for
+manual semantic verification rather than merely proving that the API accepted
+an image payload.
+
+HTTP `429` responses are retried sequentially. The probe honors numeric
+`Retry-After` values when present; otherwise it uses exponential backoff with
+jitter. Retry behavior is bounded and configurable:
+
+```bash
+BAI_API_KEY=... python scripts/probe_bai.py \
+  --max-retries 3 \
+  --retry-base-delay 1.0
+```
+
+The elapsed time reported for a request includes any rate-limit sleep/retry
+cycle. When a retry occurred, the output also includes `retry_count`.
+
 Try upstream-style reasoning knobs **only as compatibility experiments**:
 
 ```bash
@@ -104,7 +122,7 @@ accepted payload.
 1. Run `GET /v1/models` through the probe and confirm the configured model ID is visible.
 2. Run baseline text on all intended models.
 3. Run `--tools` and confirm the tool continuation succeeds for the chosen model.
-4. For vision, run a one-image JPEG/PNG/WebP probe before adding `bai` to `VISION_PROVIDER_ORDER`.
+4. For vision, run a one-image JPEG/PNG/WebP probe and inspect `content_preview` before adding `bai` to `VISION_PROVIDER_ORDER`.
 5. Keep B.AI behind an existing stable provider initially and compare latency/error rate.
 6. Only promote B.AI earlier in the order after measuring production-representative p50/p95 latency and 429/5xx rate.
 7. Re-check B.AI promotions/pricing periodically; zero-Credit status is promotional.
@@ -117,6 +135,10 @@ B.AI uses the shared provider health/fallback implementation:
 - `429`: provider enters cooldown, honoring `Retry-After` when present.
 - `5xx`: treated as transient and eligible for health cooldown/fallback.
 - unsupported/invalid `400` requests are not treated as transient network failures.
+
+The manual probe has a separate bounded retry loop for `429` so rate limiting is
+not mistaken for a model-contract failure during compatibility testing. This
+probe retry behavior does not change runtime provider behavior.
 
 Because there is only one B.AI text slot and one B.AI vision slot, an upstream
 B.AI outage cannot cause the router to retry four B.AI models sequentially
