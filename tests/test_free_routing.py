@@ -281,6 +281,118 @@ class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((text, name), ("fallback done", "groq"))
         self.assertEqual(len(second_requests), 1)
 
+    async def test_text_encoded_tool_call_is_executed_not_leaked(self) -> None:
+        requests: list[dict] = []
+        executed: list[tuple[str, dict]] = []
+        leaked = (
+            "<tool_call>web_search\n"
+            "<arg_key>query</arg_key>\n"
+            "<arg_value>Việt Nam công ty khai thác xuất khẩu đất hiếm 2024 2025</arg_value>\n"
+            "</tool_call>"
+        )
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            content = leaked if len(requests) == 1 else "Kết quả đã được tổng hợp."
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": content}}]},
+                request=request,
+            )
+
+        provider = OpenAICompatProvider(
+            "groq", "https://example.org/v1", "fake", "openai/gpt-oss-120b"
+        )
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
+        )
+        router = AIProviderRouter([provider], max_tool_rounds=2)
+
+        async def execute(name: str, args: dict) -> str:
+            executed.append((name, args))
+            return "search result"
+
+        try:
+            text, name = await router.complete(
+                [{"role": "user", "content": "đất hiếm Việt Nam?"}],
+                [_search_tool()],
+                execute,
+            )
+        finally:
+            await provider.aclose()
+
+        self.assertEqual((text, name), ("Kết quả đã được tổng hợp.", "groq"))
+        self.assertEqual(
+            executed,
+            [
+                (
+                    "web_search",
+                    {"query": "Việt Nam công ty khai thác xuất khẩu đất hiếm 2024 2025"},
+                )
+            ],
+        )
+        self.assertEqual(len(requests), 2)
+
+    async def test_tool_use_failed_falls_back_without_plain_retry(self) -> None:
+        first_requests: list[dict] = []
+        second_requests: list[dict] = []
+
+        def first_respond(request: httpx.Request) -> httpx.Response:
+            first_requests.append(json.loads(request.content))
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "code": "tool_use_failed",
+                        "message": "Failed to call a function",
+                        "failed_generation": "<tool_call>web_search</tool_call>",
+                    }
+                },
+                request=request,
+            )
+
+        def second_respond(request: httpx.Request) -> httpx.Response:
+            second_requests.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "fallback ok"}}]},
+                request=request,
+            )
+
+        first = OpenAICompatProvider(
+            "groq", "https://first.example/v1", "fake", "openai/gpt-oss-120b"
+        )
+        second = OpenAICompatProvider(
+            "gemini", "https://second.example/v1", "fake", "gemini-3.8-flash"
+        )
+        await first.aclose()
+        await second.aclose()
+        first._client = httpx.AsyncClient(
+            base_url="https://first.example/v1/", transport=httpx.MockTransport(first_respond)
+        )
+        second._client = httpx.AsyncClient(
+            base_url="https://second.example/v1/", transport=httpx.MockTransport(second_respond)
+        )
+        router = AIProviderRouter([first, second], max_tool_rounds=2)
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "unused"
+
+        try:
+            text, name = await router.complete(
+                [{"role": "user", "content": "latest?"}],
+                [_search_tool()],
+                execute,
+            )
+        finally:
+            await first.aclose()
+            await second.aclose()
+
+        self.assertEqual((text, name), ("fallback ok", "gemini"))
+        self.assertEqual(len(first_requests), 1)
+        self.assertIn("tools", second_requests[0])
+
 
 def _search_tool() -> dict:
     return {
