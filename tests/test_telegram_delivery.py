@@ -36,6 +36,29 @@ class TelegramDeliveryTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_plain_parts_do_not_force_html_parse_mode(self):
+        async def run():
+            bot = SimpleNamespace(send_message=AsyncMock())
+            message = SimpleNamespace(
+                bot=bot,
+                chat=SimpleNamespace(id=-1001),
+                message_thread_id=None,
+                reply=AsyncMock(),
+            )
+            ok = await _send_answer_parts(
+                message,
+                ["Một &amp; hai", "Ba"],
+            )
+            self.assertTrue(ok)
+            first = message.reply.await_args
+            second = bot.send_message.await_args
+            self.assertEqual(first.args[0], "Một & hai")
+            self.assertNotIn("parse_mode", first.kwargs)
+            self.assertEqual(second.kwargs["text"], "Ba")
+            self.assertNotIn("parse_mode", second.kwargs)
+
+        asyncio.run(run())
+
     def test_first_part_falls_back_to_plain_on_bad_html(self):
         async def run():
             bot = SimpleNamespace(send_message=AsyncMock())
