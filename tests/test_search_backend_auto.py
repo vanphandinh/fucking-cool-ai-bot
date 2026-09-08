@@ -21,7 +21,8 @@ class UnifiedSearchConfigTests(unittest.TestCase):
     def test_only_auto_searxng_and_ddgs_are_valid(self) -> None:
         for backend in ("auto", "searxng", "ddgs"):
             with self.subTest(backend=backend):
-                self.assertEqual(Settings(_env_file=None, search_backend=backend).search_backend, backend)
+                settings = Settings(_env_file=None, search_backend=backend)
+                self.assertEqual(settings.search_backend, backend)
         with self.assertRaises(ValueError):
             Settings(_env_file=None, search_backend="tavily")
 
