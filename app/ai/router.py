@@ -245,7 +245,11 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
         text["groq"] = make_groq_provider(settings)
     if settings.openrouter_api_key and settings.openrouter_model:
         text["openrouter"] = make_openrouter_provider(settings)
-    if settings.bai_api_key and settings.bai_text_model:
+    if (
+        "bai" in settings.text_provider_order_list
+        and settings.bai_api_key
+        and settings.bai_text_model
+    ):
         text["bai"] = make_bai_provider(settings)
     if (
         settings.cloudflare_account_id
@@ -290,7 +294,11 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
                     vision=True,
                     max_images=3,
                 )
-        if settings.bai_api_key and settings.bai_vision_model:
+        if (
+            "bai" in settings.vision_provider_order_list
+            and settings.bai_api_key
+            and settings.bai_vision_model
+        ):
             vision["bai"] = make_bai_provider(
                 settings,
                 name="bai_vision",
