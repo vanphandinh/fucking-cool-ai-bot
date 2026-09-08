@@ -3,29 +3,34 @@
 from __future__ import annotations
 
 import html
+import ipaddress
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+import tldextract
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_X_SOURCE_HOSTS = frozenset(
+_TRACKING_QUERY_KEYS = frozenset(
     {
-        "x.com",
-        "www.x.com",
-        "twitter.com",
-        "www.twitter.com",
-        "mobile.twitter.com",
-        "m.twitter.com",
-        "fxtwitter.com",
-        "www.fxtwitter.com",
-        "fixupx.com",
-        "www.fixupx.com",
+        "_ga",
+        "_gl",
+        "dclid",
+        "fbclid",
+        "gbraid",
+        "gclid",
+        "igshid",
+        "mc_cid",
+        "mc_eid",
+        "msclkid",
+        "twclid",
+        "wbraid",
+        "yclid",
     }
 )
-_GITHUB_SOURCE_HOSTS = frozenset(
-    {"github.com", "www.github.com", "gist.github.com", "www.gist.github.com"}
+_TLD_EXTRACT = tldextract.TLDExtract(
+    suffix_list_urls=(),
+    include_psl_private_domains=True,
 )
-_X_STATUS_ID_RE = re.compile(r"^\d{2,20}$")
-_X_HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 
 
 def clean_question(text: str, username: str) -> str:
@@ -100,58 +105,77 @@ def _find_cut(text: str, limit: int) -> int:
     return max_i
 
 
+def _normalized_host(host: str) -> tuple[str, bool]:
+    """Chuẩn hoá hostname cho so sánh; trả thêm cờ IPv6 để dựng lại URL."""
+    host = host.lower().rstrip(".")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            return host.encode("idna").decode("ascii"), False
+        except UnicodeError:
+            return "", False
+    return address.compressed, address.version == 6
+
+
+def _is_tracking_query_key(key: str) -> bool:
+    key = key.lower()
+    return key.startswith("utm_") or key in _TRACKING_QUERY_KEYS
+
+
 def canonicalize_source_url(value: object) -> str:
-    """Chuẩn hoá URL nguồn để các biến thể cùng nội dung không bị tính riêng."""
-    url = str(value or "").strip()
-    if not url.startswith(("http://", "https://")):
+    """Chuẩn hoá URL nguồn bằng quy tắc generic, không phụ thuộc website cụ thể."""
+    raw_url = str(value or "").strip()
+    if not raw_url:
         return ""
     try:
-        parsed = urlparse(url)
-    except ValueError:
+        parsed = urlsplit(raw_url)
+        scheme = parsed.scheme.lower()
+        host, is_ipv6 = _normalized_host(parsed.hostname or "")
+        port = parsed.port
+    except (TypeError, ValueError):
         return ""
-    host = (parsed.hostname or "").lower().rstrip(".")
-    if parsed.scheme.lower() not in {"http", "https"} or not host:
+    if scheme not in {"http", "https"} or not host:
         return ""
 
-    if host in _X_SOURCE_HOSTS:
-        segments = [segment for segment in parsed.path.split("/") if segment]
-        try:
-            status_index = segments.index("status")
-        except ValueError:
-            status_index = -1
-        if status_index > 0 and status_index + 1 < len(segments):
-            handle = segments[status_index - 1]
-            status_id = segments[status_index + 1]
-            if _X_STATUS_ID_RE.fullmatch(status_id):
-                if handle == "i":
-                    return f"https://x.com/i/status/{status_id}"
-                if _X_HANDLE_RE.fullmatch(handle):
-                    return f"https://x.com/{handle}/status/{status_id}"
-    return url
+    netloc = f"[{host}]" if is_ipv6 else host
+    is_default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    if port is not None and not is_default_port:
+        netloc = f"{netloc}:{port}"
+
+    path = parsed.path.rstrip("/")
+    query_pairs = [
+        (key, val)
+        for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+        if not _is_tracking_query_key(key)
+    ]
+    query = urlencode(sorted(query_pairs))
+    return urlunsplit((scheme, netloc, path, query, ""))
 
 
 def source_family_key(url: str) -> str:
-    """Nhóm các URL cùng website/platform để footer ưu tiên nguồn đa dạng."""
+    """Lấy registrable domain/eTLD+1 để nhóm nguồn cho mọi website."""
     canonical = canonicalize_source_url(url)
     if not canonical:
         return ""
     try:
-        host = (urlparse(canonical).hostname or "").lower().rstrip(".")
+        host = urlsplit(canonical).hostname or ""
     except ValueError:
         return ""
-    if host in _X_SOURCE_HOSTS or host == "x.com":
-        return "x.com"
-    if host in _GITHUB_SOURCE_HOSTS:
-        return "github.com"
-    if host.startswith("www."):
-        host = host[4:]
+    if not host:
+        return ""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        extracted = _TLD_EXTRACT(host)
+        return extracted.top_domain_under_public_suffix or host
     return host
 
 
 def _hostname(url: str) -> str:
     """Lấy hostname ngắn (bỏ www.) để làm nhãn khi không có tiêu đề."""
     try:
-        host = (urlparse(url).hostname or "").lower()
+        host = (urlsplit(url).hostname or "").lower()
     except Exception:  # noqa: BLE001 — URL lạ thì thôi, không nổ
         return ""
     if host.startswith("www."):
@@ -173,8 +197,9 @@ def format_sources(sources: list[dict[str, str]]) -> str:
     """Danh sách nguồn HTML: tiêu đề ngắn bấm được, không in URL dài.
 
     Gửi kèm parse_mode=HTML. Mỗi mục là <a href="...">nhãn</a> — Telegram hiện
-    chữ xanh để bấm, ẩn path/query dài. Chỉ giữ một URL cho mỗi source family để
-    tránh nhiều link cùng website/platform chiếm hết danh sách tham khảo.
+    chữ xanh để bấm, ẩn path/query dài. Chỉ giữ một URL cho mỗi registrable domain
+    để một website không chiếm hết danh sách tham khảo; private PSL suffixes được
+    tôn trọng để các tenant độc lập (vd. *.github.io) không bị gộp nhầm.
     """
     lines = ["📚 Nguồn tham khảo:"]
     seen_urls: set[str] = set()
