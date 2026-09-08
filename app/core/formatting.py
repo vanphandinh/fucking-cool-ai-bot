@@ -6,7 +6,11 @@ import html
 import re
 from urllib.parse import urlsplit
 
-from .source_policy import canonicalize_source_url, select_diverse_sources, source_site_key
+from .source_policy import (
+    canonicalize_source_url as _canonicalize_source_url,
+    select_diverse_sources,
+    source_site_key,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -81,6 +85,11 @@ def _find_cut(text: str, limit: int) -> int:
         if pos != -1 and max_i - pos <= 600:
             return pos + len(delim)
     return max_i
+
+
+def canonicalize_source_url(value: object) -> str:
+    """Backward-compatible wrapper for generic source URL canonicalization."""
+    return _canonicalize_source_url(value)
 
 
 def source_family_key(url: str) -> str:
