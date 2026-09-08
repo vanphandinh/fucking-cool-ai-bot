@@ -1,23 +1,20 @@
-"""Regression tests for reference-source canonicalization and diversity."""
+"""Regression tests for generic reference-source canonicalization and diversity."""
 
 import unittest
 
-from app.core.formatting import format_sources
+from app.core.formatting import canonicalize_source_url, format_sources, source_family_key
 from app.core.orchestrator import _dedupe_sources
 
-
-_STATUS_URL = "https://x.com/0x0SojalSec/status/2097087104534888698"
-_VIDEO_URL = _STATUS_URL + "/video/1"
 
 _RAWDATA_SOURCES = [
     {
         "title": 'Md Ismail Šojal 🕷️ on X: "The most expensive “hello” I\'ve ever ...',
-        "url": _STATUS_URL,
+        "url": "https://x.com/0x0SojalSec/status/2097087104534888698",
         "snippet": "",
     },
     {
         "title": 'Md Ismail Šojal 🕷️ on X: "The most expensive “hello” I\'ve ever ...',
-        "url": _VIDEO_URL,
+        "url": "https://x.com/0x0SojalSec/status/2097087104534888698/video/1",
         "snippet": "",
     },
     {
@@ -44,39 +41,98 @@ _RAWDATA_SOURCES = [
 
 
 class SourceDedupeTests(unittest.TestCase):
-    def test_x_status_media_variant_collapses_to_canonical_status(self):
+    def test_source_family_uses_registrable_domain_for_arbitrary_subdomains(self):
+        self.assertEqual(
+            source_family_key("https://news.shop.example.co.uk/story"),
+            "example.co.uk",
+        )
+        self.assertEqual(
+            source_family_key("https://m.example.co.uk/another"),
+            "example.co.uk",
+        )
+        self.assertEqual(
+            source_family_key("https://cdn.example.com.au/file"),
+            "example.com.au",
+        )
+
+    def test_generic_url_canonicalization_removes_non_content_variants(self):
+        self.assertEqual(
+            canonicalize_source_url(
+                "HTTPS://WWW.Example.COM:443/story/?utm_source=x&b=2&a=1#comments"
+            ),
+            "https://www.example.com/story?a=1&b=2",
+        )
+        self.assertEqual(
+            canonicalize_source_url("http://example.com:80/story/?fbclid=abc"),
+            "http://example.com/story",
+        )
+
+    def test_reference_list_keeps_one_entry_per_generic_source_family(self):
         sources = _dedupe_sources(
             [
-                {"title": "video", "url": _VIDEO_URL, "snippet": ""},
-                {"title": "status", "url": _STATUS_URL, "snippet": ""},
+                {
+                    "title": "Story A",
+                    "url": "https://news.example.co.uk/story-a",
+                    "snippet": "",
+                },
+                {
+                    "title": "Story B",
+                    "url": "https://m.example.co.uk/story-b",
+                    "snippet": "",
+                },
+                {
+                    "title": "Independent",
+                    "url": "https://other.example.net/story",
+                    "snippet": "",
+                },
             ]
         )
 
-        self.assertEqual(len(sources), 1)
-        self.assertEqual(sources[0]["url"], _STATUS_URL)
-
-    def test_reference_list_keeps_one_entry_per_source_family(self):
-        sources = _dedupe_sources(_RAWDATA_SOURCES)
-
         self.assertEqual(
             [item["url"] for item in sources],
-            [
-                _STATUS_URL,
-                "https://github.com/0xSojalSec",
-                "https://www.fmkorea.com/10310466183",
-            ],
+            ["https://news.example.co.uk/story-a", "https://other.example.net/story"],
         )
 
-    def test_format_sources_defensively_applies_same_diversity_rules(self):
-        footer = format_sources(_RAWDATA_SOURCES)
+    def test_different_domains_remain_independent_even_for_same_identity(self):
+        sources = _dedupe_sources(
+            [
+                {
+                    "title": "Alice Developer",
+                    "url": "https://social.example/alice",
+                    "snippet": "",
+                },
+                {
+                    "title": "Alice Developer",
+                    "url": "https://code.example/alice",
+                    "snippet": "",
+                },
+            ]
+        )
 
-        self.assertEqual(footer.count('<a href="'), 3)
-        self.assertNotIn("/video/1", footer)
-        self.assertNotIn("gist.github.com", footer)
-        self.assertNotIn('href="https://x.com/0x0SojalSec"', footer)
-        self.assertIn(_STATUS_URL, footer)
-        self.assertIn("https://github.com/0xSojalSec", footer)
-        self.assertIn("https://www.fmkorea.com/10310466183", footer)
+        self.assertEqual(len(sources), 2)
+
+    def test_format_sources_defensively_applies_generic_domain_diversity(self):
+        footer = format_sources(
+            [
+                {"title": "One", "url": "https://blog.example.com/a"},
+                {"title": "Two", "url": "https://www.example.com/b"},
+                {"title": "Three", "url": "https://example.org/c"},
+            ]
+        )
+
+        self.assertEqual(footer.count('<a href="'), 2)
+        self.assertIn("https://blog.example.com/a", footer)
+        self.assertNotIn("https://www.example.com/b", footer)
+        self.assertIn("https://example.org/c", footer)
+
+    def test_supplied_rawdata_case_still_collapses_without_site_specific_rules(self):
+        sources = _dedupe_sources(_RAWDATA_SOURCES)
+
+        self.assertEqual(len(sources), 3)
+        self.assertEqual(
+            [source_family_key(item["url"]) for item in sources],
+            ["x.com", "github.com", "fmkorea.com"],
+        )
 
 
 if __name__ == "__main__":
