@@ -110,8 +110,7 @@ def build_message_router(
             f"- Vision providers: {vision_names}",
             f"- Vision enabled: {'yes' if settings.configured_vision_provider_names else 'no'}",
             f"- Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
-            f"- Search backend: {settings.search_backend}",
-            f"- Image search backend: {settings.image_search_backend}",
+            f"- Search backend (web + ảnh): {settings.search_backend}",
         ]
         await message.reply("\n".join(lines))
 
