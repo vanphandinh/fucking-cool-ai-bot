@@ -17,11 +17,15 @@ class FreeFirstDefaultsTests(unittest.TestCase):
     def test_defaults_prefer_free_tier_models_and_conserve_quota(self) -> None:
         settings = Settings(_env_file=None)
 
+        self.assertEqual(settings.nvidia_nim_text_model, "deepseek-ai/deepseek-v4-flash-0731")
         self.assertEqual(settings.groq_model, "openai/gpt-oss-120b")
         self.assertEqual(settings.cloudflare_text_model, "@cf/zai-org/glm-4.7-flash")
         self.assertEqual(settings.openrouter_model, "openrouter/free")
         self.assertEqual(settings.gemini_model, "gemini-3.8-flash")
-        self.assertEqual(settings.text_provider_order, "groq,cloudflare,openrouter,gemini")
+        self.assertEqual(
+            settings.text_provider_order,
+            "nvidia,groq,cloudflare,openrouter,gemini",
+        )
         self.assertEqual(
             settings.vision_provider_order,
             "groq_qwen38,cloudflare,groq_qwen36,gemini",
