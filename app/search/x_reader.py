@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -28,6 +29,7 @@ _STATUS_ID_RE = re.compile(r"^\d{2,20}$")
 _HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 MAX_X_TEXT = 5500
 MAX_THREAD_POSTS = 12
+MAX_X_RESPONSE_BYTES = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -161,24 +163,65 @@ def _format_thread(data: dict) -> str:
     return "\n\n".join(blocks)[:MAX_X_TEXT]
 
 
+async def _get_json_bounded(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+) -> object:
+    headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
+    async with client.stream("GET", url, params=params, headers=headers) as response:
+        response.raise_for_status()
+        content_encoding = (response.headers.get("content-encoding") or "identity").lower().strip()
+        if content_encoding not in ("", "identity"):
+            raise XFetchError("X upstream returned compressed data")
+
+        raw_length = response.headers.get("content-length")
+        if raw_length:
+            try:
+                content_length = int(raw_length)
+            except ValueError:
+                content_length = None
+            if content_length is not None and content_length > MAX_X_RESPONSE_BYTES:
+                raise XFetchError("X upstream response is too large")
+
+        body = bytearray()
+        if response.is_stream_consumed:
+            body.extend(response.content)
+            if len(body) > MAX_X_RESPONSE_BYTES:
+                raise XFetchError("X upstream response is too large")
+        else:
+            async for chunk in response.aiter_raw():
+                body.extend(chunk)
+                if len(body) > MAX_X_RESPONSE_BYTES:
+                    raise XFetchError("X upstream response is too large")
+
+    try:
+        return json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise XFetchError("X upstream returned invalid JSON") from exc
+
+
 async def _fetch_fxtwitter(
     target: XStatusTarget,
     mode: str,
     client: httpx.AsyncClient,
 ) -> XReadResult:
     endpoint = "thread" if mode == "x_thread" else "status"
-    response = await client.get(
+    data = await _get_json_bounded(
+        client,
         f"https://api.fxtwitter.com/2/{endpoint}/{target.status_id}",
-        headers={"Accept": "application/json"},
     )
-    response.raise_for_status()
+    if not isinstance(data, dict):
+        raise XFetchError("FxTwitter returned invalid JSON")
+    raw_code = data.get("code")
     try:
-        data = response.json()
-    except ValueError as exc:
-        raise XFetchError("FxTwitter returned non-JSON data") from exc
-    if not isinstance(data, dict) or int(data.get("code") or 0) != 200:
-        code = data.get("code") if isinstance(data, dict) else "invalid"
-        raise XFetchError(f"FxTwitter API code={code}")
+        code = int(raw_code or 0)
+    except (TypeError, ValueError) as exc:
+        code_type = type(raw_code).__name__
+        raise XFetchError(f"FxTwitter API returned invalid code type: {code_type}") from exc
+    if code != 200:
+        raise XFetchError(f"FxTwitter API code={raw_code}")
     if mode == "x_thread":
         text = _format_thread(data)
         if not text:
@@ -197,16 +240,11 @@ async def _fetch_oembed(
     target: XStatusTarget,
     client: httpx.AsyncClient,
 ) -> XReadResult:
-    response = await client.get(
+    data = await _get_json_bounded(
+        client,
         "https://publish.x.com/oembed",
         params={"url": target.canonical_url, "omit_script": "1", "dnt": "true"},
-        headers={"Accept": "application/json"},
     )
-    response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise XFetchError("X oEmbed returned non-JSON data") from exc
     if not isinstance(data, dict):
         raise XFetchError("X oEmbed returned invalid JSON")
     soup = BeautifulSoup(str(data.get("html") or ""), "html.parser")

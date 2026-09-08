@@ -65,8 +65,6 @@ async def _amain(settings: Settings) -> int:
         )
     if settings.search_backend == "searxng" and not settings.searxng_url.strip():
         logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
-    if settings.search_backend == "tavily" and not settings.tavily_api_key.strip():
-        logger.warning("SEARCH_BACKEND=tavily nhưng TAVILY_API_KEY đang TRỐNG.")
 
     try:
         bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
