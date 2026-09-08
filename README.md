@@ -6,7 +6,6 @@ luồng free-first, fallback AI theo capability và chỉ xử lý message trong
 
 ## Tài liệu đang duy trì
 
-- [NVIDIA NIM integration](docs/NVIDIA_NIM.md) — cấu hình NIM, routing, fallback, vision opt-in và giới hạn trial/production.
 - [Telegram vision input](docs/telegram-vision-input.md) — luồng ảnh, routing và giới hạn an toàn.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md) — HTML sanitizer, splitter và fallback plain text.
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md) — FxTwitter/oEmbed/generic fallback, safety và rollback.
@@ -24,8 +23,8 @@ luồng free-first, fallback AI theo capability và chỉ xử lý message trong
 - Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; ngoài learn-mode bot tự rời chat lạ khi được add.
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
 - Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
-- Text route free-tier-first theo `TEXT_PROVIDER_ORDER`; default: NVIDIA NIM → Groq → Cloudflare → OpenRouter → Gemini. NVIDIA chỉ tham gia khi có `NVIDIA_NIM_API_KEY` hợp lệ.
-- Vision route tách riêng theo `VISION_PROVIDER_ORDER`; default vẫn là Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash. NVIDIA vision có adapter nhưng là opt-in.
+- Text route free-tier-first theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
+- Vision route tách riêng theo `VISION_PROVIDER_ORDER`; default: Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash.
 - Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
 - Flow Telegram hiện tại có thể lấy ảnh từ **message hiện tại + message được reply** (tối đa 2 ảnh thực tế).
   `MAX_IMAGES_PER_REQUEST=3` là trần capability/config, không tự triển khai album aggregation.
@@ -77,17 +76,15 @@ http/https cụ thể do user cung cấp và yêu cầu đọc nội dung, syste
 - Python runtime trong Docker: **3.12**.
 - Docker + Docker Compose plugin trên VPS.
 - Telegram bot token từ BotFather.
-- Tối thiểu một text provider khả dụng: NVIDIA NIM, Groq, Cloudflare Workers AI, OpenRouter hoặc Gemini.
+- Tối thiểu một text provider khả dụng: Groq, Cloudflare Workers AI, OpenRouter hoặc Gemini.
 - Privacy Mode nên tắt nếu muốn bot đọc message/reply trong group theo workflow hiện tại.
 
 Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo default đang
 được cấu hình trong source và `.env.example`.
 
-Default hiện tại tối ưu theo hướng **free-tier-first**, nhưng đây không phải cơ chế cưỡng chế billing/licensing.
-NVIDIA hosted Free Endpoint/API Catalog là trial service: không dùng trial endpoint hoặc Generated Content trong
-production nếu chưa có Subscription/entitlement phù hợp. Với production hãy dùng NVIDIA commercial/self-hosted
-entitlement phù hợp hoặc bỏ `nvidia` khỏi `TEXT_PROVIDER_ORDER`. Bot không tự phát hiện trạng thái billing hay
-entitlement của provider.
+Default hiện tại tối ưu theo hướng **free-tier-first**, nhưng đây không phải cơ chế cưỡng chế billing. Bot không
+biết account/project Groq, Cloudflare hoặc Gemini đang ở Free hay Paid tier. Muốn vận hành thực tế ở $0, phải
+giữ credential trên free tier/quota phù hợp và theo dõi billing ở dashboard provider.
 
 ---
 
@@ -102,7 +99,7 @@ nano .env
 
 # tối thiểu điền:
 # BOT_TOKEN=...
-# NVIDIA_NIM_API_KEY=...   # hoặc Groq / Cloudflare / OpenRouter / Gemini
+# GROQ_API_KEY=...   # hoặc Cloudflare / OpenRouter / Gemini
 # ADMIN_IDS=...
 # ALLOWED_GROUP_IDS=...  # hoặc dùng learn-mode ở mục 5
 
@@ -119,14 +116,11 @@ Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc giá trị s
 nâng cấp, đối chiếu `.env.example` và cập nhật ít nhất các default cần thiết:
 
 ```env
-NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_NIM_TEXT_MODEL=deepseek-ai/deepseek-v4-flash-0731
-NVIDIA_NIM_VISION_MODEL=google/gemma-4-31b-it
 GROQ_MODEL=openai/gpt-oss-120b
 OPENROUTER_MODEL=openrouter/free
 GEMINI_MODEL=gemini-3.8-flash
 CLOUDFLARE_TEXT_MODEL=@cf/zai-org/glm-4.7-flash
-TEXT_PROVIDER_ORDER=nvidia,groq,cloudflare,openrouter,gemini
+TEXT_PROVIDER_ORDER=groq,cloudflare,openrouter,gemini
 VISION_PROVIDER_ORDER=groq_qwen38,cloudflare,groq_qwen36,gemini
 SEARCH_BACKEND=auto
 IMAGE_SEARCH_MAX_RESULTS=4
@@ -135,14 +129,11 @@ MAX_CONTEXT_TURNS=6
 MAX_TOOL_ROUNDS=2
 ```
 
-Deployment cũ chỉ bắt đầu dùng NVIDIA khi đồng thời có `NVIDIA_NIM_API_KEY` và thêm `nvidia` vào
-`TEXT_PROVIDER_ORDER`. Không copy đè secret từ `.env.example`; chỉ cập nhật key cần thiết rồi rebuild/recreate bot.
-
 `X_FETCH_ENABLED=1` không cần API key. Set `0` nếu muốn rollback specialized X reader và đưa X URL về generic
 reader. Không tăng `MAX_TOOL_ROUNDS` để chữa fetch/search failure; production baseline của repo là `2`.
 
 Nếu `.env` cũ còn `TAVILY_API_KEY` hoặc `IMAGE_SEARCH_BACKEND`, có thể xóa: runtime hiện tại không dùng hai biến
-này.
+này. Không copy đè secret từ `.env.example`; chỉ cập nhật key cần thiết rồi rebuild/recreate bot.
 
 ---
 
@@ -222,37 +213,29 @@ Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 
 | Biến | Default model | Vai trò |
 |---|---|---|
-| `NVIDIA_NIM_API_KEY` / `NVIDIA_NIM_TEXT_MODEL` | `deepseek-ai/deepseek-v4-flash-0731` | Text primary khi có key; hosted Free Endpoint chỉ dành cho trial/dev/test nếu chưa có entitlement production |
-| `NVIDIA_NIM_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Endpoint NIM; có thể đổi sang deployment phù hợp |
-| `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Text fallback độc lập đầu tiên |
+| `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Free-tier-first text primary |
 | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Cloudflare text fallback |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
 | `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Reserve chất lượng cao |
-| `TEXT_PROVIDER_ORDER` | `nvidia,groq,cloudflare,openrouter,gemini` | Thứ tự fallback text hiệu lực |
+| `TEXT_PROVIDER_ORDER` | `groq,cloudflare,openrouter,gemini` | Thứ tự fallback text hiệu lực |
 
 Startup yêu cầu **ít nhất một** text provider khả dụng. `configured_provider_names` chỉ báo provider vừa có
 credential/model phù hợp vừa nằm trong `TEXT_PROVIDER_ORDER`.
-
-NVIDIA adapter dùng OpenAI-compatible Chat Completions, ép `stream=false`, và coi HTTP `202` là trạng thái
-pending/transient để fallback thay vì polling trong request Telegram. `429`/`Retry-After`, `5xx`, `401/403`
-tiếp tục dùng health/cooldown chung của router.
 
 ### 7.3 Vision provider pool
 
 | Biến | Default | Ý nghĩa |
 |---|---|---|
 | `VISION_ENABLED` | `1` | Bật/tắt toàn bộ vision slot; text route không bị ảnh hưởng |
-| `NVIDIA_NIM_VISION_MODEL` | `google/gemma-4-31b-it` | NVIDIA vision slot, chỉ dùng khi thêm `nvidia` vào `VISION_PROVIDER_ORDER` |
 | `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Gemini vision slot |
 | `GROQ_VISION_MODELS` | `qwen/qwen3.8-27b,qwen/qwen3.6-27b` | Tối đa hai Groq vision slot |
 | `CLOUDFLARE_VISION_MODEL` | `@cf/google/gemma-4-26b-a4b-it` | Cloudflare vision model |
-| `VISION_PROVIDER_ORDER` | `groq_qwen38,cloudflare,groq_qwen36,gemini` | Thứ tự fallback vision mặc định; NVIDIA chưa tự bật |
+| `VISION_PROVIDER_ORDER` | `groq_qwen38,cloudflare,groq_qwen36,gemini` | Thứ tự fallback vision hiệu lực |
 | `MAX_IMAGES_PER_REQUEST` | `3` | Capability/config ceiling |
 | `MAX_IMAGE_BYTES` | `8388608` | Trần bytes từng ảnh |
 | `MAX_TOTAL_IMAGE_BYTES` | `12582912` | Trần tổng bytes ảnh/request |
 
-Cloudflare nằm giữa hai Groq vision slot để tăng provider diversity trước khi thử model Groq thứ hai. Sau khi
-validate NIM vision, có thể opt-in bằng `VISION_PROVIDER_ORDER=nvidia,groq_qwen38,cloudflare,groq_qwen36,gemini`.
+Cloudflare nằm giữa hai Groq vision slot để tăng provider diversity trước khi thử model Groq thứ hai.
 
 ### 7.4 Web + image search
 
@@ -331,15 +314,11 @@ Router còn có safety cap nội bộ tối đa 8 tool calls cho một completio
 ### Text
 
 ```text
-NVIDIA NIM / deepseek-ai/deepseek-v4-flash-0731
-  → Groq / openai/gpt-oss-120b
+Groq / openai/gpt-oss-120b
   → Cloudflare / @cf/zai-org/glm-4.7-flash
   → OpenRouter / openrouter/free
   → Gemini / gemini-3.8-flash
 ```
-
-NVIDIA được bỏ qua tự động nếu thiếu key/model hoặc bị cooldown/unavailable. Provider order vẫn là config-driven;
-không có nhánh hardcode ép NVIDIA chạy ngoài `TEXT_PROVIDER_ORDER`.
 
 ### Vision
 
@@ -350,14 +329,11 @@ Groq Qwen 3.8
   → Gemini 3.8 Flash
 ```
 
-NVIDIA vision tồn tại dưới slot `nvidia` nhưng không nằm trong default order; bật riêng sau validation.
-
 Provider health là state trong RAM:
 
 - `401/403`: disable slot đến process restart.
 - `429`: cooldown theo numeric `Retry-After`; nếu không parse được thì mặc định 60 giây.
 - Network/`5xx` transient: sau 2 lỗi liên tiếp cooldown 30 giây.
-- `202`: coi là pending/transient và fallback request hiện tại; không polling trong Telegram lifecycle.
 - Thành công reset transient counter/cooldown.
 
 Fallback giữ chung tool budget của request. Provider không hỗ trợ tools có thể retry plain mode theo error
@@ -368,7 +344,7 @@ classification thay vì làm hỏng toàn bộ route.
 Adapter hiện round-trip metadata bắt buộc trong **cùng provider**, rồi strip trước cross-provider fallback:
 
 - Gemini 3.x: `tool_calls[].extra_content.google.thought_signature`;
-- OpenRouter/reasoning models và NIM-compatible reasoning fields: `reasoning_details`, `reasoning`, `reasoning_content`.
+- OpenRouter/reasoning models: `reasoning_details`, `reasoning`, `reasoning_content`.
 
 Tool result/transcript portable vẫn được giữ qua fallback.
 
@@ -448,7 +424,6 @@ Kiểm tra effective config quan trọng sau upgrade `.env`:
 docker compose exec -T bot python - <<'PY'
 from app.config import Settings
 s = Settings()
-print("TEXT_PROVIDERS    =", s.configured_provider_names)
 print("SEARCH_BACKEND    =", s.search_backend)
 print("X_FETCH_ENABLED   =", s.x_fetch_enabled)
 print("MAX_CONTEXT_TURNS =", s.max_context_turns)
@@ -458,8 +433,7 @@ print("QUESTION_TIMEOUT  =", s.question_timeout_sec)
 PY
 ```
 
-Nếu dùng NVIDIA hosted trial endpoint, chỉ chạy trong dev/test/evaluation trừ khi đã có entitlement production
-riêng. Kỳ vọng runtime baseline: `X_FETCH_ENABLED=True`, `MAX_TOOL_ROUNDS=2`.
+Kỳ vọng free-tier-first production baseline: `X_FETCH_ENABLED=True`, `MAX_TOOL_ROUNDS=2`.
 
 Nếu dùng SearXNG:
 
@@ -511,7 +485,6 @@ Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull reque
 
 Coverage quan trọng:
 
-- `tests/test_nvidia_nim.py` — NIM config, primary routing, non-streaming tool flow, 202 fallback, 429 cooldown và vision opt-in.
 - `tests/test_search_backend_auto.py` — unified search policy/fallback và việc loại Tavily.
 - `tests/test_image_search.py` — image normalization/fallback/tool payload/Telegram delivery.
 - `tests/test_free_routing.py` — free-tier-first defaults, provider order và metadata isolation.
@@ -521,7 +494,8 @@ Coverage quan trọng:
 - `tests/test_url_tool_integration.py` — `fetch_url` mode, canonical source, duplicate-call cache.
 - `tests/test_search_policy_prompt.py` — direct URL fetch-first policy và chống mirror-search loop.
 
-Tests dùng fake provider/Telegram transports, mock HTTP và local fixtures; CI **không** gọi live NVIDIA/FxTwitter/X/provider E2E trên VPS production.
+Tests dùng fake provider/Telegram transports, mock HTTP và local fixtures; CI **không** chứng minh live
+FxTwitter/X/provider E2E trên VPS production.
 
 ---
 
@@ -537,7 +511,6 @@ app/
 │   ├── health.py
 │   ├── router.py
 │   ├── multimodal.py
-│   ├── nvidia.py
 │   └── gemini.py / groq.py / openrouter.py / cloudflare.py
 ├── bot/
 │   ├── filters.py
@@ -557,7 +530,6 @@ app/
 
 tests/
 ├── run_tests.py
-├── test_nvidia_nim.py
 ├── test_search_backend_auto.py
 ├── test_image_search.py
 ├── test_free_routing.py
@@ -568,7 +540,6 @@ tests/
 └── test_search_policy_prompt.py
 
 docs/
-├── NVIDIA_NIM.md
 ├── TELEGRAM_FORMATTING.md
 ├── X_CONTENT_FETCHING.md
 ├── SEARXNG_DDG_INCIDENT_2026-09-08.md
