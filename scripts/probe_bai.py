@@ -212,7 +212,11 @@ async def _run(args: argparse.Namespace) -> int:
     timeout = httpx.Timeout(args.timeout)
     baseline_ok = True
 
-    async with httpx.AsyncClient(base_url=_BASE_URL + "/", headers=headers, timeout=timeout) as client:
+    async with httpx.AsyncClient(
+        base_url=_BASE_URL + "/",
+        headers=headers,
+        timeout=timeout,
+    ) as client:
         started = time.perf_counter()
         models_response = await client.get("models")
         model_summary = _response_summary(models_response, time.perf_counter() - started)
