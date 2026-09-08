@@ -21,7 +21,10 @@ async def search_images(
     limit: int | None = None,
 ) -> list[dict]:
     """Search Internet images with free/self-hosted-first routing."""
-    effective_limit = min(limit or settings.image_search_max_results, settings.image_search_max_results)
+    effective_limit = min(
+        limit or settings.image_search_max_results,
+        settings.image_search_max_results,
+    )
     backend = settings.image_search_backend.strip().lower()
 
     if backend == "searxng":
