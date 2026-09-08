@@ -54,6 +54,10 @@ class SourceDedupeTests(unittest.TestCase):
             source_family_key("https://cdn.example.com.au/file"),
             "example.com.au",
         )
+        self.assertEqual(
+            source_family_key("https://news.alice.github.io/story"),
+            "alice.github.io",
+        )
 
     def test_generic_url_canonicalization_removes_non_content_variants(self):
         self.assertEqual(
