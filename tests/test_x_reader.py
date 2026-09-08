@@ -4,7 +4,13 @@ import unittest
 
 import httpx
 
-from app.search.x_reader import XFetchError, XStatusTarget, _fetch_fxtwitter, parse_x_status_url, read_x_url
+from app.search.x_reader import (
+    XFetchError,
+    XStatusTarget,
+    _fetch_fxtwitter,
+    parse_x_status_url,
+    read_x_url,
+)
 
 
 class XStatusUrlTests(unittest.TestCase):
@@ -74,7 +80,15 @@ class FxTwitterClientTests(unittest.IsolatedAsyncioTestCase):
                         "replies": 4,
                         "views": 500,
                         "author": {"name": "Alice", "screen_name": "alice"},
-                        "media": {"all": [{"type": "photo", "url": "https://cdn.example/raw-photo.jpg", "altText": "chart"}]},
+                        "media": {
+                            "all": [
+                                {
+                                    "type": "photo",
+                                    "url": "https://cdn.example/raw-photo.jpg",
+                                    "altText": "chart",
+                                }
+                            ]
+                        },
                     },
                 },
                 request=request,
@@ -94,14 +108,26 @@ class FxTwitterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("raw-photo.jpg", result.text)
 
     async def test_thread_endpoint_dedupes_focal_and_limits_posts(self):
-        focal = {"id": "1234567890", "text": "root", "author": {"name": "Alice", "screen_name": "alice"}}
+        focal = {
+            "id": "1234567890",
+            "text": "root",
+            "author": {"name": "Alice", "screen_name": "alice"},
+        }
         replies = [
-            {"id": str(1234567891 + i), "text": f"reply {i}", "author": {"name": "Alice", "screen_name": "alice"}}
+            {
+                "id": str(1234567891 + i),
+                "text": f"reply {i}",
+                "author": {"name": "Alice", "screen_name": "alice"},
+            }
             for i in range(20)
         ]
 
         def respond(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"code": 200, "status": focal, "thread": [focal, *replies]}, request=request)
+            return httpx.Response(
+                200,
+                json={"code": 200, "status": focal, "thread": [focal, *replies]},
+                request=request,
+            )
 
         target = XStatusTarget("1234567890", "https://x.com/alice/status/1234567890")
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -115,7 +141,11 @@ class FxTwitterClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_json_code_failure_is_an_error_even_on_http_200(self):
         def respond(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"code": 404, "message": "not found"}, request=request)
+            return httpx.Response(
+                200,
+                json={"code": 404, "message": "not found"},
+                request=request,
+            )
 
         target = XStatusTarget("1234567890", "https://x.com/a/status/1234567890")
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -136,7 +166,11 @@ class XFallbackTests(unittest.IsolatedAsyncioTestCase):
                 json={
                     "author_name": "Alice",
                     "author_url": "https://x.com/alice",
-                    "html": '<blockquote class="twitter-tweet"><p lang="en">Hello &amp; goodbye <a href="https://t.co/x">link</a></p>&mdash; Alice (@alice)</blockquote>',
+                    "html": (
+                        '<blockquote class="twitter-tweet"><p lang="en">'
+                        'Hello &amp; goodbye <a href="https://t.co/x">link</a>'
+                        "</p>&mdash; Alice (@alice)</blockquote>"
+                    ),
                 },
                 request=request,
             )
@@ -160,7 +194,14 @@ class XFallbackTests(unittest.IsolatedAsyncioTestCase):
             if request.url.path.startswith("/2/status/"):
                 return httpx.Response(
                     200,
-                    json={"code": 200, "status": {"id": "1234567890", "text": "focal only", "author": {"name": "Alice", "screen_name": "alice"}}},
+                    json={
+                        "code": 200,
+                        "status": {
+                            "id": "1234567890",
+                            "text": "focal only",
+                            "author": {"name": "Alice", "screen_name": "alice"},
+                        },
+                    },
                     request=request,
                 )
             raise AssertionError("oEmbed should not be reached")
