@@ -17,7 +17,7 @@ services:
   #   và đổi secret_key (xem DEPLOY_SEARXNG_VPS.md).
   searxng:
     # Pin bản đã chứa upstream #6620 (curl_cffi) để tránh DDG CAPTCHA do TLS fingerprint.
-    image: ${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:2026.9.7-3e454637f}
+    image: ${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:latest}
     container_name: fcai-searxng
     profiles: ["searxng"]
     restart: unless-stopped
