@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import httpx
 
@@ -30,6 +31,105 @@ class BaiProbeTests(unittest.TestCase):
         module = _load_probe()
         payload = module.build_chat_payload("qwen3.8-flash", include_tool=True)
         self.assertIn("echo_probe", payload["messages"][-1]["content"])
+
+    def test_response_summary_includes_content_preview(self) -> None:
+        module = _load_probe()
+        request = httpx.Request("POST", "https://api.b.ai/v1/chat/completions")
+        response = httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "red on the left, blue on the right",
+                        },
+                    }
+                ]
+            },
+            request=request,
+        )
+        summary = module._response_summary(response, 0.1)
+        self.assertEqual(
+            summary["content_preview"],
+            "red on the left, blue on the right",
+        )
+
+    def test_post_chat_retries_429_and_honors_retry_after(self) -> None:
+        module = _load_probe()
+
+        class RateLimitedClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def post(self, path: str, json: dict) -> httpx.Response:
+                self.calls += 1
+                request = httpx.Request("POST", "https://api.b.ai/v1/" + path)
+                if self.calls == 1:
+                    return httpx.Response(
+                        429,
+                        headers={"Retry-After": "0"},
+                        json={"error": {"message": "rate limited"}},
+                        request=request,
+                    )
+                return httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {"message": {"role": "assistant", "content": "ok"}}
+                        ]
+                    },
+                    request=request,
+                )
+
+        client = RateLimitedClient()
+        response, summary = asyncio.run(
+            module._post_chat(
+                client,
+                {"model": "qwen3.8-flash", "messages": []},
+            )
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(summary["retry_count"], 1)
+
+    def test_post_chat_stops_after_configured_retry_limit(self) -> None:
+        module = _load_probe()
+
+        class AlwaysRateLimitedClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def post(self, path: str, json: dict) -> httpx.Response:
+                self.calls += 1
+                request = httpx.Request("POST", "https://api.b.ai/v1/" + path)
+                return httpx.Response(
+                    429,
+                    headers={"Retry-After": "0"},
+                    json={"error": {"message": "rate limited"}},
+                    request=request,
+                )
+
+        client = AlwaysRateLimitedClient()
+        response, summary = asyncio.run(
+            module._post_chat(
+                client,
+                {"model": "qwen3.8-flash", "messages": []},
+                max_retries=2,
+            )
+        )
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(client.calls, 3)
+        self.assertEqual(summary["retry_count"], 2)
+
+    def test_retry_delay_uses_exponential_backoff_with_jitter_without_header(self) -> None:
+        module = _load_probe()
+        request = httpx.Request("POST", "https://api.b.ai/v1/chat/completions")
+        response = httpx.Response(429, request=request)
+        with patch.object(module.random, "uniform", return_value=0.25):
+            delay = module._retry_delay_seconds(response, retry_index=1, base_delay=1.0)
+        self.assertEqual(delay, 2.25)
 
     def test_tool_probe_fails_when_model_does_not_call_tool(self) -> None:
         module = _load_probe()
