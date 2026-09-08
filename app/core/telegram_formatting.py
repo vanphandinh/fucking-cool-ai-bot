@@ -126,7 +126,8 @@ def _normalize_legacy_markdown(text: str) -> str:
     fenced = _convert_fenced_code(protected_text)
     fenced = _protect_existing_code_html(fenced, protected)
     normalized = "".join(
-        _normalize_markdown_line(line) for line in fenced.splitlines(keepends=True)
+        _normalize_markdown_line(line)
+        for line in fenced.splitlines(keepends=True)
     )
     return _restore_protected_html(normalized, protected)
 
@@ -158,7 +159,10 @@ class _TelegramSanitizer(HTMLParser):
             return
 
         if canonical == "a":
-            href = next((value for name, value in attrs if name.lower() == "href"), None) or ""
+            href = next(
+                (value for name, value in attrs if name.lower() == "href"),
+                None,
+            ) or ""
             if not _valid_http_url(href):
                 return
             open_html = f'<a href="{html.escape(href, quote=True)}">'
@@ -289,7 +293,10 @@ class _SafeHtmlTokenizer(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         canonical = tag.lower()
         if canonical == "a":
-            href = next((value for name, value in attrs if name.lower() == "href"), None) or ""
+            href = next(
+                (value for name, value in attrs if name.lower() == "href"),
+                None,
+            ) or ""
             open_html = f'<a href="{html.escape(href, quote=True)}">'
         elif canonical == "blockquote":
             expandable = any(name.lower() == "expandable" for name, _ in attrs)
