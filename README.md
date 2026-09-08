@@ -1,35 +1,41 @@
 # 🤖 fucking-cool-ai-bot
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
-Bot hỗ trợ cả **text + image understanding**, có tool tìm web/ảnh và đọc trang, fallback AI theo capability,
-và chỉ xử lý message trong phạm vi group được cấu hình.
+Bot hỗ trợ **text + image understanding**, tìm web/ảnh, đọc URL trực tiếp, đọc X/Twitter status/thread theo
+luồng free-first, fallback AI theo capability và chỉ xử lý message trong phạm vi group được cấu hình.
 
-Tài liệu đang duy trì:
+## Tài liệu đang duy trì
 
 - [Telegram vision input](docs/telegram-vision-input.md) — luồng ảnh, routing và giới hạn an toàn.
+- [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md) — HTML sanitizer, splitter và fallback plain text.
+- [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md) — FxTwitter/oEmbed/generic fallback, safety và rollback.
 - [SearXNG production trên VPS](DEPLOY_SEARXNG_VPS.md) — profile SearXNG private trong Docker.
+- [SearXNG DuckDuckGo incident 2026-09-08](docs/SEARXNG_DDG_INCIDENT_2026-09-08.md) — incident note và workaround.
 
-> `README.md`, `.env.example`, source code, Docker/CI là source of truth cho trạng thái hiện tại.
-> Các kế hoạch/audit snapshot cũ được giữ trong Git/PR history thay vì duy trì thành tài liệu sống.
+> `README.md`, `.env.example`, source code, Docker/CI và các guide runtime ở trên là source of truth.
+> `docs/superpowers/plans/` là snapshot kế hoạch lịch sử, không phải tài liệu vận hành cần đồng bộ sau mỗi PR.
 
 ---
 
 ## 1. Khả năng hiện tại
 
 - Chỉ hoạt động trong `group`/`supergroup` thuộc `ALLOWED_GROUP_IDS`.
-- Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; khi không ở learn-mode bot tự rời chat lạ lúc được add.
+- Có `LEARN_GROUP_ID_MODE` để lấy `chat_id`; ngoài learn-mode bot tự rời chat lạ khi được add.
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
 - Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
-- Text route free-tier-first, xếp theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
-- Vision route tách riêng, chọn theo `VISION_PROVIDER_ORDER`; default: Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash.
+- Text route free-tier-first theo `TEXT_PROVIDER_ORDER`; default: Groq → Cloudflare → OpenRouter → Gemini.
+- Vision route tách riêng theo `VISION_PROVIDER_ORDER`; default: Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash.
 - Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
-- Ở flow Telegram hiện tại, một request có thể lấy ảnh từ **message hiện tại + message được reply**
-  (tối đa 2 ảnh thực tế). `MAX_IMAGES_PER_REQUEST` là trần capability/config, không tự thêm album support.
-- Model có thể gọi `web_search`, `image_search` và `fetch_url`.
-- Web search và image search dùng chung `SEARCH_BACKEND=auto|searxng|ddgs`; `auto` ưu tiên SearXNG rồi fallback DDGS.
-- Image search trả ảnh trực tiếp qua Telegram; nếu full image URL lỗi sẽ thử thumbnail URL.
+- Flow Telegram hiện tại có thể lấy ảnh từ **message hiện tại + message được reply** (tối đa 2 ảnh thực tế).
+  `MAX_IMAGES_PER_REQUEST=3` là trần capability/config, không tự triển khai album aggregation.
+- Model có ba tool: `web_search`, `image_search`, `fetch_url`.
+- `fetch_url` nhận `mode=auto|x_thread`; URL X/Twitter status được ưu tiên đọc trực tiếp thay vì search URL.
+- Direct X/Twitter status dùng FxTwitter API v2 → X oEmbed → generic SSRF-safe reader; không cần API key.
+- Web/image search dùng `SEARCH_BACKEND=auto|searxng|ddgs`; `auto` ưu tiên SearXNG rồi fallback DDGS.
+- Image search trả ảnh trực tiếp qua Telegram; full image URL lỗi sẽ thử thumbnail URL.
+- Answer chính được render bằng Telegram-native HTML có sanitizer/splitter; memory lưu bản plain text.
 - `/status` cho admin hiển thị uptime, provider, fallback, search, lỗi gần nhất và provider cooldown.
-- CI kiểm tra Python 3.11/3.12, lint, tests, dependency audit và Docker build.
+- CI kiểm tra Python 3.11/3.12, lint/compile, tests, dependency audit; job 3.12 còn validate SearXNG YAML và build production image.
 
 ---
 
@@ -48,14 +54,20 @@ Orchestrator
    ├─ text request  ──► text-capable provider pool
    ├─ image request ──► vision-capable provider pool
    │
-   └─ tools ──► web_search / image_search / fetch_url
-                  │
-                  └─ SEARCH_BACKEND = auto | searxng | ddgs
-                         auto: SearXNG → DDGS
+   └─ tools
+       ├─ web_search ─────► SEARCH_BACKEND = auto | searxng | ddgs
+       │                     auto: SearXNG → DDGS
+       ├─ image_search ───► cùng SEARCH_BACKEND
+       └─ fetch_url
+            ├─ X/Twitter status + X_FETCH_ENABLED=1
+            │    └─ FxTwitter v2 → X oEmbed → generic reader
+            └─ URL khác / X_FETCH_ENABLED=0
+                 └─ generic SSRF-safe reader (Jina → direct HTML)
 ```
 
-Provider router lọc theo capability trước khi fallback. Text request không rơi sang vision slot và image
-request không rơi sang text-only slot.
+Provider router lọc theo capability trước khi fallback. Tool budget dùng chung qua provider fallback. Với URL
+http/https cụ thể do user cung cấp và yêu cầu đọc nội dung, system policy ưu tiên `fetch_url` trước
+`web_search`; search chỉ nên dùng khi direct fetch không đủ hoặc user cần kiểm chứng/tìm nguồn ngoài URL đó.
 
 ---
 
@@ -67,14 +79,12 @@ request không rơi sang text-only slot.
 - Tối thiểu một text provider khả dụng: Groq, Cloudflare Workers AI, OpenRouter hoặc Gemini.
 - Privacy Mode nên tắt nếu muốn bot đọc message/reply trong group theo workflow hiện tại.
 
-Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo các default
-đang được cấu hình trong source và `.env.example`.
+Provider/model/rate-limit của dịch vụ bên thứ ba có thể thay đổi theo thời gian; repo chỉ đảm bảo default đang
+được cấu hình trong source và `.env.example`.
 
-Default hiện tại được tối ưu theo hướng **free-tier-first**: ưu tiên model/router có thể dùng trên free tier và
-fallback qua provider độc lập khi quota hoặc provider lỗi. Đây **không phải cơ chế cưỡng chế billing**. Bot không
-thể phát hiện account/project của Groq, Cloudflare hoặc Gemini đang ở Free hay Paid tier; nếu credential thuộc
-paid tier thì provider vẫn có thể tính phí theo chính sách của họ. Muốn vận hành thực tế ở $0, hãy giữ từng
-provider trên free tier/quota phù hợp và theo dõi billing ở dashboard của provider.
+Default hiện tại tối ưu theo hướng **free-tier-first**, nhưng đây không phải cơ chế cưỡng chế billing. Bot không
+biết account/project Groq, Cloudflare hoặc Gemini đang ở Free hay Paid tier. Muốn vận hành thực tế ở $0, phải
+giữ credential trên free tier/quota phù hợp và theo dõi billing ở dashboard provider.
 
 ---
 
@@ -97,14 +107,13 @@ docker compose up -d --build
 docker compose logs -f bot
 ```
 
-Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc các giá trị số có constraint, app sẽ fail-fast
-khi load `Settings` thay vì chạy với cấu hình mơ hồ.
+Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc giá trị số có constraint, app fail-fast khi load
+`Settings` thay vì chạy với cấu hình mơ hồ.
 
 ### Nâng cấp deployment đã có `.env`
 
-`Settings` đọc `.env` và biến môi trường **ưu tiên hơn default trong source**. Vì vậy chỉ `git pull` sẽ không tự
-thay các giá trị model/order cũ đã có trong `.env`. Sau khi nâng cấp, hãy đối chiếu `.env.example` và cập nhật
-ít nhất các dòng sau nếu muốn dùng default hiện tại:
+`.env`/environment **ưu tiên hơn default trong source**, nên `git pull` không tự thay các giá trị cũ. Sau khi
+nâng cấp, đối chiếu `.env.example` và cập nhật ít nhất các default cần thiết:
 
 ```env
 GROQ_MODEL=openai/gpt-oss-120b
@@ -115,12 +124,16 @@ TEXT_PROVIDER_ORDER=groq,cloudflare,openrouter,gemini
 VISION_PROVIDER_ORDER=groq_qwen38,cloudflare,groq_qwen36,gemini
 SEARCH_BACKEND=auto
 IMAGE_SEARCH_MAX_RESULTS=4
+X_FETCH_ENABLED=1
 MAX_CONTEXT_TURNS=6
 MAX_TOOL_ROUNDS=2
 ```
 
-Nếu `.env` cũ còn `TAVILY_API_KEY` hoặc `IMAGE_SEARCH_BACKEND`, có thể xóa: runtime mới không dùng hai biến này.
-Không copy đè secret từ `.env.example`; chỉ cập nhật các key cần thiết rồi rebuild/restart bot.
+`X_FETCH_ENABLED=1` không cần API key. Set `0` nếu muốn rollback specialized X reader và đưa X URL về generic
+reader. Không tăng `MAX_TOOL_ROUNDS` để chữa fetch/search failure; production baseline của repo là `2`.
+
+Nếu `.env` cũ còn `TAVILY_API_KEY` hoặc `IMAGE_SEARCH_BACKEND`, có thể xóa: runtime hiện tại không dùng hai biến
+này. Không copy đè secret từ `.env.example`; chỉ cập nhật key cần thiết rồi rebuild/recreate bot.
 
 ---
 
@@ -159,6 +172,9 @@ Có thể cấu hình nhiều group bằng danh sách phân tách dấu phẩy.
 | `/ask` | `/ask giải thích blockchain ngắn gọn` |
 | Mention | `@FuckingCoolAIbot giá vàng hôm nay?` |
 | Tìm ảnh | `@FuckingCoolAIbot tìm cho tôi 4 ảnh capybara` |
+| Đọc URL | Gửi URL + yêu cầu đọc/tóm tắt; AI ưu tiên `fetch_url` trước search |
+| Đọc X post | Gửi `https://x.com/<user>/status/<id>` + câu hỏi/tóm tắt |
+| Đọc X thread | Yêu cầu đọc toàn bộ thread; AI có thể gọi `fetch_url(..., mode="x_thread")` |
 | Reply bot | Reply vào tin của bot rồi nhập câu hỏi; không bắt buộc mention lại |
 | Reply thành viên | Cần `@mention` hoặc dùng `/ask` để trigger |
 | Ảnh hiện tại | Telegram photo hoặc JPEG/PNG/WebP document + caption trigger bot |
@@ -173,8 +189,7 @@ Plain image không có text/caption trigger sẽ không tự gọi bot.
 - Telegram photo được coi là `image/jpeg`.
 - Document chỉ nhận `image/jpeg`, `image/png`, `image/webp`.
 - Loader lấy ảnh ở message hiện tại và/hoặc message được reply.
-- Raw image bytes chỉ tồn tại trong request RAM; khi lưu ChatMemory chỉ lưu marker dạng
-  `[kèm N ảnh] <câu hỏi>`, không lưu bytes/base64.
+- Raw image bytes chỉ tồn tại trong request RAM; ChatMemory chỉ lưu marker `[kèm N ảnh] <câu hỏi>`.
 - Base64 data URL chỉ được tạo tại provider boundary.
 - Provider error excerpt được redact image data URL trước khi có thể đi vào log/status.
 
@@ -201,44 +216,34 @@ Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 | `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Free-tier-first text primary |
 | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Cloudflare text fallback |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Chất lượng cao, giữ free-tier quota làm reserve |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Reserve chất lượng cao |
 | `TEXT_PROVIDER_ORDER` | `groq,cloudflare,openrouter,gemini` | Thứ tự fallback text hiệu lực |
 
 Startup yêu cầu **ít nhất một** text provider khả dụng. `configured_provider_names` chỉ báo provider vừa có
 credential/model phù hợp vừa nằm trong `TEXT_PROVIDER_ORDER`.
-
-Các model/router mặc định có thể dùng theo free tier tương ứng, nhưng source không biết billing plan của API
-key. `openrouter/free` là router miễn phí; với Groq/Cloudflare/Gemini, account/project ở paid tier vẫn có thể
-phát sinh phí theo policy của provider.
 
 ### 7.3 Vision provider pool
 
 | Biến | Default | Ý nghĩa |
 |---|---|---|
 | `VISION_ENABLED` | `1` | Bật/tắt toàn bộ vision slot; text route không bị ảnh hưởng |
-| `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Model của Gemini vision slot |
-| `GROQ_VISION_MODELS` | `qwen/qwen3.8-27b,qwen/qwen3.6-27b` | Tối đa hai Groq vision slot theo thứ tự list |
-| `CLOUDFLARE_ACCOUNT_ID` | trống | Bắt buộc cùng API token để tạo Cloudflare slot |
-| `CLOUDFLARE_API_TOKEN` | trống | Token Workers AI dùng chung text/vision |
+| `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Gemini vision slot |
+| `GROQ_VISION_MODELS` | `qwen/qwen3.8-27b,qwen/qwen3.6-27b` | Tối đa hai Groq vision slot |
 | `CLOUDFLARE_VISION_MODEL` | `@cf/google/gemma-4-26b-a4b-it` | Cloudflare vision model |
 | `VISION_PROVIDER_ORDER` | `groq_qwen38,cloudflare,groq_qwen36,gemini` | Thứ tự fallback vision hiệu lực |
-| `MAX_IMAGES_PER_REQUEST` | `3` | Capability/config ceiling; Telegram loader hiện chỉ cung cấp current + reply |
-| `MAX_IMAGE_BYTES` | `8388608` | Trần bytes cho từng ảnh |
-| `MAX_TOTAL_IMAGE_BYTES` | `12582912` | Trần tổng bytes ảnh trong một request |
+| `MAX_IMAGES_PER_REQUEST` | `3` | Capability/config ceiling |
+| `MAX_IMAGE_BYTES` | `8388608` | Trần bytes từng ảnh |
+| `MAX_TOTAL_IMAGE_BYTES` | `12582912` | Trần tổng bytes ảnh/request |
 
-`configured_vision_provider_names` chỉ báo các slot vừa có credential/model phù hợp vừa nằm trong
-`VISION_PROVIDER_ORDER`.
-
-Cloudflare được đặt giữa hai Groq vision slot để tăng provider diversity: quota/auth/outage Groq không khiến
-router thử hai model cùng provider liên tiếp trước khi đổi sang provider độc lập.
+Cloudflare nằm giữa hai Groq vision slot để tăng provider diversity trước khi thử model Groq thứ hai.
 
 ### 7.4 Web + image search
 
 | Biến | Default | Ý nghĩa |
 |---|---|---|
-| `SEARCH_BACKEND` | `auto` | Dùng chung cho web + image search: `auto`, `searxng`, `ddgs` |
-| `SEARXNG_URL` | `http://searxng:8080` trong `.env.example` | URL JSON API của SearXNG self-hosted |
-| `IMAGE_SEARCH_MAX_RESULTS` | `4` | Số ảnh tối đa hệ thống trả về, giới hạn 1-8 |
+| `SEARCH_BACKEND` | `auto` | `auto`, `searxng`, `ddgs` |
+| `SEARXNG_URL` | `http://searxng:8080` trong `.env.example` | JSON API của SearXNG self-hosted |
+| `IMAGE_SEARCH_MAX_RESULTS` | `4` | Số ảnh tối đa, giới hạn 1-8 |
 
 Routing `auto`:
 
@@ -247,26 +252,58 @@ web_search:   SearXNG (nếu có URL) → DDGS
 image_search: SearXNG Images (nếu có URL) → DDGS Images
 ```
 
-Fallback xảy ra khi SearXNG lỗi hoặc không có kết quả usable. Chọn `searxng` hoặc `ddgs` sẽ khóa vào đúng
-backend đó và không tự chuyển backend khi lỗi. Tavily đã bị loại khỏi runtime để giữ search stack miễn phí,
-đơn giản và không cần thêm API key.
+Fallback xảy ra khi SearXNG lỗi hoặc không có kết quả usable. Chọn `searxng` hoặc `ddgs` khóa vào backend đó.
+Tavily đã bị loại khỏi runtime để giữ search stack miễn phí và không cần thêm API key.
 
-Các biến Compose-only cho SearXNG:
+### 7.5 Direct URL / X content
 
-- `SEARXNG_IMAGE`
-- `GRANIAN_BLOCKING_THREADS` (default `1`)
-- `GRANIAN_BACKPRESSURE` (default `2`)
+| Biến | Default | Ý nghĩa |
+|---|---|---|
+| `X_FETCH_ENABLED` | `1` | Bật specialized reader cho public X/Twitter status URL; `0` = generic reader only |
+| `REQUEST_TIMEOUT_SEC` | `60.0` | Timeout reader/provider; specialized X resolver tự giới hạn tổng deadline tối đa 12 giây |
 
-### 7.5 Limits / runtime
+`fetch_url` nhận:
+
+```text
+fetch_url(url, mode="auto")      # URL thường hoặc focal X status
+fetch_url(url, mode="x_thread") # chỉ hợp lệ cho X/Twitter status URL
+```
+
+Supported specialized status hosts: `x.com`, `twitter.com`, mobile variants, `fxtwitter.com`, `fixupx.com`.
+Chỉ path có status ID số hợp lệ mới được canonicalize về `https://x.com/.../status/<id>`. Host giả như
+`x.com.evil.example` không được nhận là X.
+
+X resolver:
+
+```text
+mode=auto:
+  FxTwitter /2/status/{id}
+    → X publish.oEmbed
+    → generic reader
+
+mode=x_thread:
+  FxTwitter /2/thread/{id}
+    → FxTwitter focal /2/status/{id}
+    → X publish.oEmbed
+    → generic reader
+```
+
+Tool payload X tối đa 5500 ký tự; thread tối đa 12 post. Raw media CDN URL không được đưa vào LLM context;
+media type/alt text vẫn được giữ khi có. Duplicate `(url, mode)` trong cùng một câu hỏi dùng request-local
+cache để không fetch lặp.
+
+Chi tiết: [docs/X_CONTENT_FETCHING.md](docs/X_CONTENT_FETCHING.md).
+
+### 7.6 Limits / runtime
 
 | Biến | Default | Ý nghĩa |
 |---|---|---|
 | `MAX_QUESTIONS_PER_MIN_PER_USER` | `3` | Rate-limit RAM theo user; `0` = chặn toàn bộ câu hỏi |
-| `MAX_CONTEXT_TURNS` | `6` | Số cặp hỏi/đáp gần nhất giữ theo chat; giảm token free-tier |
-| `MAX_TOOL_ROUNDS` | `2` | Số vòng tool tối đa trong completion; giảm số request/token |
+| `MAX_CONTEXT_TURNS` | `6` | Số cặp hỏi/đáp gần nhất giữ theo chat |
+| `MAX_TOOL_ROUNDS` | `2` | Số vòng tool tối đa; production baseline để tiết kiệm token |
 | `REQUEST_TIMEOUT_SEC` | `60.0` | Timeout HTTP/provider/reader |
 | `QUESTION_TIMEOUT_SEC` | `180.0` | Deadline tổng của một câu hỏi, gồm chờ chat lock |
-| `LOG_LEVEL` | `INFO` | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` (`WARN` được normalize) |
+| `LOG_LEVEL` | `INFO` | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`; `WARN` được normalize |
 
 Router còn có safety cap nội bộ tối đa 8 tool calls cho một completion, dùng chung qua retry/fallback.
 
@@ -276,70 +313,73 @@ Router còn có safety cap nội bộ tối đa 8 tool calls cho một completio
 
 ### Text
 
-Provider được tạo từ credential/model hiện có rồi xếp theo `TEXT_PROVIDER_ORDER`.
-Default:
-
 ```text
 Groq / openai/gpt-oss-120b
-  -> Cloudflare / @cf/zai-org/glm-4.7-flash
-  -> OpenRouter / openrouter/free
-  -> Gemini / gemini-3.8-flash
+  → Cloudflare / @cf/zai-org/glm-4.7-flash
+  → OpenRouter / openrouter/free
+  → Gemini / gemini-3.8-flash
 ```
 
 ### Vision
 
-Vision slot được tạo từ credential hiện có rồi xếp theo `VISION_PROVIDER_ORDER`.
-Default:
-
 ```text
 Groq Qwen 3.8
-  -> Cloudflare Gemma 4
-  -> Groq Qwen 3.6
-  -> Gemini 3.8 Flash
+  → Cloudflare Gemma 4
+  → Groq Qwen 3.6
+  → Gemini 3.8 Flash
 ```
 
 Provider health là state trong RAM:
 
-- `401/403`: disable slot đến khi process restart.
+- `401/403`: disable slot đến process restart.
 - `429`: cooldown theo numeric `Retry-After`; nếu không parse được thì mặc định 60 giây.
-- Network/`5xx` transient: sau 2 lỗi liên tiếp thì cooldown 30 giây.
+- Network/`5xx` transient: sau 2 lỗi liên tiếp cooldown 30 giây.
 - Thành công reset transient counter/cooldown.
 
-Fallback giữ chung tool budget của request; provider không hỗ trợ tools có thể retry plain mode theo error
+Fallback giữ chung tool budget của request. Provider không hỗ trợ tools có thể retry plain mode theo error
 classification thay vì làm hỏng toàn bộ route.
 
 ### Metadata khi tool-calling
 
-Một số model yêu cầu metadata từ assistant response phải được gửi lại nguyên vẹn ở tool turn kế tiếp. Adapter
-hiện xử lý hai nhóm đã được audit:
+Adapter hiện round-trip metadata bắt buộc trong **cùng provider**, rồi strip trước cross-provider fallback:
 
-- Gemini 3.x: giữ `tool_calls[].extra_content.google.thought_signature` trong cùng provider;
-- OpenRouter/reasoning models: giữ assistant-level `reasoning_details`, `reasoning` và `reasoning_content`.
+- Gemini 3.x: `tool_calls[].extra_content.google.thought_signature`;
+- OpenRouter/reasoning models: `reasoning_details`, `reasoning`, `reasoning_content`.
 
-Các metadata provider-specific này được loại bỏ khi chuyển transcript sang provider fallback khác để tránh
-provider kế từ chối unknown field. Tool budget và transcript tool result vẫn được giữ qua fallback.
+Tool result/transcript portable vẫn được giữ qua fallback.
 
 ---
 
-## 9. Web/image search và đọc trang
+## 9. Web/image search và đọc URL
 
-Orchestrator expose ba tool:
+Orchestrator expose đúng ba tool:
 
 - `web_search(query)` — tìm thông tin web bằng backend đang chọn.
 - `image_search(query)` — tìm ảnh Internet bằng cùng `SEARCH_BACKEND`.
-- `fetch_url(url)` — đọc một URL cụ thể.
+- `fetch_url(url, mode?)` — đọc một URL cụ thể; `mode` mặc định `auto`, có thêm `x_thread` cho X status.
 
-`fetch_url` chỉ chấp nhận destination public; reader kiểm tra URL/DNS/redirect để chặn localhost, private
-network và các address class không được hỗ trợ. Reader cũng giới hạn body/deadline và từ chối compressed
-response trong đường đọc trực tiếp để tránh memory amplification.
+### Quy tắc direct URL
 
-Image result được gửi cho Telegram bằng remote HTTP URL để bot server không phải tải ảnh tùy ý. Nếu URL ảnh
-đầy đủ bị Telegram từ chối, sender thử thumbnail URL; một ảnh lỗi không làm hỏng text answer hoặc các ảnh khác.
+Khi user đã cung cấp URL cụ thể và hỏi nội dung URL đó, AI được hướng dẫn gọi `fetch_url` **trước**
+`web_search`. Với X URL đã fetch thành công và đủ dữ liệu, prompt cũng yêu cầu không tự tạo vòng search mirror
+qua fxtwitter/nitter/fixupx hoặc exact quote. Mục tiêu là tránh search fan-out, giảm latency và tránh đốt quota
+model/tool rounds.
+
+`fetch_url` generic chỉ chấp nhận destination public; reader kiểm tra URL/DNS/redirect để chặn localhost,
+private network và address class không hỗ trợ. Reader giới hạn body/deadline và từ chối compressed response
+trên direct-download path để giảm memory amplification.
+
+Specialized X upstream host được cố định trong code (`api.fxtwitter.com`, `publish.x.com`), không lấy host API
+từ user input. Source hiển thị cho user vẫn là canonical `x.com`, không phải mirror/API URL.
+
+### Image result delivery
+
+Image result được gửi cho Telegram bằng remote HTTP URL để bot server không phải tải ảnh search-result tùy ý.
+Nếu full URL bị Telegram từ chối, sender thử thumbnail URL; một ảnh lỗi không làm hỏng text answer hay ảnh khác.
 
 ### SearXNG private
 
 Profile `searxng` không publish port ra host. Bot gọi nội bộ `http://searxng:8080`.
-Trước khi bật profile phải tạo file thật:
 
 ```bash
 cp -i searxng/settings.example.yml searxng/settings.yml
@@ -355,13 +395,14 @@ Hướng dẫn vận hành/nâng cấp: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_V
 
 ## 10. Security và dữ liệu
 
-- `.env` và `searxng/settings.yml` chứa secret và đã nằm trong `.gitignore`.
+- `.env` và `searxng/settings.yml` chứa secret và nằm trong `.gitignore`.
 - Docker image chạy bằng user non-root (`appuser`).
-- Bot không có database; context, stats, rate-limit và provider health đều là in-memory state.
+- Bot không có database; context, stats, rate-limit và provider health là in-memory state.
 - Image bytes không được ghi vào ChatMemory và không persist bởi app.
-- Nội dung user/ảnh vẫn phải được gửi tới AI provider được chọn để model xử lý; không gửi dữ liệu nhạy cảm
-  nếu policy của provider/tổ chức không cho phép.
-- Web reader có SSRF guard và không dùng URL nội bộ/localhost làm tool target.
+- Nội dung user/ảnh vẫn phải gửi tới AI provider được chọn để model xử lý.
+- Generic web reader có SSRF guard và không dùng URL nội bộ/localhost làm tool target.
+- X specialized parser chỉ nhận allowlisted host + numeric status ID; API egress đi tới host cố định trong code.
+- X media CDN URL bị loại khỏi tool text; chỉ media type/alt text được giữ khi có.
 - Search-result image URL không được bot server tải xuống; Telegram fetch remote URL trực tiếp.
 - Startup giữ pending Telegram updates (`drop_pending_updates=False`); shutdown hủy/join handler đang chạy
   trước khi đóng Telegram/provider clients.
@@ -377,6 +418,23 @@ docker compose restart bot
 docker compose up -d --build
 ```
 
+Kiểm tra effective config quan trọng sau upgrade `.env`:
+
+```bash
+docker compose exec -T bot python - <<'PY'
+from app.config import Settings
+s = Settings()
+print("SEARCH_BACKEND    =", s.search_backend)
+print("X_FETCH_ENABLED   =", s.x_fetch_enabled)
+print("MAX_CONTEXT_TURNS =", s.max_context_turns)
+print("MAX_TOOL_ROUNDS   =", s.max_tool_rounds)
+print("REQUEST_TIMEOUT   =", s.request_timeout_sec)
+print("QUESTION_TIMEOUT  =", s.question_timeout_sec)
+PY
+```
+
+Kỳ vọng free-tier-first production baseline: `X_FETCH_ENABLED=True`, `MAX_TOOL_ROUNDS=2`.
+
 Nếu dùng SearXNG:
 
 ```bash
@@ -385,14 +443,15 @@ docker compose logs --tail=100 searxng
 docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz
 ```
 
-Các lỗi startup đáng chú ý:
+Lỗi startup đáng chú ý:
 
 - thiếu `BOT_TOKEN` → dừng.
 - không có text provider khả dụng trong `TEXT_PROVIDER_ORDER` → dừng.
 - có Cloudflare token nhưng thiếu account ID → warning; bỏ qua Cloudflare text/vision.
 - vision bật nhưng không có vision provider hợp lệ → warning; text bot vẫn chạy.
-- `SEARCH_BACKEND=searxng` nhưng `SEARXNG_URL` trống → search tool sẽ lỗi khi được gọi.
+- `SEARCH_BACKEND=searxng` nhưng `SEARXNG_URL` trống → search tool lỗi khi được gọi.
 - `SEARCH_BACKEND=auto` với `SEARXNG_URL` trống → dùng DDGS trực tiếp.
+- X specialized resolver lỗi → tự thử oEmbed/generic reader; không yêu cầu SearXNG phải sửa để đọc direct X URL.
 
 ---
 
@@ -420,16 +479,23 @@ Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull reque
 
 - Python 3.11 + 3.12.
 - Ruff, `pip check`, `compileall`.
-- Cả hai test suites.
+- Offline regression/integration tests.
 - `pip-audit`.
-- Production Docker build trên Python 3.12 job.
+- SearXNG YAML validation và production Docker build trên Python 3.12 job.
 
-`tests/test_search_backend_auto.py` khóa unified search policy, auto fallback và việc loại Tavily.
-`tests/test_image_search.py` khóa image normalization, image fallback, tool payload và Telegram delivery.
-`tests/test_free_routing.py` khóa free-tier-first model defaults, text provider order, Cloudflare text slot,
-provider-diverse vision order, Gemini thought-signature replay và cross-provider metadata isolation.
-`tests/test_provider_metadata.py` khóa OpenRouter reasoning metadata replay. Tests dùng fake Telegram/provider
-transports và local fixtures; CI không chứng minh live credential/provider E2E trong môi trường production.
+Coverage quan trọng:
+
+- `tests/test_search_backend_auto.py` — unified search policy/fallback và việc loại Tavily.
+- `tests/test_image_search.py` — image normalization/fallback/tool payload/Telegram delivery.
+- `tests/test_free_routing.py` — free-tier-first defaults, provider order và metadata isolation.
+- `tests/test_provider_metadata.py` — OpenRouter reasoning metadata replay.
+- `tests/test_x_reader.py` — X URL parser, FxTwitter status/thread, oEmbed fallback, limits.
+- `tests/test_url_service.py` — unified URL dispatch, feature flag, generic fallback.
+- `tests/test_url_tool_integration.py` — `fetch_url` mode, canonical source, duplicate-call cache.
+- `tests/test_search_policy_prompt.py` — direct URL fetch-first policy và chống mirror-search loop.
+
+Tests dùng fake provider/Telegram transports, mock HTTP và local fixtures; CI **không** chứng minh live
+FxTwitter/X/provider E2E trên VPS production.
 
 ---
 
@@ -437,31 +503,48 @@ transports và local fixtures; CI không chứng minh live credential/provider E
 
 ```text
 app/
-├── main.py                # startup, polling, cleanup
-├── config.py              # pydantic-settings
+├── main.py
+├── config.py
 ├── ai/
-│   ├── base.py            # OpenAI-compatible transport + provider errors
-│   ├── capabilities.py    # text/vision capability metadata
-│   ├── health.py          # cooldown/disable state
-│   ├── router.py          # capability-aware fallback + tool budget
-│   ├── multimodal.py      # image bytes -> data URL tại provider boundary
+│   ├── base.py
+│   ├── capabilities.py
+│   ├── health.py
+│   ├── router.py
+│   ├── multimodal.py
 │   └── gemini.py / groq.py / openrouter.py / cloudflare.py
 ├── bot/
-│   ├── filters.py         # allowlist + trigger
-│   ├── handlers.py        # /ask, /help, /status, lifecycle
-│   ├── image_results.py   # Telegram image-search delivery
-│   └── media.py           # Telegram image validation/download bounds
-├── core/                  # request, orchestrator, memory, rate-limit, stats, formatting
-└── search/                # ddgs/searxng search + safe page reader
+│   ├── filters.py
+│   ├── handlers.py
+│   ├── image_results.py
+│   └── media.py
+├── core/
+│   ├── orchestrator.py
+│   ├── telegram_formatting.py
+│   └── request/context/rate_limiter/stats/formatting
+└── search/
+    ├── service.py / image_service.py
+    ├── searxng_backend.py / ddgs_backend.py
+    ├── reader.py              # generic SSRF-safe reader
+    ├── url_service.py         # unified URL dispatcher
+    └── x_reader.py            # FxTwitter/oEmbed structured X reader
 
 tests/
 ├── run_tests.py
-├── test_audit_regressions.py
-├── test_free_routing.py
-├── test_image_search.py
 ├── test_search_backend_auto.py
+├── test_image_search.py
+├── test_free_routing.py
 ├── test_provider_metadata.py
-└── test_vision.py
+├── test_x_reader.py
+├── test_url_service.py
+├── test_url_tool_integration.py
+└── test_search_policy_prompt.py
+
+docs/
+├── TELEGRAM_FORMATTING.md
+├── X_CONTENT_FETCHING.md
+├── SEARXNG_DDG_INCIDENT_2026-09-08.md
+├── telegram-vision-input.md
+└── superpowers/plans/        # historical plan snapshots
 
 .github/workflows/audit.yml
 Dockerfile
@@ -469,6 +552,5 @@ docker-compose.yml
 .env.example
 searxng/settings.example.yml
 searxng/limiter.toml
-docs/telegram-vision-input.md
 DEPLOY_SEARXNG_VPS.md
 ```
