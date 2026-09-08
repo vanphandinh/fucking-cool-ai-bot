@@ -41,6 +41,10 @@ _TOOL = {
         },
     },
 }
+_TOOL_INSTRUCTION = (
+    "Call the echo_probe function with value BAI_TOOL_PROBE. "
+    "Do not answer directly before calling the function."
+)
 
 
 def build_chat_payload(
@@ -55,6 +59,11 @@ def build_chat_payload(
             {"type": "text", "text": "Describe this image in one short sentence."},
             {"type": "image_url", "image_url": {"url": image_data_url}},
         ]
+    if include_tool:
+        if isinstance(user_content, list):
+            user_content.append({"type": "text", "text": _TOOL_INSTRUCTION})
+        else:
+            user_content = _TOOL_INSTRUCTION
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -152,9 +161,16 @@ async def _probe_one(
         except (KeyError, IndexError, TypeError, ValueError):
             calls = []
             message = None
+
+        tool_call_seen = False
         if isinstance(message, dict) and isinstance(calls, list) and calls:
-            call_id = str(calls[0].get("id") or "")
+            first_call = calls[0]
+            if isinstance(first_call, dict):
+                call_id = str(first_call.get("id") or "")
+            else:
+                call_id = ""
             if call_id:
+                tool_call_seen = True
                 continuation = {
                     "model": model,
                     "messages": baseline["messages"]
@@ -173,6 +189,16 @@ async def _probe_one(
                     {"model": model, "probe": "tool_continuation", **followup_summary}
                 )
                 baseline_ok = baseline_ok and followup.status_code < 400
+
+        if not tool_call_seen:
+            records.append(
+                {
+                    "model": model,
+                    "probe": "tool_call_missing",
+                    "status": response.status_code,
+                }
+            )
+            baseline_ok = False
 
     if experimental_reasoning:
         override = experimental_reasoning_overrides().get(model)
