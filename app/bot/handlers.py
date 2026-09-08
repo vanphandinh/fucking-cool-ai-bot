@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from aiogram import Bot, Router
@@ -212,6 +213,14 @@ def _is_html_parse_error(exc: TelegramBadRequest) -> bool:
     )
 
 
+def _delivery_payload(text: str) -> tuple[str, bool]:
+    """Return Telegram payload plus whether HTML parsing is actually needed."""
+    plain = telegram_html_to_plain(text)
+    if html.escape(plain, quote=False) == text:
+        return plain, False
+    return text, True
+
+
 async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
     if not parts:
         return False
@@ -219,10 +228,14 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
     preview = LinkPreviewOptions(is_disabled=True)
 
     async def send_first(text: str) -> None:
+        payload, needs_html = _delivery_payload(text)
+        kwargs = {"link_preview_options": preview}
+        if needs_html:
+            kwargs["parse_mode"] = "HTML"
         try:
-            await message.reply(text, parse_mode="HTML", link_preview_options=preview)
+            await message.reply(payload, **kwargs)
         except TelegramBadRequest as exc:
-            if not _is_html_parse_error(exc):
+            if not needs_html or not _is_html_parse_error(exc):
                 raise
             await message.reply(telegram_html_to_plain(text))
 
@@ -238,16 +251,19 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
 
     try:
         for part in parts[1:]:
+            payload, needs_html = _delivery_payload(part)
+            send_kwargs = {
+                "chat_id": message.chat.id,
+                "text": payload,
+                "link_preview_options": preview,
+                **extra_kwargs,
+            }
+            if needs_html:
+                send_kwargs["parse_mode"] = "HTML"
             try:
-                await message.bot.send_message(
-                    chat_id=message.chat.id,
-                    text=part,
-                    parse_mode="HTML",
-                    link_preview_options=preview,
-                    **extra_kwargs,
-                )
+                await message.bot.send_message(**send_kwargs)
             except TelegramBadRequest as exc:
-                if not _is_html_parse_error(exc):
+                if not needs_html or not _is_html_parse_error(exc):
                     raise
                 await message.bot.send_message(
                     chat_id=message.chat.id,
