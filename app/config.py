@@ -52,8 +52,11 @@ class Settings(BaseSettings):
     # Text pool — free-tier-first defaults.
     nvidia_nim_api_key: str = ""
     nvidia_nim_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_nim_text_model: str = "deepseek-ai/deepseek-v4-flash-0731"
+    nvidia_nim_text_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
     nvidia_nim_vision_model: str = "google/gemma-4-31b-it"
+    nvidia_nim_enable_thinking: bool = True
+    nvidia_nim_max_tokens: int = Field(default=4096, ge=1)
+    nvidia_nim_thinking_token_budget: int = Field(default=2048, ge=0)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""

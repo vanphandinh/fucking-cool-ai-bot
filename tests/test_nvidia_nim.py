@@ -19,7 +19,10 @@ class NvidiaSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.nvidia_nim_api_key, "")
         self.assertEqual(settings.nvidia_nim_base_url, "https://integrate.api.nvidia.com/v1")
-        self.assertEqual(settings.nvidia_nim_text_model, "deepseek-ai/deepseek-v4-flash-0731")
+        self.assertEqual(
+            settings.nvidia_nim_text_model,
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+        )
         self.assertEqual(settings.nvidia_nim_vision_model, "google/gemma-4-31b-it")
         self.assertEqual(
             settings.text_provider_order,
@@ -58,7 +61,7 @@ class NvidiaRouterTests(unittest.TestCase):
                 [provider.name for provider in text],
                 ["nvidia", "groq", "cloudflare_text", "openrouter", "gemini"],
             )
-            self.assertEqual(text[0].model, "deepseek-ai/deepseek-v4-flash-0731")
+            self.assertEqual(text[0].model, "nvidia/nemotron-3.5-lightning-30b-a3b")
         finally:
             asyncio.run(_close_router(router))
 

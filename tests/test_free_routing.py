@@ -17,7 +17,10 @@ class FreeFirstDefaultsTests(unittest.TestCase):
     def test_defaults_prefer_free_tier_models_and_conserve_quota(self) -> None:
         settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.nvidia_nim_text_model, "deepseek-ai/deepseek-v4-flash-0731")
+        self.assertEqual(
+            settings.nvidia_nim_text_model,
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+        )
         self.assertEqual(settings.groq_model, "openai/gpt-oss-120b")
         self.assertEqual(settings.cloudflare_text_model, "@cf/zai-org/glm-4.7-flash")
         self.assertEqual(settings.openrouter_model, "openrouter/free")

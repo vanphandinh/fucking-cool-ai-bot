@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -157,10 +158,17 @@ class OpenAICompatProvider:
         payload.update({"model": self.model, "messages": messages})
         if tools and self.supports_tools:
             payload["tools"] = tools
+        started = time.monotonic()
         try:
             resp = await self._client.post("chat/completions", json=payload)
         except httpx.HTTPError as exc:
-            raise ProviderError(f"{self.name}: lỗi mạng ({exc})", transient=True) from exc
+            elapsed = time.monotonic() - started
+            detail = str(exc).strip()
+            suffix = f": {detail}" if detail else ""
+            raise ProviderError(
+                f"{self.name}: {type(exc).__name__} after {elapsed:.2f}s{suffix}",
+                transient=True,
+            ) from exc
         if resp.status_code == 202:
             raise ProviderError(
                 f"{self.name} HTTP 202: pending response",
