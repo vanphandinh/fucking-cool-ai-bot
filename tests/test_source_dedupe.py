@@ -144,21 +144,13 @@ class SourceDedupeTests(unittest.TestCase):
     def test_x_same_publisher_collapses_profile_status_and_media_variants(self):
         sources = _dedupe_sources(
             [
-                {
-                    "title": "Alice post",
-                    "url": "https://x.com/Alice/status/111",
-                    "snippet": "",
-                },
+                {"title": "Alice post", "url": "https://x.com/Alice/status/111", "snippet": ""},
                 {
                     "title": "Alice video",
                     "url": "https://x.com/alice/status/111/video/1",
                     "snippet": "",
                 },
-                {
-                    "title": "Alice profile",
-                    "url": "https://x.com/alice",
-                    "snippet": "",
-                },
+                {"title": "Alice profile", "url": "https://x.com/alice", "snippet": ""},
             ]
         )
         self.assertEqual(len(sources), 1)
@@ -257,13 +249,34 @@ class SourceDedupeTests(unittest.TestCase):
         )
         self.assertEqual(len(sources), 2)
 
-    def test_supplied_rawdata_case_still_collapses_without_site_specific_rules(self):
+    def test_supplied_rawdata_collapses_by_publisher_not_platform_domain(self):
         sources = _dedupe_sources(_RAWDATA_SOURCES)
 
-        self.assertEqual(len(sources), 3)
         self.assertEqual(
-            [source_family_key(item["url"]) for item in sources],
-            ["x.com", "github.com", "fmkorea.com"],
+            [item["url"] for item in sources],
+            [
+                "https://x.com/0x0SojalSec/status/2097087104534888698",
+                "https://github.com/0xSojalSec",
+                "https://www.fmkorea.com/10310466183",
+            ],
+        )
+
+    def test_supplied_case_does_not_hide_another_x_author(self):
+        sources = _dedupe_sources(
+            _RAWDATA_SOURCES
+            + [
+                {
+                    "title": "Independent X author",
+                    "url": "https://x.com/another_author/status/999",
+                    "snippet": "",
+                }
+            ]
+        )
+
+        self.assertEqual(len(sources), 4)
+        self.assertIn(
+            "https://x.com/another_author/status/999",
+            [item["url"] for item in sources],
         )
 
 
