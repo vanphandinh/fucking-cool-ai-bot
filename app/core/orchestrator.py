@@ -12,6 +12,7 @@ from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import image_service, service as search_service, url_service
 from .request import UserRequest
+from .source_policy import select_diverse_sources
 
 logger = logging.getLogger(__name__)
 _VN_TZ = timezone(timedelta(hours=7))
@@ -281,25 +282,7 @@ def _format_image_results(query: str, results: list[dict]) -> str:
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
-    seen: set[str] = set()
-    out: list[dict] = []
-    for src in sources:
-        if not isinstance(src, dict):
-            continue
-        url = str(src.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")) or url in seen:
-            continue
-        seen.add(url)
-        out.append(
-            {
-                "title": str(src.get("title") or ""),
-                "url": url,
-                "snippet": str(src.get("snippet") or ""),
-            }
-        )
-        if len(out) >= 8:
-            break
-    return out
+    return select_diverse_sources(sources, limit=8)
 
 
 def _dedupe_images(images: list[dict], limit: int) -> list[dict]:

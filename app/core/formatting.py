@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import html
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
+
+from .source_policy import (
+    canonicalize_source_url as _canonicalize_source_url,
+    select_diverse_sources,
+    source_site_key,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -81,10 +87,20 @@ def _find_cut(text: str, limit: int) -> int:
     return max_i
 
 
+def canonicalize_source_url(value: object) -> str:
+    """Backward-compatible wrapper for generic source URL canonicalization."""
+    return _canonicalize_source_url(value)
+
+
+def source_family_key(url: str) -> str:
+    """Backward-compatible alias for the registrable source-site key."""
+    return source_site_key(url)
+
+
 def _hostname(url: str) -> str:
     """Lấy hostname ngắn (bỏ www.) để làm nhãn khi không có tiêu đề."""
     try:
-        host = (urlparse(url).hostname or "").lower()
+        host = (urlsplit(url).hostname or "").lower()
     except Exception:  # noqa: BLE001 — URL lạ thì thôi, không nổ
         return ""
     if host.startswith("www."):
@@ -106,19 +122,16 @@ def format_sources(sources: list[dict[str, str]]) -> str:
     """Danh sách nguồn HTML: tiêu đề ngắn bấm được, không in URL dài.
 
     Gửi kèm parse_mode=HTML. Mỗi mục là <a href="...">nhãn</a> — Telegram hiện
-    chữ xanh để bấm, ẩn path/query dài.
+    chữ xanh để bấm, ẩn path/query dài. Source selection dùng chung policy với
+    orchestrator; formatter vẫn quét toàn bộ nguồn hợp lệ để URL quá dài không
+    chiếm mất slot của nguồn phía sau.
     """
     lines = ["📚 Nguồn tham khảo:"]
-    seen: set[str] = set()
     n = 0
-    for src in sources:
-        if not isinstance(src, dict):
-            continue
-        url = str(src.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")) or url in seen:
-            continue
-        seen.add(url)
-        label = _source_label(str(src.get("title") or ""), url)
+    selected = select_diverse_sources(sources, limit=len(sources))
+    for src in selected:
+        url = src["url"]
+        label = _source_label(src["title"], url)
         safe_label = html.escape(label, quote=False)
         safe_url = html.escape(url, quote=True)
         line = f'{n + 1}. <a href="{safe_url}">{safe_label}</a>'
