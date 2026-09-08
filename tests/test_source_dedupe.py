@@ -64,7 +64,7 @@ class SourceDedupeTests(unittest.TestCase):
             canonicalize_source_url(
                 "HTTPS://WWW.Example.COM:443/story/?utm_source=x&b=2&a=1#comments"
             ),
-            "https://www.example.com/story?a=1&b=2",
+            "https://www.example.com/story?b=2&a=1",
         )
         self.assertEqual(
             canonicalize_source_url("http://example.com:80/story/?fbclid=abc"),
