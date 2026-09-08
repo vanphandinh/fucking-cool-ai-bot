@@ -24,10 +24,15 @@ class TelegramFormattingTests(unittest.TestCase):
         self.assertIn("<b>Đậm</b>", safe)
         self.assertIn("<tg-spoiler>ẩn</tg-spoiler>", safe)
         self.assertIn("<blockquote expandable>chi tiết</blockquote>", safe)
-        self.assertIn('<a href="https://example.com/a?x=1&amp;y=2">link</a>', safe)
+        self.assertIn(
+            '<a href="https://example.com/a?x=1&amp;y=2">link</a>',
+            safe,
+        )
 
     def test_normalizes_alias_tags(self):
-        safe = sanitize_telegram_html("<strong>A</strong><em>B</em><ins>C</ins><del>D</del>")
+        safe = sanitize_telegram_html(
+            "<strong>A</strong><em>B</em><ins>C</ins><del>D</del>"
+        )
         self.assertEqual(safe, "<b>A</b><i>B</i><u>C</u><s>D</s>")
 
     def test_drops_unsupported_tags_but_keeps_text(self):
@@ -35,7 +40,13 @@ class TelegramFormattingTests(unittest.TestCase):
         self.assertEqual(safe, "hello alert(1) world")
 
     def test_rejects_unsafe_or_relative_link_but_keeps_label(self):
-        for href in ("javascript:alert(1)", "tg://user?id=1", "/relative", "https:broken"):
+        bad_links = (
+            "javascript:alert(1)",
+            "tg://user?id=1",
+            "/relative",
+            "https:broken",
+        )
+        for href in bad_links:
             with self.subTest(href=href):
                 safe = sanitize_telegram_html(f'<a href="{href}">click</a>')
                 self.assertEqual(safe, "click")
@@ -82,14 +93,24 @@ class TelegramSplitTests(unittest.TestCase):
         source = "<b>" + ("a" * 5000) + "</b>"
         parts = split_telegram_html(source, limit=3900)
         self.assertEqual(len(parts), 2)
-        self.assertTrue(all(part.startswith("<b>") and part.endswith("</b>") for part in parts))
+        self.assertTrue(
+            all(
+                part.startswith("<b>") and part.endswith("</b>")
+                for part in parts
+            )
+        )
         self.assertEqual(_plain(parts), "a" * 5000)
 
     def test_splits_preformatted_text_without_breaking_html(self):
         source = "<pre>" + ("log line\n" * 700) + "</pre>"
         parts = split_telegram_html(source, limit=3900)
         self.assertGreater(len(parts), 1)
-        self.assertTrue(all(part.startswith("<pre>") and part.endswith("</pre>") for part in parts))
+        self.assertTrue(
+            all(
+                part.startswith("<pre>") and part.endswith("</pre>")
+                for part in parts
+            )
+        )
         self.assertEqual(_plain(parts), "log line\n" * 700)
 
     def test_counts_emoji_by_utf16_units(self):
@@ -104,7 +125,12 @@ class TelegramSplitTests(unittest.TestCase):
         source = '<a href="https://example.com">' + ("x" * 5000) + "</a>"
         parts = split_telegram_html(source, limit=3900)
         self.assertEqual(_plain(parts), "x" * 5000)
-        self.assertTrue(all(part.startswith('<a href="https://example.com">') for part in parts))
+        self.assertTrue(
+            all(
+                part.startswith('<a href="https://example.com">')
+                for part in parts
+            )
+        )
         self.assertTrue(all(part.endswith("</a>") for part in parts))
 
     def test_nested_tags_remain_valid_and_plain_text_is_lossless(self):
