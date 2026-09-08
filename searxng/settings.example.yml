@@ -25,7 +25,7 @@ use_default_settings:
       - wikipedia
 
 engines:
-  - name: duckduckgo:
+  - name: duckduckgo
     network:
       impersonate: "firefox"
 
