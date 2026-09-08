@@ -100,12 +100,7 @@ def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
 
 
 def _parse_text_tool_call(content: str, tools: list[dict] | None) -> ToolCall | None:
-    """Parse the narrow text encoding emitted by some tool-capable providers.
-
-    Only a whole-response block is accepted, and the requested tool must exist
-    in the active tool schema. Anything else is rejected by the caller instead
-    of being surfaced as assistant text.
-    """
+    """Parse the narrow text encoding emitted by some tool-capable providers."""
     match = _TEXT_TOOL_CALL_RE.fullmatch(content)
     if not match:
         return None
@@ -142,12 +137,14 @@ class OpenAICompatProvider:
         timeout: float = 60.0,
         extra_headers: dict[str, str] | None = None,
         capabilities: ProviderCapabilities | None = None,
+        request_defaults: dict | None = None,
     ) -> None:
         self.name = name
         self.model = model
         self.supports_tools = True
         self.capabilities = capabilities or ProviderCapabilities()
         self.health = ProviderHealth()
+        self.request_defaults = deepcopy(request_defaults or {})
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
@@ -156,13 +153,20 @@ class OpenAICompatProvider:
         )
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
-        payload: dict = {"model": self.model, "messages": messages}
+        payload: dict = deepcopy(self.request_defaults)
+        payload.update({"model": self.model, "messages": messages})
         if tools and self.supports_tools:
             payload["tools"] = tools
         try:
             resp = await self._client.post("chat/completions", json=payload)
         except httpx.HTTPError as exc:
             raise ProviderError(f"{self.name}: lỗi mạng ({exc})", transient=True) from exc
+        if resp.status_code == 202:
+            raise ProviderError(
+                f"{self.name} HTTP 202: pending response",
+                status_code=202,
+                transient=True,
+            )
         if resp.status_code >= 400:
             body = _safe_error_excerpt(resp.text, 500)
             error_message = resp.text

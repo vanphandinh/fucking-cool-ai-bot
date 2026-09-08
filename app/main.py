@@ -42,7 +42,8 @@ async def _amain(settings: Settings) -> int:
     if not settings.configured_provider_names:
         logger.error(
             "Chưa cấu hình API key text nào "
-            "(GROQ_API_KEY / CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
+            "(NVIDIA_NIM_API_KEY / GROQ_API_KEY / "
+            "CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
             "OPENROUTER_API_KEY / GEMINI_API_KEY)."
         )
         return 1
