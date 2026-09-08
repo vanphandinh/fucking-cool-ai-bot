@@ -7,6 +7,11 @@ Hai engine DuckDuckGo của SearXNG hiện không phù hợp để bật trên d
 
 Repo vì vậy tạm thời remove exact engine name `duckduckgo` trong `searxng/settings.example.yml` và **không** enable `duckduckgo web`. `SEARCH_BACKEND=auto` của bot vẫn ưu tiên SearXNG; nếu SearXNG không có usable result hoặc request backend lỗi, bot có thể fallback sang Python `ddgs` backend như trước.
 
+> Incident này áp dụng cho **web/image search qua SearXNG**. Direct X/Twitter status URL là luồng riêng:
+> `fetch_url` ưu tiên FxTwitter API v2 → X oEmbed → generic reader khi `X_FETCH_ENABLED=1`.
+> Không dùng raw X URL search qua SearXNG làm smoke test cho direct-X resolver. Xem
+> [X_CONTENT_FETCHING.md](X_CONTENT_FETCHING.md).
+
 ## Áp dụng trên VPS đang chạy
 
 `searxng/settings.yml` là file thật được bind-mount và nằm ngoài Git. Cập nhật file mẫu trong repo **không tự cập nhật** file thật.
@@ -48,7 +53,16 @@ Nếu bot cũng vừa được cập nhật code trong cùng lần deploy:
 docker compose --profile searxng up -d --build --force-recreate bot searxng
 ```
 
-## Kiểm tra
+Nếu deployment có PR direct-X mới, đồng thời kiểm tra `.env`:
+
+```env
+X_FETCH_ENABLED=1
+MAX_TOOL_ROUNDS=2
+```
+
+Không tăng `MAX_TOOL_ROUNDS` để bù cho search/fetch failure.
+
+## Kiểm tra SearXNG
 
 Từ container bot:
 
@@ -71,6 +85,24 @@ PY
 ```
 
 Không nên còn thấy warning từ exact engine `duckduckgo` hoặc `duckduckgo web` nếu file thật không có override enable riêng. Engine khác vẫn có thể xuất hiện trong `unresponsive_engines`; đó là partial upstream failure và không đồng nghĩa toàn bộ SearXNG request thất bại.
+
+## Kiểm tra direct X/Twitter riêng
+
+```bash
+docker compose --profile searxng exec -T bot python - <<'PY'
+import asyncio
+from app.config import Settings
+from app.search.url_service import read_url
+
+URL = "https://x.com/TrustlessState/status/2097054140350554620"
+r = asyncio.run(read_url(URL, Settings(), mode="auto"))
+print("ok:", r.ok)
+print("backend:", r.backend)
+print("source:", r.source_url)
+PY
+```
+
+Nếu post vẫn public, normal success thường là `fxtwitter_status` hoặc `x_oembed`. Đây là test khác với SearXNG JSON search ở trên.
 
 ## Khi nào bật lại
 
