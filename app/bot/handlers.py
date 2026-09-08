@@ -18,6 +18,7 @@ from ..core.rate_limiter import RateLimiter
 from ..core.request import UserRequest
 from ..core.stats import Stats
 from .filters import AllowedChat, TriggeredMessage
+from .image_results import send_image_results
 from .media import (
     ImageTooLarge,
     MediaValidationError,
@@ -28,9 +29,10 @@ from .media import (
 logger = logging.getLogger(__name__)
 
 _HELP_TEXT = (
-    "🤖 Mình là trợ lý AI của group (AI miễn phí + tìm kiếm web + đọc ảnh).\n\n"
+    "🤖 Mình là trợ lý AI của group (AI miễn phí + tìm kiếm web/ảnh + đọc ảnh).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi.\n"
+    "- Có thể yêu cầu tìm/xem hình ảnh từ Internet.\n"
     "- Gửi JPEG/PNG/WebP kèm caption có @{bot}.\n"
     "- Reply ảnh rồi tag @{bot}, hoặc dùng /ask <câu hỏi>.\n"
     "- Lệnh: /ask, /help, /status (admin).\n\n"
@@ -96,7 +98,7 @@ def build_message_router(
             f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
-            f"- Số lần tìm web: {stats.searches}",
+            f"- Số lần tìm web/ảnh: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
             f"- Phân bổ: {distribution}",
             f"- Fallback đã dùng: {stats.fallback_count}",
@@ -109,6 +111,7 @@ def build_message_router(
             f"- Vision enabled: {'yes' if settings.configured_vision_provider_names else 'no'}",
             f"- Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
             f"- Search backend: {settings.search_backend}",
+            f"- Image search backend: {settings.image_search_backend}",
         ]
         await message.reply("\n".join(lines))
 
@@ -296,6 +299,13 @@ async def _handle_question(
                     for part in parts[1:]:
                         await bot.send_message(chat_id=chat_id, text=part, **extra_kwargs)
                         await asyncio.sleep(0.15)
+                    if getattr(answer, "images", None):
+                        await send_image_results(
+                            bot,
+                            chat_id,
+                            answer.images,
+                            message_thread_id=message.message_thread_id,
+                        )
                     if answer.searched and answer.sources:
                         footer = format_sources(answer.sources)
                         if footer:
