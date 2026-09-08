@@ -144,9 +144,21 @@ class SourceDedupeTests(unittest.TestCase):
     def test_x_same_publisher_collapses_profile_status_and_media_variants(self):
         sources = _dedupe_sources(
             [
-                {"title": "Alice post", "url": "https://x.com/Alice/status/111", "snippet": ""},
-                {"title": "Alice video", "url": "https://x.com/alice/status/111/video/1", "snippet": ""},
-                {"title": "Alice profile", "url": "https://x.com/alice", "snippet": ""},
+                {
+                    "title": "Alice post",
+                    "url": "https://x.com/Alice/status/111",
+                    "snippet": "",
+                },
+                {
+                    "title": "Alice video",
+                    "url": "https://x.com/alice/status/111/video/1",
+                    "snippet": "",
+                },
+                {
+                    "title": "Alice profile",
+                    "url": "https://x.com/alice",
+                    "snippet": "",
+                },
             ]
         )
         self.assertEqual(len(sources), 1)
