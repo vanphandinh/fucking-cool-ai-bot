@@ -18,11 +18,21 @@ class TelegramDeliveryTests(unittest.TestCase):
                 message_thread_id=None,
                 reply=AsyncMock(),
             )
-            ok = await _send_answer_parts(message, ["<b>Một</b>", "<i>Hai</i>"])
+            ok = await _send_answer_parts(
+                message,
+                ["<b>Một</b>", "<i>Hai</i>"],
+            )
             self.assertTrue(ok)
-            self.assertEqual(message.reply.await_args.kwargs["parse_mode"], "HTML")
-            self.assertEqual(bot.send_message.await_args.kwargs["parse_mode"], "HTML")
-            self.assertTrue(message.reply.await_args.kwargs["link_preview_options"].is_disabled)
+            self.assertEqual(
+                message.reply.await_args.kwargs["parse_mode"],
+                "HTML",
+            )
+            self.assertEqual(
+                bot.send_message.await_args.kwargs["parse_mode"],
+                "HTML",
+            )
+            preview = message.reply.await_args.kwargs["link_preview_options"]
+            self.assertTrue(preview.is_disabled)
 
         asyncio.run(run())
 
@@ -90,7 +100,10 @@ class TelegramDeliveryTests(unittest.TestCase):
                 message_thread_id=42,
                 reply=AsyncMock(),
             )
-            ok = await _send_answer_parts(message, ["<b>Một</b>", "<i>Hai</i>"])
+            ok = await _send_answer_parts(
+                message,
+                ["<b>Một</b>", "<i>Hai</i>"],
+            )
             self.assertTrue(ok)
             fallback = bot.send_message.await_args_list[1]
             self.assertEqual(fallback.kwargs["text"], "Hai")
