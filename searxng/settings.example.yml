@@ -24,6 +24,11 @@ use_default_settings:
       - startpage
       - wikipedia
 
+engines:
+  - name: duckduckgo:
+    network:
+      impersonate: "firefox"
+
 server:
   # BẮT BUỘC đổi thành chuỗi ngẫu nhiên: openssl rand -hex 32
   # settings.yml đã nằm trong .gitignore. Không đặt thêm SEARXNG_SECRET trong
