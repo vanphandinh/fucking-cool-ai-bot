@@ -7,7 +7,7 @@ from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_SEARCH_BACKENDS = ("ddgs", "searxng", "tavily")
+_SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
 
@@ -71,9 +71,10 @@ class Settings(BaseSettings):
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
 
-    search_backend: str = "ddgs"
+    # Unified free/self-hosted-first search policy for both text and image search.
+    search_backend: str = "auto"
     searxng_url: str = ""
-    tavily_api_key: str = ""
+    image_search_max_results: int = Field(default=4, ge=1, le=8)
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
