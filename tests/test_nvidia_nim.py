@@ -126,6 +126,75 @@ class NvidiaRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.content, "ok")
         self.assertEqual(requests[0]["stream"], False)
 
+    async def test_nvidia_tool_request_keeps_non_streaming_contract(self) -> None:
+        requests: list[dict] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if len(requests) == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [
+                                        {
+                                            "id": "call_search",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "web_search",
+                                                "arguments": '{"query":"nvidia nim"}',
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    },
+                    request=request,
+                )
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "done"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            vision_enabled=False,
+        )
+        router = build_provider_router(settings)
+        nvidia = router.capable_providers(requires_vision=False)[0]
+        await nvidia._client.aclose()
+        nvidia._client = httpx.AsyncClient(
+            base_url="https://example.invalid/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+
+        async def execute(name: str, args: dict) -> str:
+            self.assertEqual((name, args), ("web_search", {"query": "nvidia nim"}))
+            return "search result"
+
+        try:
+            text, provider_name = await router.complete(
+                [{"role": "user", "content": "search"}],
+                [_search_tool()],
+                execute,
+            )
+        finally:
+            await _close_router(router)
+
+        self.assertEqual((text, provider_name), ("done", "nvidia"))
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(request["stream"] is False for request in requests))
+        self.assertIn("tools", requests[0])
+        self.assertNotIn("tools", requests[1]) if False else self.assertIn("tools", requests[1])
+
 
 class PendingResponseTests(unittest.IsolatedAsyncioTestCase):
     async def test_http_202_is_classified_as_transient_pending_response(self) -> None:
@@ -156,6 +225,137 @@ class PendingResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 202)
         self.assertTrue(ctx.exception.transient)
         self.assertIn("pending", str(ctx.exception).lower())
+
+    async def test_http_202_falls_back_to_groq_without_polling(self) -> None:
+        nvidia_calls = 0
+        groq_calls = 0
+
+        def nvidia_respond(request: httpx.Request) -> httpx.Response:
+            nonlocal nvidia_calls
+            nvidia_calls += 1
+            return httpx.Response(202, json={"requestId": "pending"}, request=request)
+
+        def groq_respond(request: httpx.Request) -> httpx.Response:
+            nonlocal groq_calls
+            groq_calls += 1
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "fallback"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            groq_api_key="groq-test",
+            vision_enabled=False,
+        )
+        router = build_provider_router(settings)
+        nvidia, groq = router.capable_providers(requires_vision=False)
+        await nvidia._client.aclose()
+        await groq._client.aclose()
+        nvidia._client = httpx.AsyncClient(
+            base_url="https://nvidia.invalid/v1/",
+            transport=httpx.MockTransport(nvidia_respond),
+        )
+        groq._client = httpx.AsyncClient(
+            base_url="https://groq.invalid/v1/",
+            transport=httpx.MockTransport(groq_respond),
+        )
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "unused"
+
+        try:
+            text, provider_name = await router.complete(
+                [{"role": "user", "content": "hello"}],
+                None,
+                execute,
+            )
+        finally:
+            await _close_router(router)
+
+        self.assertEqual((text, provider_name), ("fallback", "groq"))
+        self.assertEqual((nvidia_calls, groq_calls), (1, 1))
+        self.assertEqual(router.last_fallbacks, 1)
+
+
+class RateLimitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nvidia_429_retry_after_cools_down_and_next_request_skips_it(self) -> None:
+        nvidia_calls = 0
+        groq_calls = 0
+
+        def nvidia_respond(request: httpx.Request) -> httpx.Response:
+            nonlocal nvidia_calls
+            nvidia_calls += 1
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "120"},
+                json={"error": {"message": "rate limited"}},
+                request=request,
+            )
+
+        def groq_respond(request: httpx.Request) -> httpx.Response:
+            nonlocal groq_calls
+            groq_calls += 1
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "groq"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            groq_api_key="groq-test",
+            vision_enabled=False,
+        )
+        router = build_provider_router(settings)
+        nvidia, groq = router.capable_providers(requires_vision=False)
+        await nvidia._client.aclose()
+        await groq._client.aclose()
+        nvidia._client = httpx.AsyncClient(
+            base_url="https://nvidia.invalid/v1/",
+            transport=httpx.MockTransport(nvidia_respond),
+        )
+        groq._client = httpx.AsyncClient(
+            base_url="https://groq.invalid/v1/",
+            transport=httpx.MockTransport(groq_respond),
+        )
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "unused"
+
+        try:
+            first = await router.complete(
+                [{"role": "user", "content": "one"}],
+                None,
+                execute,
+            )
+            second = await router.complete(
+                [{"role": "user", "content": "two"}],
+                None,
+                execute,
+            )
+        finally:
+            await _close_router(router)
+
+        self.assertEqual(first, ("groq", "groq"))
+        self.assertEqual(second, ("groq", "groq"))
+        self.assertEqual(nvidia_calls, 1)
+        self.assertEqual(groq_calls, 2)
+        self.assertFalse(nvidia.health.available())
+        self.assertGreater(nvidia.health.cooldown_seconds(), 0)
+
+
+def _search_tool() -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
 
 
 async def _close_router(router) -> None:
