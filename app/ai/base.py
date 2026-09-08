@@ -17,6 +17,18 @@ _IMAGE_DATA_URL_RE = re.compile(
     r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=_-]+",
     flags=re.IGNORECASE,
 )
+_TOOL_MARKUP_HINT_RE = re.compile(
+    r"</?(?:tool_call|arg_key|arg_value)>",
+    flags=re.IGNORECASE,
+)
+_TEXT_TOOL_CALL_RE = re.compile(
+    r"^\s*<tool_call>\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*(.*?)</tool_call>\s*$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_TEXT_TOOL_ARG_RE = re.compile(
+    r"<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 _ASSISTANT_REPLAY_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 
 
@@ -25,6 +37,10 @@ def _safe_error_excerpt(value: object, limit: int) -> str:
     text = value if isinstance(value, str) else str(value)
     redacted = _IMAGE_DATA_URL_RE.sub("data:image/[redacted];base64,[redacted]", text)
     return redacted[:limit]
+
+
+def _contains_internal_tool_markup(value: object) -> bool:
+    return bool(_TOOL_MARKUP_HINT_RE.search(str(value or "")))
 
 
 class ProviderError(Exception):
@@ -69,6 +85,53 @@ class ChatResponse:
     assistant_metadata: dict = field(default_factory=dict)
 
 
+def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
+    names: set[str] = set()
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function")
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name") or "").strip()
+        if name:
+            names.add(name)
+    return names
+
+
+def _parse_text_tool_call(content: str, tools: list[dict] | None) -> ToolCall | None:
+    """Parse the narrow text encoding emitted by some tool-capable providers.
+
+    Only a whole-response block is accepted, and the requested tool must exist
+    in the active tool schema. Anything else is rejected by the caller instead
+    of being surfaced as assistant text.
+    """
+    match = _TEXT_TOOL_CALL_RE.fullmatch(content)
+    if not match:
+        return None
+
+    name = match.group(1).strip()
+    if name not in _allowed_tool_names(tools):
+        return None
+
+    body = match.group(2)
+    args: dict[str, str] = {}
+    for arg_match in _TEXT_TOOL_ARG_RE.finditer(body):
+        key = arg_match.group(1).strip()
+        if not key or key in args:
+            return None
+        args[key] = arg_match.group(2).strip()
+
+    if _TEXT_TOOL_ARG_RE.sub("", body).strip():
+        return None
+
+    return ToolCall(
+        id=f"call_{uuid.uuid4().hex[:24]}",
+        name=name,
+        arguments=args,
+    )
+
+
 class OpenAICompatProvider:
     def __init__(
         self,
@@ -104,6 +167,7 @@ class OpenAICompatProvider:
             body = _safe_error_excerpt(resp.text, 500)
             error_message = resp.text
             generation_error = False
+            failed_generation_has_markup = False
             try:
                 error_data = resp.json()
             except ValueError:
@@ -114,6 +178,9 @@ class OpenAICompatProvider:
                 generation_error = (
                     error.get("code") == "tool_use_failed"
                     or "failed_generation" in error
+                )
+                failed_generation_has_markup = _contains_internal_tool_markup(
+                    error.get("failed_generation")
                 )
             tool_error = resp.status_code == 400 and bool(tools) and (
                 generation_error
@@ -140,7 +207,9 @@ class OpenAICompatProvider:
             raise ProviderError(
                 f"{self.name} HTTP {resp.status_code}: {body}",
                 unsupported_tools=unsupported,
-                retry_without_tools=tool_error and not unsupported,
+                retry_without_tools=(
+                    tool_error and not unsupported and not failed_generation_has_markup
+                ),
                 status_code=resp.status_code,
                 retry_after=retry_after,
                 transient=transient,
@@ -191,6 +260,17 @@ class OpenAICompatProvider:
                     extra_content=extra_content,
                 )
             )
+
+        if not tool_calls and content and _contains_internal_tool_markup(content):
+            parsed = _parse_text_tool_call(content, tools)
+            if parsed is None:
+                raise ProviderError(
+                    f"{self.name}: model trả tool-call dạng text không hợp lệ",
+                    transient=False,
+                )
+            tool_calls.append(parsed)
+            content = None
+
         assistant_metadata = {
             key: deepcopy(msg[key]) for key in _ASSISTANT_REPLAY_FIELDS if key in msg
         }
