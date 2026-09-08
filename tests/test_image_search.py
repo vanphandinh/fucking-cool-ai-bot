@@ -158,7 +158,7 @@ class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
         settings = Settings(
             _env_file=None,
             searxng_url="http://searxng:8080",
-            image_search_backend="auto",
+            search_backend="auto",
             image_search_max_results=4,
         )
         with (
@@ -188,7 +188,7 @@ class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
         settings = Settings(
             _env_file=None,
             searxng_url="http://searxng:8080",
-            image_search_backend="auto",
+            search_backend="auto",
         )
         with (
             patch.object(image_service, "search_searxng_images", new=searx),
@@ -200,14 +200,11 @@ class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ImageSearchConfigAndToolTests(unittest.TestCase):
-    def test_image_search_config_defaults_and_bounds(self) -> None:
+    def test_image_search_uses_unified_search_backend(self) -> None:
         settings = Settings(_env_file=None)
-        self.assertTrue(hasattr(settings, "image_search_backend"))
-        self.assertTrue(hasattr(settings, "image_search_max_results"))
-        if hasattr(settings, "image_search_backend"):
-            self.assertEqual(settings.image_search_backend, "auto")
-        if hasattr(settings, "image_search_max_results"):
-            self.assertEqual(settings.image_search_max_results, 4)
+        self.assertEqual(settings.search_backend, "auto")
+        self.assertFalse(hasattr(settings, "image_search_backend"))
+        self.assertEqual(settings.image_search_max_results, 4)
 
     def test_orchestrator_exposes_separate_image_search_tool(self) -> None:
         names = [tool["function"]["name"] for tool in orchestrator.TOOLS]
