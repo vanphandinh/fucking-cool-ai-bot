@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     learn_group_id_mode: bool = False
 
     # Text pool — free-tier-first defaults.
+    nvidia_nim_api_key: str = ""
+    nvidia_nim_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_nim_text_model: str = "deepseek-ai/deepseek-v4-flash-0731"
+    nvidia_nim_vision_model: str = "google/gemma-4-31b-it"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
@@ -59,9 +63,9 @@ class Settings(BaseSettings):
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
-    text_provider_order: str = "groq,cloudflare,openrouter,gemini"
+    text_provider_order: str = "nvidia,groq,cloudflare,openrouter,gemini"
 
-    # Vision pool.
+    # Vision pool. NVIDIA vision is opt-in through VISION_PROVIDER_ORDER.
     vision_enabled: bool = True
     gemini_vision_model: str = "gemini-3.8-flash"
     groq_vision_models: str = "qwen/qwen3.8-27b,qwen/qwen3.6-27b"
@@ -131,6 +135,8 @@ class Settings(BaseSettings):
     @property
     def configured_provider_names(self) -> list[str]:
         available: set[str] = set()
+        if self.nvidia_nim_api_key and self.nvidia_nim_text_model:
+            available.add("nvidia")
         if self.gemini_api_key and self.gemini_model:
             available.add("gemini")
         if self.groq_api_key and self.groq_model:
@@ -150,6 +156,8 @@ class Settings(BaseSettings):
         if not self.vision_enabled:
             return []
         available: set[str] = set()
+        if self.nvidia_nim_api_key and self.nvidia_nim_vision_model:
+            available.add("nvidia")
         if self.gemini_api_key and self.gemini_vision_model:
             available.add("gemini")
         if self.groq_api_key:
