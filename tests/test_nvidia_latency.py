@@ -61,6 +61,39 @@ class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["thinking_token_budget"], 2048)
         self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": True})
 
+    async def test_fast_mode_omits_thinking_budget(self) -> None:
+        requests: list[dict] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "fast"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            nvidia_nim_enable_thinking=False,
+            vision_enabled=False,
+        )
+        provider = make_nvidia_provider(settings)
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.invalid/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+        try:
+            response = await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await provider.aclose()
+
+        self.assertEqual(response.content, "fast")
+        payload = requests[0]
+        self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertNotIn("thinking_token_budget", payload)
+
 
 class NetworkErrorDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     async def test_read_timeout_reports_exception_type_and_elapsed_time(self) -> None:
