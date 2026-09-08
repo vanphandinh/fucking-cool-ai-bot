@@ -149,7 +149,7 @@ def canonicalize_source_url(value: object) -> str:
         for key, val in parse_qsl(parsed.query, keep_blank_values=True)
         if not _is_tracking_query_key(key)
     ]
-    query = urlencode(sorted(query_pairs))
+    query = urlencode(query_pairs)
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
