@@ -26,7 +26,7 @@ class NvidiaLatencyDefaultsTests(unittest.TestCase):
 
 
 class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
-    async def test_lightning_request_keeps_reasoning_enabled_but_bounded(self) -> None:
+    async def test_lightning_request_uses_supported_reasoning_budget_parameter(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -58,10 +58,11 @@ class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
         payload = requests[0]
         self.assertIs(payload["stream"], False)
         self.assertEqual(payload["max_tokens"], 4096)
-        self.assertEqual(payload["thinking_token_budget"], 2048)
+        self.assertEqual(payload["reasoning_budget"], 2048)
+        self.assertNotIn("thinking_token_budget", payload)
         self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": True})
 
-    async def test_fast_mode_omits_thinking_budget(self) -> None:
+    async def test_fast_mode_omits_reasoning_budget(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -92,6 +93,7 @@ class NvidiaLatencyPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.content, "fast")
         payload = requests[0]
         self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertNotIn("reasoning_budget", payload)
         self.assertNotIn("thinking_token_budget", payload)
 
 
