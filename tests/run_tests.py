@@ -1368,7 +1368,10 @@ def t_ai_router_mock():
                 text4 == "loop-plain-answer" and prov4 == "loop" and STATE["loop_n"] == 4,
                 f"{text4} n={STATE['loop_n']}",
             )
-            check("tool-loop: supports_tools vẫn True (chỉ retry 1 lần)", p_loop.supports_tools is True)
+            check(
+                "tool-loop: supports_tools vẫn True (chỉ retry 1 lần)",
+                p_loop.supports_tools is True,
+            )
             check(
                 "tool-loop: request retry không có tools",
                 STATE["loop_with_tools"]
