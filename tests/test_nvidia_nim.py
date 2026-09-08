@@ -193,7 +193,7 @@ class NvidiaRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 2)
         self.assertTrue(all(request["stream"] is False for request in requests))
         self.assertIn("tools", requests[0])
-        self.assertNotIn("tools", requests[1]) if False else self.assertIn("tools", requests[1])
+        self.assertIn("tools", requests[1])
 
 
 class PendingResponseTests(unittest.IsolatedAsyncioTestCase):
