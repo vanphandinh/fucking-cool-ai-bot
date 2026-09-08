@@ -7,8 +7,7 @@ from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_SEARCH_BACKENDS = ("ddgs", "searxng", "tavily")
-_IMAGE_SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
+_SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
 
@@ -72,10 +71,9 @@ class Settings(BaseSettings):
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
 
-    search_backend: str = "ddgs"
+    # Unified free/self-hosted-first search policy for both text and image search.
+    search_backend: str = "auto"
     searxng_url: str = ""
-    tavily_api_key: str = ""
-    image_search_backend: str = "auto"
     image_search_max_results: int = Field(default=4, ge=1, le=8)
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
@@ -92,17 +90,6 @@ class Settings(BaseSettings):
         if backend not in _SEARCH_BACKENDS:
             allowed = " | ".join(_SEARCH_BACKENDS)
             raise ValueError(f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})")
-        return backend
-
-    @field_validator("image_search_backend")
-    @classmethod
-    def _check_image_search_backend(cls, value: str) -> str:
-        backend = (value or "").strip().lower()
-        if backend not in _IMAGE_SEARCH_BACKENDS:
-            allowed = " | ".join(_IMAGE_SEARCH_BACKENDS)
-            raise ValueError(
-                f"IMAGE_SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})"
-            )
         return backend
 
     @field_validator("log_level")
