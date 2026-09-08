@@ -5,3 +5,4 @@ pydantic>=2.7,<3.0
 pydantic-settings>=2.2,<3.0
 ddgs>=9.0
 beautifulsoup4>=4.12
+tldextract>=5.3.2,<6.0

@@ -11,6 +11,7 @@ from ..ai.multimodal import build_user_content
 from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import image_service, service as search_service, url_service
+from .formatting import canonicalize_source_url, source_family_key
 from .request import UserRequest
 
 logger = logging.getLogger(__name__)
@@ -281,15 +282,18 @@ def _format_image_results(query: str, results: list[dict]) -> str:
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
-    seen: set[str] = set()
+    seen_urls: set[str] = set()
+    seen_families: set[str] = set()
     out: list[dict] = []
     for src in sources:
         if not isinstance(src, dict):
             continue
-        url = str(src.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")) or url in seen:
+        url = canonicalize_source_url(src.get("url"))
+        family = source_family_key(url)
+        if not url or not family or url in seen_urls or family in seen_families:
             continue
-        seen.add(url)
+        seen_urls.add(url)
+        seen_families.add(family)
         out.append(
             {
                 "title": str(src.get("title") or ""),
