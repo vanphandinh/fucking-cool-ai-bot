@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from ..config import Settings
 from .base import OpenAICompatProvider
 from .capabilities import ProviderCapabilities
 
 _NEMOTRON_LIGHTNING_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
+_NVIDIA_API_CATALOG_HOST = "integrate.api.nvidia.com"
+
+
+def _reasoning_budget_field(base_url: str) -> str:
+    hostname = (urlparse(base_url).hostname or "").lower()
+    if hostname == _NVIDIA_API_CATALOG_HOST:
+        return "reasoning_budget"
+    return "thinking_token_budget"
 
 
 def make_nvidia_provider(
@@ -30,7 +40,7 @@ def make_nvidia_provider(
             }
         )
         if settings.nvidia_nim_enable_thinking:
-            request_defaults["thinking_token_budget"] = (
+            request_defaults[_reasoning_budget_field(settings.nvidia_nim_base_url)] = (
                 settings.nvidia_nim_thinking_token_budget
             )
 

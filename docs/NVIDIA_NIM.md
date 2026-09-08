@@ -15,13 +15,20 @@ NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048
 TEXT_PROVIDER_ORDER=nvidia,groq,cloudflare,openrouter,gemini
 ```
 
-The default base URL is configurable so the same adapter can point to NVIDIA-hosted, commercial, or self-hosted NIM deployments without changing application routing code.
+The default base URL is configurable so the same adapter can point to NVIDIA-hosted or self-hosted NIM deployments without changing application routing code.
 
 The default text model is `nvidia/nemotron-3.5-lightning-30b-a3b`. It replaces the earlier DeepSeek V4 Flash default because the bot prioritizes interactive Telegram latency while still requiring reliable tool calling. Thinking stays enabled by default; it is bounded instead of disabled globally:
 
 - `NVIDIA_NIM_ENABLE_THINKING=1` keeps reasoning available for multi-step and tool-heavy requests.
-- `NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048` caps the hidden reasoning portion.
+- `NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048` is the bot's stable config name for the reasoning limit.
 - `NVIDIA_NIM_MAX_TOKENS=4096` caps reasoning plus the visible answer.
+
+NVIDIA currently exposes different request-field names across its hosted API Catalog and self-hosted NIM documentation. The adapter maps the same config value by endpoint:
+
+- `https://integrate.api.nvidia.com/...` -> `reasoning_budget`
+- another/custom NIM base URL -> `thinking_token_budget`
+
+This distinction fixes the hosted API Catalog `400 Unsupported parameter(s): thinking_token_budget` failure while retaining the request contract documented for self-hosted Nemotron NIM. If a custom third-party gateway has different semantics, validate its accepted fields before using the Lightning-specific tuning.
 
 These generation controls are applied only when the selected NVIDIA text model is the repository's Nemotron 3.5 Lightning default. A custom NVIDIA text model or the vision slot is not forced to accept Lightning-specific request fields.
 
@@ -44,9 +51,31 @@ Then rebuild/recreate the bot container and verify the effective settings. Do no
 
 The NVIDIA adapter explicitly sends `stream=false` because the bot consumes a complete JSON Chat Completions response rather than SSE streaming.
 
+For the default hosted API Catalog endpoint and Lightning with thinking enabled, the outbound generation controls are effectively:
+
+```json
+{
+  "max_tokens": 4096,
+  "chat_template_kwargs": {"enable_thinking": true},
+  "reasoning_budget": 2048
+}
+```
+
+For a custom/self-hosted NIM base URL, the budget field becomes:
+
+```json
+{
+  "max_tokens": 4096,
+  "chat_template_kwargs": {"enable_thinking": true},
+  "thinking_token_budget": 2048
+}
+```
+
+If `NVIDIA_NIM_ENABLE_THINKING=0`, the adapter sends `enable_thinking=false` and omits both budget fields entirely.
+
 A `202 Accepted` response is treated as a transient pending condition. The request falls through to the next provider instead of polling inside the Telegram request lifecycle. Standard `429`, `Retry-After`, `5xx`, `401`, and `403` behavior is handled by the shared provider health layer.
 
-Network failures now include the concrete httpx exception class and elapsed request time. For example, a response that previously appeared only as `nvidia: lỗi mạng ()` can now identify `ReadTimeout`, `ConnectTimeout`, or another transport error and show how long the request ran. This is diagnostic only; the application still treats network errors as transient and preserves the existing fallback behavior.
+Network failures include the concrete httpx exception class and elapsed request time. For example, a response that previously appeared only as `nvidia: lỗi mạng ()` can now identify `ReadTimeout`, `ConnectTimeout`, or another transport error and show how long the request ran. This is diagnostic only; the application still treats network errors as transient and preserves the existing fallback behavior.
 
 Do not raise `REQUEST_TIMEOUT_SEC` merely to hide a slow-provider symptom. The default remains 60 seconds so an unhealthy or overloaded primary can fall back instead of consuming the entire Telegram question deadline.
 
@@ -110,7 +139,9 @@ The application does not detect account billing or licensing state.
 CI must stay fully offline with mocked provider responses. Required regression coverage includes:
 
 - NVIDIA primary text order and missing-key fallback;
-- Nemotron Lightning default and bounded-reasoning payload;
+- hosted API Catalog Lightning payload using `reasoning_budget`;
+- custom/self-hosted Lightning payload using `thinking_token_budget`;
+- fast mode omitting both reasoning-budget fields;
 - concrete network timeout diagnostics;
 - explicit `stream=false`;
 - `202` transient handling;
