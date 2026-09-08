@@ -8,6 +8,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SEARCH_BACKENDS = ("ddgs", "searxng", "tavily")
+_IMAGE_SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 
 
@@ -74,6 +75,8 @@ class Settings(BaseSettings):
     search_backend: str = "ddgs"
     searxng_url: str = ""
     tavily_api_key: str = ""
+    image_search_backend: str = "auto"
+    image_search_max_results: int = Field(default=4, ge=1, le=8)
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
@@ -89,6 +92,17 @@ class Settings(BaseSettings):
         if backend not in _SEARCH_BACKENDS:
             allowed = " | ".join(_SEARCH_BACKENDS)
             raise ValueError(f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})")
+        return backend
+
+    @field_validator("image_search_backend")
+    @classmethod
+    def _check_image_search_backend(cls, value: str) -> str:
+        backend = (value or "").strip().lower()
+        if backend not in _IMAGE_SEARCH_BACKENDS:
+            allowed = " | ".join(_IMAGE_SEARCH_BACKENDS)
+            raise ValueError(
+                f"IMAGE_SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})"
+            )
         return backend
 
     @field_validator("log_level")
