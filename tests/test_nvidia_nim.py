@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 
 import httpx
@@ -24,6 +25,7 @@ class NvidiaSettingsTests(unittest.TestCase):
             settings.text_provider_order,
             "nvidia,groq,cloudflare,openrouter,gemini",
         )
+        self.assertNotIn("nvidia", settings.vision_provider_order_list)
 
     def test_configured_provider_names_include_nvidia_in_effective_order(self) -> None:
         settings = Settings(
@@ -72,6 +74,57 @@ class NvidiaRouterTests(unittest.TestCase):
             self.assertEqual([provider.name for provider in text], ["groq"])
         finally:
             asyncio.run(_close_router(router))
+
+    def test_nvidia_vision_is_opt_in_via_provider_order(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            vision_provider_order="nvidia,gemini",
+            gemini_api_key="gemini-test",
+        )
+        router = build_provider_router(settings)
+        try:
+            vision = router.capable_providers(requires_vision=True, image_count=1)
+            self.assertEqual(
+                [provider.name for provider in vision],
+                ["nvidia_vision", "gemini_vision"],
+            )
+            self.assertEqual(vision[0].model, "google/gemma-4-31b-it")
+        finally:
+            asyncio.run(_close_router(router))
+
+
+class NvidiaRequestTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nvidia_explicitly_disables_streaming(self) -> None:
+        requests: list[dict] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+                request=request,
+            )
+
+        settings = Settings(
+            _env_file=None,
+            nvidia_nim_api_key="nvapi-test",
+            vision_enabled=False,
+        )
+        router = build_provider_router(settings)
+        provider = router.capable_providers(requires_vision=False)[0]
+        await provider._client.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.invalid/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+        try:
+            response = await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await _close_router(router)
+
+        self.assertEqual(response.content, "ok")
+        self.assertEqual(requests[0]["stream"], False)
 
 
 class PendingResponseTests(unittest.IsolatedAsyncioTestCase):
