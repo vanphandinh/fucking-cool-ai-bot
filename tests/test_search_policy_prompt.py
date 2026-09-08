@@ -56,6 +56,23 @@ class SearchPolicyPromptTests(unittest.TestCase):
         self.assertIn("hệ thống tự đính nguồn", self.prompt)
         self.assertIn("không cần liệt kê nguồn", self.prompt)
 
+    def test_direct_url_is_fetched_before_web_search(self):
+        self.assertIn("fetch_url", self.prompt)
+        self.assertIn("url cụ thể", self.prompt)
+        self.assertIn("trước web_search", self.prompt)
+
+    def test_x_direct_url_policy_avoids_mirror_searches(self):
+        self.assertIn("x/twitter", self.prompt)
+        self.assertIn("không tìm mirror", self.prompt)
+
+    def test_fetch_url_tool_supports_x_thread_mode(self):
+        fetch_tool = next(
+            tool["function"] for tool in TOOLS if tool["function"]["name"] == "fetch_url"
+        )
+        mode = fetch_tool["parameters"]["properties"]["mode"]
+        self.assertEqual(mode["enum"], ["auto", "x_thread"])
+        self.assertIn("x/thread", fetch_tool["description"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
