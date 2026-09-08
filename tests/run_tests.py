@@ -57,11 +57,17 @@ def t_config_formatting():
     s.bot_username = "FuckingCoolAIbot"
     check("username clean", s.bot_username_clean == "fuckingcoolaibot")
 
-    # SEARCH_BACKEND: chấp nhận viết hoa, từ chối giá trị lạ
+    # SEARCH_BACKEND: chấp nhận viết hoa cho backend hợp lệ, từ chối Tavily/giá trị lạ.
     old_backend = os.environ.get("SEARCH_BACKEND")
     try:
-        os.environ["SEARCH_BACKEND"] = "TAVILY"
-        check("search_backend chuẩn hoá", Settings().search_backend == "tavily")
+        os.environ["SEARCH_BACKEND"] = "AUTO"
+        check("search_backend chuẩn hoá", Settings().search_backend == "auto")
+        os.environ["SEARCH_BACKEND"] = "tavily"
+        try:
+            Settings()
+            check("Tavily bị loại khỏi search backend", False)
+        except ValueError:
+            check("Tavily bị loại khỏi search backend", True)
         os.environ["SEARCH_BACKEND"] = "ddg"
         try:
             Settings()
@@ -172,7 +178,6 @@ def t_config_formatting():
         host_visible,
     )
 
-    # split_plain: text emoji KHÔNG có delimiter nào — vẫn phải cắt đúng UTF-16
     emoji_nod = "a😀b" * 1500
     emoji_parts = split_plain(emoji_nod, 3900)
     check(
@@ -263,21 +268,20 @@ def t_reader_guard():
         validate_public_url("http://a.com\\@127.0.0.1") is not None,
     )
 
-    # --- Dạng IP viết tắt mà ipaddress không parse nhưng glibc resolve về nội bộ
     for bad in [
         "http://127.1/x",
-        "http://127.1.2/x",  # -> 127.1.0.2
-        "http://2130706433/",  # -> 127.0.0.1
-        "http://2130706434/",  # -> 127.0.0.2
-        "http://0x7f000001/",  # -> 127.0.0.1
-        "http://0x7f.1/",  # -> 127.0.0.1
-        "http://0177.0.0.1/",  # octal -> 127.0.0.1
-        "http://0/",  # -> 0.0.0.0
-        "http://999.999.999.999/",  # số không hợp lệ
-        "http://[::ffff:127.0.0.1]/",  # IPv4-mapped loopback
+        "http://127.1.2/x",
+        "http://2130706433/",
+        "http://2130706434/",
+        "http://0x7f000001/",
+        "http://0x7f.1/",
+        "http://0177.0.0.1/",
+        "http://0/",
+        "http://999.999.999.999/",
+        "http://[::ffff:127.0.0.1]/",
         "http://[::1]/",
-        "http://[fe80::1%25lo0]/",  # IPv6 zone index
-        "http://[2001:db8::1]/",  # dải tài liệu
+        "http://[fe80::1%25lo0]/",
+        "http://[2001:db8::1]/",
     ]:
         check(
             f"chặn dạng IP lạ {bad.split('/')[2][:28]}",
@@ -285,20 +289,18 @@ def t_reader_guard():
             str(validate_public_url(bad)),
         )
 
-    # IP public dạng literal vẫn được phép (1.2.3 nở thành 1.2.0.3 — public)
     check("cho phép ip public 8.8.8.8", validate_public_url("http://8.8.8.8/") is None)
     check("cho phép dạng số public 1.2.3", validate_public_url("http://1.2.3/") is None)
     check("cho phép ipv6 public", validate_public_url("http://[2606:4700:4700::1111]/") is None)
 
-    # Các dải đặc biệt khác phải bị chặn ở tầng URL
     for bad in [
-        "http://0.0.0.0/",  # unspecified
-        "http://255.255.255.255/",  # broadcast
-        "http://100.64.0.1/",  # CGNAT (RFC 6598)
-        "http://[::]/",  # IPv6 unspecified
-        "http://[fe80::1]/",  # IPv6 link-local
-        "http://[::ffff:10.0.0.1]/",  # IPv4-mapped private
-        "http://[2001:db8::1]/x?y=z#f",  # dải tài liệu (dù có query/fragment)
+        "http://0.0.0.0/",
+        "http://255.255.255.255/",
+        "http://100.64.0.1/",
+        "http://[::]/",
+        "http://[fe80::1]/",
+        "http://[::ffff:10.0.0.1]/",
+        "http://[2001:db8::1]/x?y=z#f",
     ]:
         check(
             f"chặn dải đặc biệt {bad.split('/')[2][:24]}",
@@ -331,14 +333,12 @@ def t_reader_dns_rebinding():
             return _fake
 
         try:
-            # _is_public_ip
             check("is_public: 8.8.8.8", mod._is_public_ip("8.8.8.8"))
             check("is_public: 127.0.0.1", not mod._is_public_ip("127.0.0.1"))
             check("is_public: ::ffff:127.0.0.1", not mod._is_public_ip("::ffff:127.0.0.1"))
             check("is_public: ::1", not mod._is_public_ip("::1"))
             check("is_public: 2606:4700::1111", mod._is_public_ip("2606:4700:4700::1111"))
 
-            # _resolve_all THẬT + getaddrinfo giả: chỉ giữ IP public
             socket.getaddrinfo = fake_resolver("127.0.0.1")
             check("resolve toàn bộ private -> rỗng", await mod._resolve_all("evil.nip.io") == [])
             socket.getaddrinfo = fake_resolver("10.0.0.1", "127.0.0.1")
@@ -359,7 +359,6 @@ def t_reader_dns_rebinding():
         finally:
             socket.getaddrinfo = real_getaddrinfo
 
-        # Backend thật phải pin IP public vào inner AnyIOBackend, không dùng lớp abstract.
         class FakeInner:
             def __init__(self) -> None:
                 self.hosts: list[str] = []
@@ -459,14 +458,12 @@ def t_reader_fetch():
         host = request.url.host
         path = request.url.path
         if host == "r.jina.ai":
-            # URL đích chứa "jina200" -> Jina trả 200 + markdown (mô phỏng Jina OK)
             if "jina200" in path:
                 return httpx.Response(
                     200, content=b"# JINA-MARKDOWN\nnoi dung tu jina", request=request
                 )
             return httpx.Response(429, json={"error": "rate"}, request=request)
         if host == "jina200.test":
-            # Nếu code gọi fetch trực tiếp (thay vì dùng kết quả Jina) test phải fail
             return httpx.Response(200, content=_html("<p>SHOULD-NOT-FETCH</p>"), request=request)
         if host == "ok.test":
             if path == "/loop-a":
@@ -497,7 +494,6 @@ def t_reader_fetch():
                 request=request,
             )
         if host in ("127.0.0.1", "2130706433"):
-            # Nếu guard lọt, transport sẽ "chạm" vào host nội bộ — test phải fail
             return httpx.Response(200, content=b"INTERNAL-LEAK", request=request)
         if host == "other.test":
             return httpx.Response(200, content=_html("<p>Trang khác OK</p>"), request=request)
@@ -507,77 +503,66 @@ def t_reader_fetch():
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(handler), timeout=5, follow_redirects=False
         ) as client:
-            try:
-                text = await read_page("https://ok.test/", timeout=5, client=client)
-                check(
-                    "fallback parse html (jina 429)",
-                    "Chào bạn" in text and "quan trọng" in text and "style" not in text,
-                    text[:80],
-                )
+            text = await read_page("https://ok.test/", timeout=5, client=client)
+            check(
+                "fallback parse html (jina 429)",
+                "Chào bạn" in text and "quan trọng" in text and "style" not in text,
+                text[:80],
+            )
 
-                requested.clear()
-                text = await read_page("https://ok.test/redir-public", timeout=5, client=client)
-                check("redirect public cùng host", "Chào bạn" in text, text[:80])
+            requested.clear()
+            text = await read_page("https://ok.test/redir-public", timeout=5, client=client)
+            check("redirect public cùng host", "Chào bạn" in text, text[:80])
 
-                requested.clear()
-                text = await read_page("https://ok.test/redir-other", timeout=5, client=client)
-                check("redirect sang host public khác", "Trang khác OK" in text, text[:80])
+            requested.clear()
+            text = await read_page("https://ok.test/redir-other", timeout=5, client=client)
+            check("redirect sang host public khác", "Trang khác OK" in text, text[:80])
 
-                requested.clear()
-                text = await read_page("https://ok.test/redir-ssrf", timeout=5, client=client)
-                check(
-                    "redirect vào 127.0.0.1 bị chặn",
-                    "Không tải được" in text and "INTERNAL-LEAK" not in text,
-                    text[:120],
-                )
+            requested.clear()
+            text = await read_page("https://ok.test/redir-ssrf", timeout=5, client=client)
+            check(
+                "redirect vào 127.0.0.1 bị chặn",
+                "Không tải được" in text and "INTERNAL-LEAK" not in text,
+                text[:120],
+            )
 
-                requested.clear()
-                text = await read_page("https://ok.test/redir-shorthand", timeout=5, client=client)
-                check(
-                    "redirect dạng số lạ bị chặn",
-                    "Không tải được" in text and "INTERNAL-LEAK" not in text,
-                    text[:120],
-                )
-                check(
-                    "không request nào tới host nội bộ",
-                    not any(
-                        "127.0.0.1" in u or u.startswith("http://2130706433") for u in requested
-                    ),
-                    str(requested),
-                )
+            requested.clear()
+            text = await read_page("https://ok.test/redir-shorthand", timeout=5, client=client)
+            check(
+                "redirect dạng số lạ bị chặn",
+                "Không tải được" in text and "INTERNAL-LEAK" not in text,
+                text[:120],
+            )
+            check(
+                "không request nào tới host nội bộ",
+                not any("127.0.0.1" in u or u.startswith("http://2130706433") for u in requested),
+                str(requested),
+            )
 
-                text = await read_page("https://ok.test/big", timeout=5, client=client)
-                check("trang quá lớn bị chặn", "quá lớn" in text, text[:80])
+            text = await read_page("https://ok.test/big", timeout=5, client=client)
+            check("trang quá lớn bị chặn", "quá lớn" in text, text[:80])
 
-                text = await read_page("https://ok.test/error", timeout=5, client=client)
-                check("HTTP 500 báo lỗi rõ", "HTTP 500" in text, text[:80])
+            text = await read_page("https://ok.test/error", timeout=5, client=client)
+            check("HTTP 500 báo lỗi rõ", "HTTP 500" in text, text[:80])
 
-                text = await read_page("http://127.0.0.1:9999/x", timeout=5, client=client)
-                check("read_page tự chặn URL nội bộ", "Không tải được" in text, text[:80])
+            text = await read_page("http://127.0.0.1:9999/x", timeout=5, client=client)
+            check("read_page tự chặn URL nội bộ", "Không tải được" in text, text[:80])
 
-                # Redirect loop A -> B -> A: phải dừng ở giới hạn, không treo vô hạn
-                text = await read_page("https://ok.test/loop-a", timeout=5, client=client)
-                check(
-                    "redirect loop bị chặn",
-                    "chuyển hướng" in text,
-                    text[:100],
-                )
+            text = await read_page("https://ok.test/loop-a", timeout=5, client=client)
+            check("redirect loop bị chặn", "chuyển hướng" in text, text[:100])
 
-                # Jina 200 -> dùng thẳng markdown, KHÔNG fetch HTML trực tiếp
-                requested.clear()
-                text = await read_page("https://jina200.test/page", timeout=5, client=client)
-                check(
-                    "Jina 200 dùng markdown, không fetch trực tiếp",
-                    "JINA-MARKDOWN" in text and "SHOULD-NOT-FETCH" not in text,
-                    text[:100],
-                )
-                check(
-                    "Jina 200 chỉ có request tới r.jina.ai",
-                    len(requested) >= 1 and all("r.jina.ai" in u for u in requested),
-                    str(requested),
-                )
-            finally:
-                pass
+            requested.clear()
+            text = await read_page("https://jina200.test/page", timeout=5, client=client)
+            check(
+                "Jina 200 dùng markdown, không fetch trực tiếp",
+                "JINA-MARKDOWN" in text and "SHOULD-NOT-FETCH" not in text,
+                text[:100],
+            )
+            check(
+                "Jina 200 chỉ có request tới r.jina.ai",
+                len(requested) >= 1 and all("r.jina.ai" in u for u in requested),
+                str(requested),
+            )
 
     asyncio.run(run())
 
@@ -630,11 +615,9 @@ def t_filters():
     trig = TriggeredMessage(s)
 
     async def run():
-        # AllowedChat
         check("cho phép group đúng", await allowed(_msg(-100200, "supergroup", "x")))
         check("chặn group lạ", not await allowed(_msg(-999, "supergroup", "x @FuckingCoolAIbot")))
         check("chặn private", not await allowed(_msg(1234, "private", "hi")))
-        # TriggeredMessage
         check(
             "mention kích hoạt", await trig(_msg(-100200, "supergroup", "giá @FuckingCoolAIbot?"))
         )
@@ -664,7 +647,6 @@ def t_filters():
             await trig(_msg(-100200, "supergroup", "tiếp theo?", reply_to=reply_bot)),
         )
         chat2 = _msg(-100200, "supergroup", "x").chat
-        # reply tin của người khác, không mention -> không trigger
         m_other = _mk_reply(chat2, "tin thành viên", "some_user")
         m_other = _msg(-100200, "supergroup", "thắc mắc", reply_to=m_other)
         check("reply tin người khác (không mention) -> false", not await trig(m_other))
@@ -684,14 +666,13 @@ class FakeTelegramSession:
         name = type(method).__name__
         data = method.model_dump(exclude_none=True)
         self.calls.append((name, data))
-        # Trả về kết quả tối thiểu (handler không dùng tới giá trị)
         if name == "GetMe":
             from aiogram.types import User
 
             return User(id=42, is_bot=True, first_name="Bot", username="FuckingCoolAIbot")
         return True
 
-    async def close(self) -> None:  # noqa: BLE001
+    async def close(self) -> None:
         return None
 
 
@@ -723,7 +704,7 @@ def t_e2e_handlers():
         async def ask(self, question, history=None, quoted=None):
             self.received.append({"q": question, "quoted": quoted})
             if question == "LONGTEXT":
-                await asyncio.sleep(0.05)  # cho typing loop kịp gửi chat action
+                await asyncio.sleep(0.05)
                 return Answer(text="y" * 8000, provider="gemini", searched=False, sources=[])
             if question == "SOURCES":
                 return Answer(
@@ -752,11 +733,8 @@ def t_e2e_handlers():
 
         session = FakeTelegramSession()
         bot = Bot(token="123:test", session=session)
-
         dp = Dispatcher()
-        dp.include_router(
-            build_message_router(s, orch, memory, limiter, stats)  # type: ignore[arg-type]
-        )
+        dp.include_router(build_message_router(s, orch, memory, limiter, stats))  # type: ignore[arg-type]
         dp.include_router(build_lifecycle_router(s))
 
         def mk_update(chat_id: int, chat_type: str, text: str, reply=None, update_id=1, uid=1):
@@ -765,7 +743,6 @@ def t_e2e_handlers():
                 message=_msg(chat_id, chat_type, text, reply_to=reply, uid=uid),
             )
 
-        # 1) /help trong group được phép
         up = mk_update(-100200, "supergroup", "/help", update_id=1)
         await dp.feed_update(bot, up)
         sent = [c for c in session.calls if c[0] == "SendMessage"]
@@ -777,7 +754,6 @@ def t_e2e_handlers():
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /HELP ignore_case", any("trợ lý AI" in c[1].get("text", "") for c in sent))
 
-        # 2) mention câu hỏi -> trả lời, ghi memory
         session.calls.clear()
         up = mk_update(-100200, "supergroup", "giá vàng @FuckingCoolAIbot?", update_id=2)
         await dp.feed_update(bot, up)
@@ -790,19 +766,16 @@ def t_e2e_handlers():
             memory.history_for(-100200) and memory.history_for(-100200)[-1]["role"] == "assistant",
         )
 
-        # 3) group KHÔNG được phép -> im lặng hoàn toàn
         session.calls.clear()
         up = mk_update(-999, "supergroup", "giá vàng @FuckingCoolAIbot?", update_id=3)
         await dp.feed_update(bot, up)
         check("E2E: group lạ im lặng (0 gọi API)", len(session.calls) == 0, str(session.calls))
 
-        # 4) private chat mention -> im lặng
         session.calls.clear()
         up = mk_update(5555, "private", "xin chào @FuckingCoolAIbot", update_id=4)
         await dp.feed_update(bot, up)
         check("E2E: private chat im lặng", len(session.calls) == 0, str(session.calls))
 
-        # 5) reply tin bot (không mention) -> đọc quoted
         session.calls.clear()
         chat = Chat(id=-100200, type="supergroup", title="G")
         reply_bot = _mk_reply(chat, "nội dung cũ của bot", "FuckingCoolAIbot")
@@ -816,7 +789,6 @@ def t_e2e_handlers():
             str(reply_texts[:1]),
         )
 
-        # 6) /status của admin
         session.calls.clear()
         chat = Chat(id=-100200, type="supergroup", title="G")
         admin_msg = Message(
@@ -830,18 +802,13 @@ def t_e2e_handlers():
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /status admin", any("Trạng thái bot" in c[1].get("text", "") for c in sent))
 
-        # 7) lifecycle: bot bị thêm vào group LẠ -> tự leave
         session.calls.clear()
         upd = ChatMemberUpdated(
             chat=Chat(id=-777, type="supergroup", title="Group Lạ"),
             from_user=User(id=9, is_bot=False, first_name="X"),
             date=datetime.now(timezone.utc),
-            old_chat_member=ChatMemberLeft(
-                user=User(id=99, is_bot=True, first_name="Bot"),
-            ),
-            new_chat_member=ChatMemberMember(
-                user=User(id=99, is_bot=True, first_name="Bot"),
-            ),
+            old_chat_member=ChatMemberLeft(user=User(id=99, is_bot=True, first_name="Bot")),
+            new_chat_member=ChatMemberMember(user=User(id=99, is_bot=True, first_name="Bot")),
         )
         await dp.feed_update(bot, Update(update_id=7, my_chat_member=upd))
         leaves = [c for c in session.calls if c[0] == "LeaveChat"]
@@ -851,7 +818,6 @@ def t_e2e_handlers():
             str(leaves),
         )
 
-        # 8) lifecycle: bot thêm vào group ĐÚNG allowlist -> không rời
         session.calls.clear()
         upd2 = ChatMemberUpdated(
             chat=Chat(id=-100200, type="supergroup", title="Group Đúng"),
@@ -867,7 +833,6 @@ def t_e2e_handlers():
             str(session.calls),
         )
 
-        # 9) /ask kèm câu hỏi -> orchestrator nhận đúng câu hỏi
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "/ask thời tiết hôm nay?", update_id=9)
@@ -896,7 +861,6 @@ def t_e2e_handlers():
             str(orch.received),
         )
 
-        # 10) /ask không có câu hỏi -> nhắc cách dùng
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "/ask", update_id=10)
@@ -905,7 +869,6 @@ def t_e2e_handlers():
         check("E2E: /ask trống -> hướng dẫn", any("hỏi gì" in c[1].get("text", "") for c in sent))
         check("E2E: /ask trống không gọi orchestrator", not orch.received)
 
-        # 11) /ask@TenBot (mention đúng bot) vẫn chạy
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "/ask@FuckingCoolAIbot giá vàng?", update_id=11)
@@ -916,7 +879,6 @@ def t_e2e_handlers():
             str(orch.received),
         )
 
-        # 12) /ask@BotKhác -> phải IM LẶNG (không trả lời lệnh của bot khác)
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "/ask@SomeOtherBot xin chào", update_id=12)
@@ -928,7 +890,6 @@ def t_e2e_handlers():
             str([c[0] for c in session.calls]),
         )
 
-        # 13) /status của người KHÔNG phải admin -> im lặng
         session.calls.clear()
         non_admin = Message(
             message_id=21,
@@ -941,7 +902,6 @@ def t_e2e_handlers():
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: /status non-admin im lặng", not sent, str(session.calls))
 
-        # 14) handle dài hơn username bot (@FuckingCoolAIbotXYZ) -> KHÔNG trigger
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "này @FuckingCoolAIbotXYZ là ai?", update_id=14)
@@ -952,7 +912,6 @@ def t_e2e_handlers():
             str([c[0] for c in session.calls]),
         )
 
-        # 15) lifecycle + LEARN_GROUP_ID_MODE=1: group lạ -> log, KHÔNG tự rời
         s_learn = Settings(learn_group_id_mode=True)
         session3 = FakeTelegramSession()
         bot3 = Bot(token="123:test", session=session3)
@@ -973,7 +932,6 @@ def t_e2e_handlers():
         )
         await session3.close()
 
-        # 16) lifecycle: bot bị thêm vào CHANNEL lạ -> tự rời luôn
         session.calls.clear()
         upd4 = ChatMemberUpdated(
             chat=Chat(id=-888, type="channel", title="Kênh Lạ"),
@@ -990,7 +948,6 @@ def t_e2e_handlers():
             str(leaves),
         )
 
-        # 17) mention trong CAPTION (tin kèm ảnh) -> vẫn hỏi được, mention bị strip
         session.calls.clear()
         orch.received.clear()
         cap_msg = Message(
@@ -1010,8 +967,6 @@ def t_e2e_handlers():
         sent = [c for c in session.calls if c[0] == "SendMessage"]
         check("E2E: caption có tin trả lời", any("TRẢ LỜI:" in c[1].get("text", "") for c in sent))
 
-        # 18) group bật Topics + câu trả lời dài -> các phần gửi tiếp phải kèm
-        # message_thread_id của topic gốc (không rơi vào General)
         session.calls.clear()
         orch.received.clear()
         topic_msg = Message(
@@ -1030,7 +985,6 @@ def t_e2e_handlers():
             len(extra_parts) >= 1 and len(sent) >= 2,
             str(len(sent)),
         )
-        # phần đầu là reply (aiogram tự giữ topic), phần sau phải có thread id
         check(
             "E2E: topic — mọi phần sau đều có message_thread_id",
             all(c[1].get("message_thread_id") == 555 for c in extra_parts),
@@ -1042,7 +996,6 @@ def t_e2e_handlers():
             str(actions[:2]),
         )
 
-        # 19) Rate limit: max=2/phút -> 2 trả lời, 2 bị chặn, chỉ 1 warning
         class FakeOrchCount:
             def __init__(self) -> None:
                 self.calls = 0
@@ -1063,9 +1016,7 @@ def t_e2e_handlers():
         for upd_id, qid in enumerate(("rl1", "rl2", "rl3", "rl4"), start=301):
             await dp_rl.feed_update(
                 bot_rl,
-                mk_update(
-                    -100200, "supergroup", f"{qid} @FuckingCoolAIbot", update_id=upd_id
-                ),
+                mk_update(-100200, "supergroup", f"{qid} @FuckingCoolAIbot", update_id=upd_id),
             )
         sent_rl = [c for c in session_rl.calls if c[0] == "SendMessage"]
         ans_rl = [c for c in sent_rl if c[1].get("text", "").startswith("RC:")]
@@ -1083,9 +1034,7 @@ def t_e2e_handlers():
         session_rl.calls.clear()
         await dp_rl.feed_update(
             bot_rl,
-            mk_update(
-                -100200, "supergroup", "rlx @FuckingCoolAIbot", update_id=305, uid=999
-            ),
+            mk_update(-100200, "supergroup", "rlx @FuckingCoolAIbot", update_id=305, uid=999),
         )
         sent_rl2 = [c for c in session_rl.calls if c[0] == "SendMessage"]
         check(
@@ -1095,7 +1044,6 @@ def t_e2e_handlers():
         )
         await session_rl.close()
 
-        # 20) AllProvidersFailed -> thông báo thân thiện, KHÔNG ghi memory
         class OrchestrateFailAll:
             async def ask(self, question, history=None, quoted=None):
                 raise AllProvidersFailed("all providers dead")
@@ -1119,7 +1067,6 @@ def t_e2e_handlers():
         check("E2E: AllProvidersFailed -> không ghi memory", mem_f.history_for(-100200) == [])
         await session_f.close()
 
-        # 21) Lỗi lạ từ orchestrator -> thông báo tổng quát, không crash, không ghi memory
         class OrchestrateBoom:
             async def ask(self, question, history=None, quoted=None):
                 raise RuntimeError("kaboom")
@@ -1143,7 +1090,6 @@ def t_e2e_handlers():
         check("E2E: lỗi lạ -> không ghi memory", mem_b.history_for(-100200) == [])
         await session_b.close()
 
-        # 22) Orchestrator trả về answer rỗng -> thông báo rõ
         class OrchestrateEmpty:
             async def ask(self, question, history=None, quoted=None):
                 return Answer(text="", provider="gemini")
@@ -1165,7 +1111,6 @@ def t_e2e_handlers():
         )
         await session_e.close()
 
-        # 23) Có nguồn web -> tin nguồn gửi HTML, tiêu đề bấm được, không in URL dài
         session.calls.clear()
         orch.received.clear()
         up = mk_update(-100200, "supergroup", "SOURCES @FuckingCoolAIbot", update_id=23)
@@ -1212,7 +1157,7 @@ def t_ai_router_mock():
     STATE["always_400_n"] = 0
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *a):  # noqa: D401
+        def log_message(self, *a):
             pass
 
         def _send(self, obj, code=200):
@@ -1229,7 +1174,6 @@ def t_ai_router_mock():
             model = req["model"]
             tools = bool(req.get("tools"))
             if model == "no-id":
-                # Model trả tool call KHÔNG có trường "id" (một số API thật bỏ sót)
                 last = req["messages"][-1]
                 if last["role"] == "tool":
                     STATE["no_id"]["tool_call_id"] = last.get("tool_call_id")
@@ -1276,7 +1220,6 @@ def t_ai_router_mock():
                 STATE["plain"] += 1
                 return self._send({"choices": [{"message": {"content": "plain answer"}}]})
             if model == "loop-tools":
-                # model "kẹt vòng lặp": có tools thì gọi mãi, không tools mới trả lời
                 STATE["loop_n"] += 1
                 STATE["loop_with_tools"].append(tools)
                 if not tools:
@@ -1306,7 +1249,6 @@ def t_ai_router_mock():
                         }
                     )
                 return self._send({"choices": [{"message": {"content": "loop-plain-answer"}}]})
-            # model tool-user
             STATE["groq"] += 1
             last = req["messages"][-1]
             if last["role"] == "user":
@@ -1359,8 +1301,6 @@ def t_ai_router_mock():
             return "Kết quả tìm kiếm: 1. A"
 
         async def run():
-            # Một lượt fan-out bất thường không được phép chạy hàng loạt tool và
-            # đốt quota; router phải chuyển sang retry plain ngay lập tức.
             class FanOutProvider:
                 name = "fanout"
                 supports_tools = True
@@ -1392,7 +1332,6 @@ def t_ai_router_mock():
                 f"text={fanout_text} calls={fanout_executed}",
             )
 
-            # fallback 429 -> tool-loop -> FINAL
             r1 = AIProviderRouter(
                 [
                     OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5),
@@ -1406,14 +1345,12 @@ def t_ai_router_mock():
                 f"{text}/{prov}",
             )
 
-            # provider không hỗ trợ tools -> retry plain, và bị tắt tools VĨNH VIỄN
             p_nt = OpenAICompatProvider("nt", base, "k", "no-tools", timeout=5)
             r2 = AIProviderRouter([p_nt])
-            text2, prov2 = await r2.complete([{"role": "user", "content": "hi"}], tools, ex)
+            text2, _ = await r2.complete([{"role": "user", "content": "hi"}], tools, ex)
             check("retry không tools", text2 == "plain answer")
             check("provider không tools bị tắt vĩnh viễn", p_nt.supports_tools is False)
 
-            # tất cả 429 -> AllProvidersFailed
             r3 = AIProviderRouter([OpenAICompatProvider("g", base, "k", "gemini-429", timeout=5)])
             try:
                 await r3.complete([{"role": "user", "content": "hi"}], tools, ex)
@@ -1421,25 +1358,17 @@ def t_ai_router_mock():
             except AllProvidersFailed:
                 check("AllProvidersFailed ném", True)
 
-            # model kẹt vòng lặp gọi tool: đúng max_tool_rounds lượt thực thi,
-            # sau đó retry KHÔNG tools (1 lần) và KHÔNG tắt tools vĩnh viễn
             STATE["loop_n"] = 0
             STATE["loop_with_tools"] = []
             p_loop = OpenAICompatProvider("loop", base, "k", "loop-tools", timeout=5)
             r4 = AIProviderRouter([p_loop], max_tool_rounds=2)
             text4, prov4 = await r4.complete([{"role": "user", "content": "hi"}], tools, ex)
-            # 3 lượt gọi có tools (vòng 0,1,2 — vòng 2 dừng trước khi thực thi lượt 3)
-            # + 1 lượt retry không tools = 4 request
             check(
                 "tool-loop: retry không tools sau khi đủ vòng",
                 text4 == "loop-plain-answer" and prov4 == "loop" and STATE["loop_n"] == 4,
                 f"{text4} n={STATE['loop_n']}",
             )
-            check(
-                "tool-loop: supports_tools vẫn True (chỉ retry 1 lần)",
-                p_loop.supports_tools is True,
-            )
-            # request cuối cùng (retry) không kèm tools
+            check("tool-loop: supports_tools vẫn True (chỉ retry 1 lần)", p_loop.supports_tools is True)
             check(
                 "tool-loop: request retry không có tools",
                 STATE["loop_with_tools"]
@@ -1452,8 +1381,6 @@ def t_ai_router_mock():
                 STATE.get("loop_retry_has_tool_msg") is True,
             )
 
-            # Model trả tool call KHÔNG có "id": router phải tự sinh id (id rỗng
-            # gửi lại API thật sẽ bị 400 ngay vòng kế tiếp)
             p_noid = OpenAICompatProvider("noid", base, "k", "no-id", timeout=5)
             r5 = AIProviderRouter([p_noid])
             text5, prov5 = await r5.complete([{"role": "user", "content": "hi"}], tools, ex)
@@ -1469,13 +1396,10 @@ def t_ai_router_mock():
             )
             check(
                 "no-id: id khớp giữa assistant message và tool message",
-                STATE["no_id"].get("tool_call_id")
-                in (STATE["no_id"].get("assistant_ids") or []),
+                STATE["no_id"].get("tool_call_id") in (STATE["no_id"].get("assistant_ids") or []),
                 str(STATE["no_id"]),
             )
 
-            # Provider 400 "unsupported tools" ở CẢ pass có tools lẫn pass không
-            # tools -> phải dừng sau 2 lần gọi (không vòng lặp) và sang provider kế.
             STATE["always_400_n"] = 0
             p_bad = OpenAICompatProvider("bad", base, "k", "always-400", timeout=5)
             p_ok = OpenAICompatProvider("ok", base, "k", "groq", timeout=5)
@@ -1516,24 +1440,13 @@ def t_search_backends():
     import httpx
 
     import app.search.searxng_backend as sx
-    import app.search.tavily_backend as tb
     from app.config import Settings
 
     seen: dict = {}
-
-    def tavily_handler(request: httpx.Request) -> httpx.Response:
-        seen["auth"] = request.headers.get("authorization")
-        seen["body"] = json.loads(request.content)
-        return httpx.Response(
-            200,
-            json={"results": [{"title": "T", "url": "https://x.test/1", "content": "c"}]},
-            request=request,
-        )
-
     sx_payload = {
         "results": [
             {"title": "S", "url": "https://y.test/2", "content": "cc"},
-            {"url": ""},  # rác — phải bị bỏ qua
+            {"url": ""},
         ]
     }
     sx_status = 200
@@ -1544,8 +1457,6 @@ def t_search_backends():
         return httpx.Response(sx_status, json=sx_payload, request=request)
 
     class _PatchedClient(httpx.AsyncClient):
-        """Client mock: intercept mọi request, ghi lại vào `seen_handler`."""
-
         _handler = None
 
         def __init__(self, **kwargs) -> None:
@@ -1554,38 +1465,7 @@ def t_search_backends():
 
     async def run():
         nonlocal sx_payload, sx_status
-        orig = httpx.AsyncClient
 
-        # --- Tavily: key phải đi theo header Bearer (docs hiện hành)
-        _PatchedClient._handler = tavily_handler
-        tb.httpx.AsyncClient = _PatchedClient
-        try:
-            res = await tb.search_tavily("test query", Settings(tavily_api_key="tvly-test"), 5)
-        finally:
-            tb.httpx.AsyncClient = orig
-        check(
-            "tavily: parse kết quả",
-            len(res) == 1 and res[0]["url"] == "https://x.test/1",
-            str(res),
-        )
-        check(
-            "tavily: Authorization Bearer <key>",
-            seen.get("auth") == "Bearer tvly-test",
-            str(seen.get("auth")),
-        )
-        check(
-            "tavily: body KHÔNG còn trường api_key (dạng cũ đã bị API từ chối)",
-            "api_key" not in (seen.get("body") or {}),
-            str(seen.get("body")),
-        )
-        try:
-            await tb.search_tavily("q", Settings(tavily_api_key=""), 5)
-            check("tavily: thiếu key bị chặn sớm", False)
-        except RuntimeError:
-            check("tavily: thiếu key bị chặn sớm", True)
-
-        # --- SearXNG: JSON API và lỗi từng engine, không cần proxy/IP giả
-        seen.pop("auth", None)
         _PatchedClient._handler = searxng_handler
         sx_settings = Settings(searxng_url="http://sx.local")
         with patch.object(sx.httpx, "AsyncClient", _PatchedClient):
@@ -1667,18 +1547,14 @@ def t_main_startup():
     from app import main as m_main
     from app.config import Settings
 
-    # Thiếu BOT_TOKEN -> phải dừng với code 1 TRƯỚC KHI gọi API Telegram.
     s1 = Settings(bot_token="", gemini_api_key="gk", groq_api_key="", openrouter_api_key="")
     code1 = asyncio.run(m_main._amain(s1))
     check("thiếu BOT_TOKEN -> exit 1 (fail-fast)", code1 == 1, str(code1))
 
-    # Có token nhưng KHÔNG có AI key -> dừng với code 1 trước khi gọi mạng.
     s2 = Settings(bot_token="123:test", gemini_api_key="", groq_api_key="", openrouter_api_key="")
     code2 = asyncio.run(m_main._amain(s2))
     check("thiếu mọi AI key -> exit 1 (fail-fast)", code2 == 1, str(code2))
 
-    # Token sai cú pháp làm Bot() ném lỗi trước get_me: vẫn phải trả code 1 sạch,
-    # không tạo provider client rồi rò session và không gọi mạng.
     s3 = Settings(bot_token="garbage", gemini_api_key="gk")
     code3 = asyncio.run(m_main._amain(s3))
     check("BOT_TOKEN sai cú pháp -> exit 1 (fail-fast)", code3 == 1, str(code3))
