@@ -25,7 +25,6 @@ luồng free-first, fallback AI theo capability và chỉ xử lý message trong
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của chính bot.
 - Context hội thoại ngắn hạn giữ trong RAM theo `chat_id`; không có database.
 - Text route free-tier-first theo `TEXT_PROVIDER_ORDER`; default: NVIDIA NIM → Groq → Cloudflare → OpenRouter → Gemini. NVIDIA chỉ tham gia khi có `NVIDIA_NIM_API_KEY` hợp lệ.
-- NVIDIA text mặc định dùng Nemotron 3.5 Lightning 30B-A3B với thinking bật nhưng có token budget để cân bằng chất lượng/latency.
 - Vision route tách riêng theo `VISION_PROVIDER_ORDER`; default vẫn là Groq Qwen 3.8 → Cloudflare Gemma 4 → Groq Qwen 3.6 → Gemini 3.8 Flash. NVIDIA vision có adapter nhưng là opt-in.
 - Nhận Telegram photo hoặc JPEG/PNG/WebP gửi dạng document.
 - Flow Telegram hiện tại có thể lấy ảnh từ **message hiện tại + message được reply** (tối đa 2 ảnh thực tế).
@@ -116,17 +115,13 @@ Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc giá trị s
 
 ### Nâng cấp deployment đã có `.env`
 
-`.env`/environment **ưu tiên hơn default trong source** và script sync `.env` giữ nguyên các giá trị cũ, nên
-`git pull` không tự đổi model NVIDIA đã được pin trước đó. Sau khi nâng cấp, đối chiếu `.env.example` và cập nhật
-ít nhất các default cần thiết:
+`.env`/environment **ưu tiên hơn default trong source**, nên `git pull` không tự thay các giá trị cũ. Sau khi
+nâng cấp, đối chiếu `.env.example` và cập nhật ít nhất các default cần thiết:
 
 ```env
 NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_NIM_TEXT_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
+NVIDIA_NIM_TEXT_MODEL=deepseek-ai/deepseek-v4-flash-0731
 NVIDIA_NIM_VISION_MODEL=google/gemma-4-31b-it
-NVIDIA_NIM_ENABLE_THINKING=1
-NVIDIA_NIM_MAX_TOKENS=4096
-NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048
 GROQ_MODEL=openai/gpt-oss-120b
 OPENROUTER_MODEL=openrouter/free
 GEMINI_MODEL=gemini-3.8-flash
@@ -140,12 +135,8 @@ MAX_CONTEXT_TURNS=6
 MAX_TOOL_ROUNDS=2
 ```
 
-Nếu `.env` còn `NVIDIA_NIM_TEXT_MODEL=deepseek-ai/deepseek-v4-flash-0731`, deployment sẽ tiếp tục dùng model
-đó cho tới khi bạn đổi giá trị. Không copy đè secret từ `.env.example`; chỉ cập nhật key cần thiết rồi
-rebuild/recreate bot.
-
 Deployment cũ chỉ bắt đầu dùng NVIDIA khi đồng thời có `NVIDIA_NIM_API_KEY` và thêm `nvidia` vào
-`TEXT_PROVIDER_ORDER`.
+`TEXT_PROVIDER_ORDER`. Không copy đè secret từ `.env.example`; chỉ cập nhật key cần thiết rồi rebuild/recreate bot.
 
 `X_FETCH_ENABLED=1` không cần API key. Set `0` nếu muốn rollback specialized X reader và đưa X URL về generic
 reader. Không tăng `MAX_TOOL_ROUNDS` để chữa fetch/search failure; production baseline của repo là `2`.
@@ -229,13 +220,10 @@ Chi tiết: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 
 ### 7.2 Text provider pool
 
-| Biến | Default model / value | Vai trò |
+| Biến | Default model | Vai trò |
 |---|---|---|
-| `NVIDIA_NIM_API_KEY` / `NVIDIA_NIM_TEXT_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` | Text primary khi có key; hosted Free Endpoint chỉ dành cho trial/dev/test nếu chưa có entitlement production |
+| `NVIDIA_NIM_API_KEY` / `NVIDIA_NIM_TEXT_MODEL` | `deepseek-ai/deepseek-v4-flash-0731` | Text primary khi có key; hosted Free Endpoint chỉ dành cho trial/dev/test nếu chưa có entitlement production |
 | `NVIDIA_NIM_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Endpoint NIM; có thể đổi sang deployment phù hợp |
-| `NVIDIA_NIM_ENABLE_THINKING` | `1` | Giữ reasoning của Nemotron Lightning bật thay vì tắt toàn cục |
-| `NVIDIA_NIM_MAX_TOKENS` | `4096` | Trần tổng reasoning + visible answer cho Lightning |
-| `NVIDIA_NIM_THINKING_TOKEN_BUDGET` | `2048` | Trần hidden reasoning cho Lightning để giảm runaway latency |
 | `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Text fallback độc lập đầu tiên |
 | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Cloudflare text fallback |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
@@ -246,13 +234,8 @@ Startup yêu cầu **ít nhất một** text provider khả dụng. `configured_
 credential/model phù hợp vừa nằm trong `TEXT_PROVIDER_ORDER`.
 
 NVIDIA adapter dùng OpenAI-compatible Chat Completions, ép `stream=false`, và coi HTTP `202` là trạng thái
-pending/transient để fallback thay vì polling trong request Telegram. Nemotron Lightning giữ thinking bật nhưng
-có budget 2048 token trong tổng 4096 token; các field này chỉ được gửi cho đúng default Lightning text model,
-không ép lên custom NVIDIA text model hay vision model. `429`/`Retry-After`, `5xx`, `401/403` tiếp tục dùng
-health/cooldown chung của router.
-
-Network exception giờ ghi rõ loại lỗi và elapsed time, ví dụ `ReadTimeout after 60.01s`, thay vì log mơ hồ
-`lỗi mạng ()`. `REQUEST_TIMEOUT_SEC` vẫn mặc định 60 giây; không nên tăng timeout chỉ để che một primary quá chậm.
+pending/transient để fallback thay vì polling trong request Telegram. `429`/`Retry-After`, `5xx`, `401/403`
+tiếp tục dùng health/cooldown chung của router.
 
 ### 7.3 Vision provider pool
 
@@ -348,7 +331,7 @@ Router còn có safety cap nội bộ tối đa 8 tool calls cho một completio
 ### Text
 
 ```text
-NVIDIA NIM / nvidia/nemotron-3.5-lightning-30b-a3b
+NVIDIA NIM / deepseek-ai/deepseek-v4-flash-0731
   → Groq / openai/gpt-oss-120b
   → Cloudflare / @cf/zai-org/glm-4.7-flash
   → OpenRouter / openrouter/free
@@ -466,10 +449,6 @@ docker compose exec -T bot python - <<'PY'
 from app.config import Settings
 s = Settings()
 print("TEXT_PROVIDERS    =", s.configured_provider_names)
-print("NVIDIA_MODEL      =", s.nvidia_nim_text_model)
-print("NVIDIA_THINKING   =", s.nvidia_nim_enable_thinking)
-print("NVIDIA_MAX_TOKENS =", s.nvidia_nim_max_tokens)
-print("NVIDIA_THINK_BUDG =", s.nvidia_nim_thinking_token_budget)
 print("SEARCH_BACKEND    =", s.search_backend)
 print("X_FETCH_ENABLED   =", s.x_fetch_enabled)
 print("MAX_CONTEXT_TURNS =", s.max_context_turns)
@@ -480,7 +459,7 @@ PY
 ```
 
 Nếu dùng NVIDIA hosted trial endpoint, chỉ chạy trong dev/test/evaluation trừ khi đã có entitlement production
-riêng. Kỳ vọng runtime baseline: Lightning + bounded thinking, `X_FETCH_ENABLED=True`, `MAX_TOOL_ROUNDS=2`.
+riêng. Kỳ vọng runtime baseline: `X_FETCH_ENABLED=True`, `MAX_TOOL_ROUNDS=2`.
 
 Nếu dùng SearXNG:
 
@@ -533,7 +512,6 @@ Workflow [Audit checks](.github/workflows/audit.yml) chạy khi push, pull reque
 Coverage quan trọng:
 
 - `tests/test_nvidia_nim.py` — NIM config, primary routing, non-streaming tool flow, 202 fallback, 429 cooldown và vision opt-in.
-- `tests/test_nvidia_latency.py` — Lightning defaults, bounded reasoning payload và network timeout diagnostics.
 - `tests/test_search_backend_auto.py` — unified search policy/fallback và việc loại Tavily.
 - `tests/test_image_search.py` — image normalization/fallback/tool payload/Telegram delivery.
 - `tests/test_free_routing.py` — free-tier-first defaults, provider order và metadata isolation.
@@ -580,7 +558,6 @@ app/
 tests/
 ├── run_tests.py
 ├── test_nvidia_nim.py
-├── test_nvidia_latency.py
 ├── test_search_backend_auto.py
 ├── test_image_search.py
 ├── test_free_routing.py

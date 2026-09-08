@@ -20,7 +20,6 @@ from .capabilities import ProviderCapabilities
 from .cloudflare import make_cloudflare_provider
 from .gemini import make_gemini_provider
 from .groq import make_groq_provider
-from .nvidia import make_nvidia_provider
 from .openrouter import make_openrouter_provider
 
 logger = logging.getLogger(__name__)
@@ -239,8 +238,6 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     providers: list[OpenAICompatProvider] = []
 
     text: dict[str, OpenAICompatProvider] = {}
-    if settings.nvidia_nim_api_key and settings.nvidia_nim_text_model:
-        text["nvidia"] = make_nvidia_provider(settings)
     if settings.gemini_api_key and settings.gemini_model:
         text["gemini"] = make_gemini_provider(settings)
     if settings.groq_api_key and settings.groq_model:
@@ -265,13 +262,6 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
 
     if settings.vision_enabled:
         vision: dict[str, OpenAICompatProvider] = {}
-        if settings.nvidia_nim_api_key and settings.nvidia_nim_vision_model:
-            vision["nvidia"] = make_nvidia_provider(
-                settings,
-                name="nvidia_vision",
-                model=settings.nvidia_nim_vision_model,
-                vision=True,
-            )
         if settings.gemini_api_key and settings.gemini_vision_model:
             vision["gemini"] = make_gemini_provider(
                 settings,
