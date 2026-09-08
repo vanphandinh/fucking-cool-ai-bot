@@ -20,7 +20,7 @@ The default base URL is configurable so the same adapter can point to NVIDIA-hos
 The default text model is `nvidia/nemotron-3.5-lightning-30b-a3b`. It replaces the earlier DeepSeek V4 Flash default because the bot prioritizes interactive Telegram latency while still requiring reliable tool calling. Thinking stays enabled by default; it is bounded instead of disabled globally:
 
 - `NVIDIA_NIM_ENABLE_THINKING=1` keeps reasoning available for multi-step and tool-heavy requests.
-- `NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048` caps the hidden reasoning portion.
+- `NVIDIA_NIM_THINKING_TOKEN_BUDGET=2048` is the bot's backwards-compatible config name for the reasoning limit. For Nemotron 3.5 Lightning, the adapter sends this value to NVIDIA as the supported API field `reasoning_budget`; it never sends the unsupported `thinking_token_budget` field.
 - `NVIDIA_NIM_MAX_TOKENS=4096` caps reasoning plus the visible answer.
 
 These generation controls are applied only when the selected NVIDIA text model is the repository's Nemotron 3.5 Lightning default. A custom NVIDIA text model or the vision slot is not forced to accept Lightning-specific request fields.
@@ -43,6 +43,18 @@ Then rebuild/recreate the bot container and verify the effective settings. Do no
 ## Runtime behavior
 
 The NVIDIA adapter explicitly sends `stream=false` because the bot consumes a complete JSON Chat Completions response rather than SSE streaming.
+
+For the default Lightning text model with thinking enabled, the outbound generation controls are effectively:
+
+```json
+{
+  "max_tokens": 4096,
+  "chat_template_kwargs": {"enable_thinking": true},
+  "reasoning_budget": 2048
+}
+```
+
+If `NVIDIA_NIM_ENABLE_THINKING=0`, the adapter sends `enable_thinking=false` and omits `reasoning_budget` entirely.
 
 A `202 Accepted` response is treated as a transient pending condition. The request falls through to the next provider instead of polling inside the Telegram request lifecycle. Standard `429`, `Retry-After`, `5xx`, `401`, and `403` behavior is handled by the shared provider health layer.
 
@@ -110,7 +122,8 @@ The application does not detect account billing or licensing state.
 CI must stay fully offline with mocked provider responses. Required regression coverage includes:
 
 - NVIDIA primary text order and missing-key fallback;
-- Nemotron Lightning default and bounded-reasoning payload;
+- Nemotron Lightning default and bounded-reasoning payload using NVIDIA's supported `reasoning_budget` field;
+- regression coverage that rejects the unsupported `thinking_token_budget` outbound field;
 - concrete network timeout diagnostics;
 - explicit `stream=false`;
 - `202` transient handling;
