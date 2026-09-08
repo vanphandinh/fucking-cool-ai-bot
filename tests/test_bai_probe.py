@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 import unittest
+
+import httpx
 
 
 ROOT = Path(__file__).parents[1]
@@ -22,6 +25,39 @@ class BaiProbeTests(unittest.TestCase):
         self.assertNotIn("enable_thinking", payload)
         self.assertNotIn("reasoning_effort", payload)
         self.assertNotIn("thinking", payload)
+
+    def test_tool_payload_explicitly_requests_echo_probe(self) -> None:
+        module = _load_probe()
+        payload = module.build_chat_payload("qwen3.8-flash", include_tool=True)
+        self.assertIn("echo_probe", payload["messages"][-1]["content"])
+
+    def test_tool_probe_fails_when_model_does_not_call_tool(self) -> None:
+        module = _load_probe()
+
+        class TextOnlyClient:
+            async def post(self, _path: str, json: dict) -> httpx.Response:
+                request = httpx.Request("POST", "https://api.b.ai/v1/chat/completions", json=json)
+                return httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {"message": {"role": "assistant", "content": "plain text"}}
+                        ]
+                    },
+                    request=request,
+                )
+
+        records, ok = asyncio.run(
+            module._probe_one(
+                TextOnlyClient(),
+                "qwen3.8-flash",
+                tools=True,
+                image_data_url=None,
+                experimental_reasoning=False,
+            )
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any(record.get("probe") == "tool_call_missing" for record in records))
 
     def test_reasoning_overrides_are_explicitly_experimental(self) -> None:
         module = _load_probe()
