@@ -182,7 +182,8 @@ async def _fetch_fxtwitter(
     try:
         code = int(raw_code or 0)
     except (TypeError, ValueError) as exc:
-        raise XFetchError(f"FxTwitter API returned invalid code type: {type(raw_code).__name__}") from exc
+        code_type = type(raw_code).__name__
+        raise XFetchError(f"FxTwitter API returned invalid code type: {code_type}") from exc
     if code != 200:
         raise XFetchError(f"FxTwitter API code={raw_code}")
     if mode == "x_thread":
