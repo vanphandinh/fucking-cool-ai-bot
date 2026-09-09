@@ -1,4 +1,4 @@
-"""Regression tests for the B.AI free-model provider integration."""
+"""Regression tests for the B.AI provider integration."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import unittest
 import httpx
 
 import app.ai.bai as bai
-from app.ai.router import build_provider_router
 from app.config import Settings
 
 
@@ -87,80 +86,28 @@ class BaiProviderModuleTests(unittest.TestCase):
             asyncio.run(provider.aclose())
 
 
-class BaiRoutingTests(unittest.TestCase):
-    def test_bai_config_is_ignored_when_bai_is_removed_from_order(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            bai_api_key="b",
-            bai_text_model="not-promoted",
-            bai_vision_model="hy3",
-            groq_api_key="g",
-            text_provider_order="groq",
-            vision_enabled=False,
-        )
-        router = build_provider_router(settings)
-        try:
-            self.assertEqual(
-                [provider.name for provider in router.capable_providers(requires_vision=False)],
-                ["groq"],
-            )
-        finally:
-            asyncio.run(_close_router(router))
+class BaiOnlyConfigTests(unittest.TestCase):
+    def test_only_bai_text_provider_is_reported(self) -> None:
+        settings = Settings(_env_file=None, bai_api_key="b")
+        self.assertEqual(settings.configured_provider_names, ["bai"])
 
-    def test_bai_is_first_when_key_is_present_in_default_order(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            bai_api_key="b",
-            gemini_api_key="m",
-            groq_api_key="g",
-            vision_enabled=False,
-        )
-        self.assertEqual(settings.configured_provider_names, ["bai", "gemini", "groq"])
-        router = build_provider_router(settings)
-        try:
-            self.assertEqual(
-                [provider.name for provider in router.capable_providers(requires_vision=False)],
-                ["bai", "gemini", "groq"],
-            )
-            self.assertEqual(
-                [provider.model for provider in router.capable_providers(requires_vision=False)],
-                ["qwen3.8-flash", "gemini-3.8-flash", "openai/gpt-oss-120b"],
-            )
-        finally:
-            asyncio.run(_close_router(router))
+    def test_missing_bai_key_reports_no_text_provider(self) -> None:
+        settings = Settings(_env_file=None)
+        self.assertEqual(settings.configured_provider_names, [])
 
-    def test_bai_vision_slot_is_filtered_above_one_image(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            bai_api_key="b",
-            gemini_api_key="g",
-            vision_provider_order="bai,gemini",
-        )
-        self.assertEqual(settings.configured_vision_provider_names, ["bai", "gemini"])
-        router = build_provider_router(settings)
-        try:
-            self.assertEqual(
-                [
-                    provider.name
-                    for provider in router.capable_providers(
-                        requires_vision=True,
-                        image_count=1,
-                    )
-                ],
-                ["bai_vision", "gemini_vision"],
-            )
-            self.assertEqual(
-                [
-                    provider.name
-                    for provider in router.capable_providers(
-                        requires_vision=True,
-                        image_count=2,
-                    )
-                ],
-                ["gemini_vision"],
-            )
-        finally:
-            asyncio.run(_close_router(router))
+    def test_only_bai_vision_provider_is_reported(self) -> None:
+        settings = Settings(_env_file=None, bai_api_key="b", vision_enabled=True)
+        self.assertEqual(settings.configured_vision_provider_names, ["bai"])
+
+    def test_vision_disable_switch_reports_no_vision_provider(self) -> None:
+        settings = Settings(_env_file=None, bai_api_key="b", vision_enabled=False)
+        self.assertEqual(settings.configured_vision_provider_names, [])
+
+    def test_bai_defaults_remain_qwen_flash(self) -> None:
+        settings = Settings(_env_file=None)
+        self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
+        self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
+        self.assertEqual(settings.max_images_per_request, 1)
 
 
 class BaiWireContractTests(unittest.IsolatedAsyncioTestCase):
@@ -262,11 +209,6 @@ def _search_tool() -> dict:
             "parameters": {"type": "object", "properties": {}},
         },
     }
-
-
-async def _close_router(router) -> None:
-    for provider in router.providers:
-        await provider.aclose()
 
 
 if __name__ == "__main__":

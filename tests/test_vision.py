@@ -77,9 +77,9 @@ class CapabilityTests(unittest.TestCase):
         self.assertFalse(cap.accepts(requires_vision=True, image_count=1))
 
     def test_vision_slot_enforces_image_limit(self) -> None:
-        cap = ProviderCapabilities(route="vision", supports_vision=True, max_images=3)
-        self.assertTrue(cap.accepts(requires_vision=True, image_count=3))
-        self.assertFalse(cap.accepts(requires_vision=True, image_count=4))
+        cap = ProviderCapabilities(route="vision", supports_vision=True, max_images=1)
+        self.assertTrue(cap.accepts(requires_vision=True, image_count=1))
+        self.assertFalse(cap.accepts(requires_vision=True, image_count=2))
         self.assertFalse(cap.accepts(requires_vision=False, image_count=0))
 
     def test_router_separates_text_and_vision_slots(self) -> None:
@@ -88,11 +88,11 @@ class CapabilityTests(unittest.TestCase):
                 self.capabilities = ProviderCapabilities(route, vision, max_images)
 
         text = P("text", False, 0)
-        vision = P("vision", True, 3)
+        vision = P("vision", True, 1)
         router = AIProviderRouter([text, vision])  # type: ignore[list-item]
         self.assertEqual(router.capable_providers(requires_vision=False), [text])
         self.assertEqual(router.capable_providers(requires_vision=True, image_count=1), [vision])
-        self.assertEqual(router.capable_providers(requires_vision=True, image_count=4), [])
+        self.assertEqual(router.capable_providers(requires_vision=True, image_count=2), [])
 
 
 class HealthTests(unittest.TestCase):
@@ -118,30 +118,15 @@ class HealthTests(unittest.TestCase):
 
 class VisionConfigTests(unittest.TestCase):
     def test_defaults_and_disable_switch(self) -> None:
-        settings = Settings(gemini_api_key="x")
-        self.assertEqual(settings.max_images_per_request, 3)
-        self.assertIn("gemini", settings.configured_vision_provider_names)
-        disabled = Settings(gemini_api_key="x", vision_enabled=False)
+        settings = Settings(_env_file=None, bai_api_key="x")
+        self.assertEqual(settings.max_images_per_request, 1)
+        self.assertEqual(settings.configured_vision_provider_names, ["bai"])
+        disabled = Settings(_env_file=None, bai_api_key="x", vision_enabled=False)
         self.assertEqual(disabled.configured_vision_provider_names, [])
 
-    def test_reported_vision_providers_match_effective_order(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            gemini_api_key="g",
-            groq_api_key="q",
-            vision_provider_order="groq_qwen36,gemini",
-        )
-        self.assertEqual(
-            settings.configured_vision_provider_names,
-            ["groq_qwen36", "gemini"],
-        )
-
-        excluded = Settings(
-            _env_file=None,
-            gemini_api_key="g",
-            vision_provider_order="cloudflare",
-        )
-        self.assertEqual(excluded.configured_vision_provider_names, [])
+    def test_missing_bai_key_has_no_vision_provider(self) -> None:
+        settings = Settings(_env_file=None)
+        self.assertEqual(settings.configured_vision_provider_names, [])
 
 
 class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
@@ -151,11 +136,7 @@ class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
         def respond(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 400,
-                json={
-                    "error": {
-                        "message": f"invalid image data:image/png;base64,{secret}"
-                    }
-                },
+                json={"error": {"message": f"invalid image data:image/png;base64,{secret}"}},
             )
 
         provider = OpenAICompatProvider("vision", "https://example.org/v1", "fake", "fake")
