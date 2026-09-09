@@ -18,6 +18,7 @@ from .core.context import ChatMemory
 from .core.orchestrator import Orchestrator
 from .core.rate_limiter import RateLimiter
 from .core.stats import Stats
+from .search.crawl4ai_client import close_crawl4ai_client
 from .search.runtime import close_search_runtimes
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,12 @@ async def _amain(settings: Settings) -> int:
         )
     if settings.search_backend == "searxng" and not settings.searxng_url.strip():
         logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
+    if settings.crawl4ai_enabled and not settings.crawl4ai_url.strip():
+        logger.warning("CRAWL4AI_ENABLED=1 nhưng CRAWL4AI_URL đang trống; dùng generic reader.")
+    if settings.crawl4ai_enabled and not settings.crawl4ai_api_token.strip():
+        logger.warning(
+            "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
+        )
 
     try:
         bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
@@ -128,10 +135,13 @@ async def _amain(settings: Settings) -> int:
             await bot.session.close()
         finally:
             try:
-                await close_search_runtimes()
+                await close_crawl4ai_client()
             finally:
-                if provider_router is not None:
-                    await _close_providers(provider_router)
+                try:
+                    await close_search_runtimes()
+                finally:
+                    if provider_router is not None:
+                        await _close_providers(provider_router)
 
 
 def main() -> None:
