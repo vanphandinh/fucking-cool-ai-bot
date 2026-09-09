@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import httpx
+
 from ..config import Settings
 from .resilience import CircuitBreaker, SearchCache, SingleFlight
 
@@ -14,6 +16,20 @@ class SearchRuntime:
     breaker: CircuitBreaker
     cache: SearchCache
     singleflight: SingleFlight
+    http_client: httpx.AsyncClient | None = None
+
+    def get_http_client(self) -> httpx.AsyncClient:
+        if self.http_client is None:
+            self.http_client = httpx.AsyncClient()
+        return self.http_client
+
+    async def aclose(self) -> None:
+        client = self.http_client
+        self.http_client = None
+        if client is not None:
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                await close()
 
 
 _runtimes: dict[int, SearchRuntime] = {}
@@ -39,6 +55,13 @@ def get_search_runtime(settings: Settings) -> SearchRuntime:
     return runtime
 
 
+async def close_search_runtimes() -> None:
+    runtimes = tuple(_runtimes.values())
+    _runtimes.clear()
+    for runtime in runtimes:
+        await runtime.aclose()
+
+
 def reset_search_runtimes() -> None:
-    """Test/maintenance hook: clear in-process health/cache state."""
+    """Test hook for runtimes that never allocated an HTTP client."""
     _runtimes.clear()
