@@ -57,6 +57,7 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             "upstream_5xx",
             "malformed_json",
             "empty_content",
+            "response_too_large",
         )
         for reason in reasons:
             with self.subTest(reason=reason):
