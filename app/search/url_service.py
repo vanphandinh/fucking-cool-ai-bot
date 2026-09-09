@@ -1,11 +1,15 @@
-"""Unified URL reader: specialized X resolver first, generic SSRF-safe reader otherwise."""
+"""Unified URL reader: X resolver first, Crawl4AI next, generic reader last."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 
 from ..config import Settings
-from . import reader, x_reader
+from . import crawl4ai_client, reader, x_reader
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,27 @@ async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadR
             )
 
     fetch_url = target.canonical_url if target is not None else url
+    if (
+        settings.crawl4ai_enabled
+        and settings.crawl4ai_url.strip()
+        and settings.crawl4ai_api_token.strip()
+    ):
+        try:
+            crawl = await crawl4ai_client.read_page(fetch_url, settings)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - this boundary must degrade to generic reading
+            logger.warning(
+                "Crawl4AI URL read failed (unexpected_client_error); fallback generic reader"
+            )
+        else:
+            if crawl.ok:
+                return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
+            logger.warning(
+                "Crawl4AI URL read failed (%s); fallback generic reader",
+                crawl.reason,
+            )
+
     text = await reader.read_page(fetch_url, timeout=settings.request_timeout_sec)
     ok = bool(text) and not text.startswith("Không tải được trang")
     return UrlReadResult(text, fetch_url, "generic_reader", ok)

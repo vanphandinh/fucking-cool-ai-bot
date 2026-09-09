@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     image_search_max_results: int = Field(default=4, ge=1, le=8)
     x_fetch_enabled: bool = True
 
+    # URL rendering/extraction backend. Set CRAWL4AI_ENABLED=0 for instant rollback.
+    crawl4ai_enabled: bool = True
+    crawl4ai_url: str = "http://crawl4ai:11235"
+    crawl4ai_api_token: str = ""
+    crawl4ai_timeout_sec: float = Field(default=25.0, gt=0, allow_inf_nan=False)
+    crawl4ai_max_chars: int = Field(default=12000, ge=1000, le=50000)
+
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
     max_tool_rounds: int = Field(default=2, ge=0)
@@ -125,6 +132,13 @@ class Settings(BaseSettings):
             raise ValueError("SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
         if self.ddgs_timeout_sec > total:
             raise ValueError("DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
+        crawl4ai_active = (
+            self.crawl4ai_enabled
+            and bool(self.crawl4ai_url.strip())
+            and bool(self.crawl4ai_api_token.strip())
+        )
+        if crawl4ai_active and self.crawl4ai_timeout_sec >= self.question_timeout_sec:
+            raise ValueError("CRAWL4AI_TIMEOUT_SEC phải nhỏ hơn QUESTION_TIMEOUT_SEC")
         return self
 
     @property

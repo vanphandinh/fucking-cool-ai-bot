@@ -10,7 +10,8 @@ capability-aware AI fallback và Telegram-native HTML formatting.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md) — sanitizer, splitter và fallback plain text.
 - [Search resilience](docs/SEARCH_RESILIENCE.md) — timeout budget, circuit breaker, cache, singleflight và fallback.
-- [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md) — FxTwitter/oEmbed/generic fallback, safety và rollback.
+- [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md) — private rendering backend, security, rollout và rollback.
+- [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md) — FxTwitter/oEmbed specialization, safety và rollback.
 - [Đồng bộ `.env`](docs/ENV_SYNC.md) — giữ secret/value hiện tại khi sync theo `.env.example`.
 - [SearXNG production trên VPS](DEPLOY_SEARXNG_VPS.md) — profile SearXNG private trong Docker.
 - [SearXNG DuckDuckGo incident 2026-09-08](docs/SEARXNG_DDG_INCIDENT_2026-09-08.md) — incident note và workaround.
@@ -32,13 +33,14 @@ capability-aware AI fallback và Telegram-native HTML formatting.
 - B.AI vision hiện cố ý giới hạn `max_images=1`; các provider vision khác có thể dùng ceiling `MAX_IMAGES_PER_REQUEST`.
 - Telegram loader lấy ảnh từ message hiện tại và/hoặc message được reply, nên flow hiện tại tối đa 2 ảnh thực tế/request.
 - Model có ba tool: `web_search`, `image_search`, `fetch_url`.
-- `fetch_url` nhận `mode=auto|x_thread`; direct X status ưu tiên FxTwitter v2 → X oEmbed → generic SSRF-safe reader.
+- `fetch_url` nhận `mode=auto|x_thread`; URL luôn qua SSRF validation, X status ưu tiên FxTwitter v2 → X oEmbed; sau specialized layer, Crawl4AI là URL renderer ưu tiên trước generic reader khi được cấu hình.
 - Web/image search dùng `SEARCH_BACKEND=auto|searxng|ddgs`; `auto` ưu tiên SearXNG rồi fallback DDGS với timeout budget, circuit breaker, cache và singleflight.
+- Crawl4AI **không** tham gia search discovery/ranking/cache/circuit breaker/singleflight; production chỉ dùng `POST /crawl`, không dùng LLM filter path.
 - Image search trả ảnh qua Telegram; full image URL lỗi sẽ thử thumbnail URL.
 - Answer chính được sanitize/split thành Telegram HTML an toàn; message không có markup được gửi plain text, chỉ dùng `parse_mode="HTML"` khi cần.
 - `/status` cho admin hiển thị uptime, provider distribution, fallback, search, lỗi gần nhất và provider cooldown.
 - Fallback count là state request-local bằng `ContextVar`, nên request đồng thời không ghi đè metric của nhau.
-- CI kiểm tra Python 3.11/3.12, Ruff, `pip check`, compile, tests, dependency audit; job 3.12 còn validate SearXNG YAML và build production Docker image.
+- CI kiểm tra Python 3.11/3.12, targeted Crawl4AI tests, full regression suite, Ruff, `pip check`, compile, Docker Compose config, dependency audit; job 3.12 còn validate SearXNG YAML và build production Docker image.
 
 ---
 
@@ -61,10 +63,11 @@ Orchestrator
        │                     auto: fresh cache → SearXNG → DDGS → stale cache
        ├─ image_search ───► cùng policy, threshold riêng cho image
        └─ fetch_url
+            ├─ validate_public_url() trước mọi reader
             ├─ X/Twitter status + X_FETCH_ENABLED=1
-            │    └─ FxTwitter v2 → X oEmbed → generic reader
-            └─ URL khác / X_FETCH_ENABLED=0
-                 └─ generic SSRF-safe reader
+            │    └─ FxTwitter v2 → X oEmbed
+            └─ canonical/ordinary URL
+                 └─ Crawl4AI POST /crawl → generic SSRF-safe reader
 ```
 
 Provider router lọc capability trước khi fallback. Tool budget dùng chung qua retry/fallback.
@@ -98,12 +101,11 @@ nano .env
 # BAI_API_KEY=...       # hoặc Gemini / Groq / Cloudflare / OpenRouter
 # ADMIN_IDS=...
 # ALLOWED_GROUP_IDS=... # hoặc dùng learn-mode ở mục 5
-
 docker compose up -d --build
 docker compose logs -f bot
 ```
 
-Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc giá trị số có constraint, `Settings` fail-fast khi startup.
+Nếu cấu hình sai `SEARCH_BACKEND`, `LOG_LEVEL`, timeout hoặc giá trị số có constraint, `Settings` fail-fast khi startup. Riêng Crawl4AI thiếu URL/token sẽ degrade về generic reader thay vì làm bot fail startup.
 
 ### Nâng cấp deployment đã có `.env`
 
@@ -141,6 +143,13 @@ SEARCH_IMAGE_CACHE_TTL_SEC=120.0
 SEARCH_STALE_CACHE_TTL_SEC=900.0
 IMAGE_SEARCH_MAX_RESULTS=4
 X_FETCH_ENABLED=1
+CRAWL4AI_ENABLED=1
+CRAWL4AI_URL=http://crawl4ai:11235
+CRAWL4AI_API_TOKEN=
+CRAWL4AI_TIMEOUT_SEC=25.0
+CRAWL4AI_MAX_CHARS=12000
+CRAWL4AI_IMAGE=unclecode/crawl4ai:0.9.3
+CRAWL4AI_SHM_SIZE=512m
 MAX_CONTEXT_TURNS=6
 MAX_TOOL_ROUNDS=2
 ```
@@ -287,30 +296,47 @@ Web và image dùng circuit riêng. Web SearXNG có 2+ result thì return; 1 res
 
 Các request đồng thời có cùng `(kind, limit, normalized_query)` dùng singleflight để chia sẻ một pipeline upstream. Khi waiter cuối cùng bị cancel, upstream task còn chạy sẽ bị cancel; shared SearXNG HTTP client được đóng khi app shutdown.
 
+Crawl4AI không nằm trong pipeline này và không thay đổi search cache/circuit/singleflight/source policy.
+
 Chi tiết: [docs/SEARCH_RESILIENCE.md](docs/SEARCH_RESILIENCE.md).
 
 ---
 
-## 10. Direct URL / X content
+## 10. Direct URL / X content / Crawl4AI
 
 `fetch_url(url, mode="auto")` đọc URL thường hoặc focal X status. `mode="x_thread"` chỉ hợp lệ cho X/Twitter status URL.
 
 Supported specialized hosts: `x.com`, `twitter.com`, mobile variants, `fxtwitter.com`, `fixupx.com`. Host giả như `x.com.evil.example` không được specialized.
 
 ```text
-mode=auto:
+mọi URL:
+  validate_public_url()
+
+X mode=auto:
   FxTwitter /2/status/{id}
     → X publish.oEmbed
+    → canonical x.com URL
+    → Crawl4AI /crawl
     → generic reader
 
-mode=x_thread:
+X mode=x_thread:
   FxTwitter /2/thread/{id}
     → FxTwitter focal /2/status/{id}
     → X publish.oEmbed
+    → canonical x.com URL
+    → Crawl4AI /crawl
+    → generic reader
+
+URL thường / X specialization bị tắt:
+  Crawl4AI /crawl
     → generic reader
 ```
 
-Chi tiết: [docs/X_CONTENT_FETCHING.md](docs/X_CONTENT_FETCHING.md).
+Crawl4AI chỉ được gọi khi `CRAWL4AI_ENABLED=1`, URL service và bearer token đều được cấu hình. Nó nhận fixed payload do server tạo, không nhận provider keys hoặc arbitrary browser/hooks/JS config. `CancelledError` propagate; timeout/network/401/403/429/5xx/oversized/malformed/failed/empty response chỉ fallback generic **một lần**. Response Crawl4AI được stream và cap 4 MiB trước JSON parse; text trả về được cap theo `CRAWL4AI_MAX_CHARS`.
+
+Production **không dùng** `/md?f=fit`, `/llm` hoặc `/ask`; integration dùng `POST /crawl` để tránh double-LLM path.
+
+Chi tiết: [docs/CRAWL4AI_INTEGRATION.md](docs/CRAWL4AI_INTEGRATION.md) và [docs/X_CONTENT_FETCHING.md](docs/X_CONTENT_FETCHING.md).
 
 ---
 
@@ -326,7 +352,7 @@ Chi tiết: [docs/TELEGRAM_FORMATTING.md](docs/TELEGRAM_FORMATTING.md).
 
 ---
 
-## 12. SearXNG private
+## 12. SearXNG và Crawl4AI private profiles
 
 Profile `searxng` không publish port ra host. Bot gọi nội bộ `http://searxng:8080`.
 
@@ -338,7 +364,19 @@ nano searxng/settings.yml
 docker compose --profile searxng up -d --build
 ```
 
-Guide đầy đủ: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md).
+Crawl4AI cũng không publish port `11235`. Tạo bearer token riêng trong `.env`, rồi bật profile:
+
+```bash
+openssl rand -hex 32
+# đặt kết quả vào CRAWL4AI_API_TOKEN trong .env
+
+docker compose --profile searxng --profile crawl4ai up -d --build
+docker compose exec bot python scripts/smoke_crawl4ai.py
+```
+
+Rollback URL renderer ngay bằng `CRAWL4AI_ENABLED=0`; search vẫn giữ SearXNG → DDGS như cũ.
+
+Guide đầy đủ: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md) và [docs/CRAWL4AI_INTEGRATION.md](docs/CRAWL4AI_INTEGRATION.md).
 
 ---
 
@@ -349,9 +387,12 @@ Guide đầy đủ: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md).
 - Không có database; context, stats, rate-limit, provider health và search runtime đều in-memory.
 - Raw image bytes không được ghi vào ChatMemory.
 - Generic web reader có SSRF guard cho URL/DNS/redirect.
+- Bot chạy cùng public-URL validation trước khi gửi URL sang Crawl4AI; redirected/canonical URL trả về chỉ được dùng làm source sau khi validate lại.
+- Crawl4AI chỉ ở Docker network private, không publish `11235`, dùng bearer token; JS execution và hooks bị tắt.
+- Crawl4AI không được nhận Gemini/OpenAI/Groq/B.AI/Cloudflare/OpenRouter credentials; client dùng `trust_env=False` và response cap 4 MiB.
 - Specialized X API egress dùng host cố định trong code; source user-facing vẫn canonical `x.com`.
 - Search-result image URL được Telegram fetch trực tiếp; bot server không tải arbitrary image result về RAM.
-- Shutdown cancel/join handler tasks, đóng Telegram session, shared search client và provider clients.
+- Shutdown cancel/join handler tasks, đóng Telegram session, Crawl4AI client, shared search client và provider clients.
 
 ---
 
@@ -374,6 +415,9 @@ print("VISION_PROVIDER_ORDER =", s.vision_provider_order)
 print("SEARCH_BACKEND        =", s.search_backend)
 print("SEARCH_TOTAL_TIMEOUT  =", s.search_total_timeout_sec)
 print("X_FETCH_ENABLED       =", s.x_fetch_enabled)
+print("CRAWL4AI_ENABLED      =", s.crawl4ai_enabled)
+print("CRAWL4AI_URL          =", s.crawl4ai_url)
+print("CRAWL4AI_TIMEOUT_SEC  =", s.crawl4ai_timeout_sec)
 print("MAX_CONTEXT_TURNS     =", s.max_context_turns)
 print("MAX_TOOL_ROUNDS       =", s.max_tool_rounds)
 PY
@@ -387,6 +431,14 @@ docker compose logs --tail=100 searxng
 docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/healthz
 ```
 
+Nếu dùng Crawl4AI:
+
+```bash
+docker compose --profile crawl4ai ps
+docker compose logs --tail=100 crawl4ai
+docker compose exec bot python scripts/smoke_crawl4ai.py
+```
+
 ---
 
 ## 15. Tests và CI
@@ -395,20 +447,26 @@ docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/he
 python -m pip install -r requirements.txt
 python -m pip install ruff==0.16.6 pip-audit==2.10.1
 
+python -m unittest discover -s tests -p 'test_crawl4ai*.py' -v
+python -m unittest discover -s tests -p 'test_url_service.py' -v
+python -m unittest discover -s tests -p 'test_url_tool_integration.py' -v
 python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
-python -m compileall -q app tests
+python -m compileall -q app tests scripts
 python -m pip check
 python -m pip_audit --progress-spinner off
+cp .env.example .env && docker compose config --quiet
 ```
 
 Workflow [Audit checks](.github/workflows/audit.yml) chạy trên push, pull request và `workflow_dispatch`:
 
 - Python 3.11 + 3.12.
+- Targeted Crawl4AI/URL tests trước full suite.
 - Ruff, `pip check`, `compileall`.
 - Offline regression/integration tests.
 - `pip-audit`.
+- Docker Compose config validation.
 - SearXNG YAML validation và production Docker build ở Python 3.12.
 
 Coverage quan trọng:
@@ -419,10 +477,11 @@ Coverage quan trọng:
 - `tests/test_forum_topic_isolation.py` — forum topic history/lock isolation.
 - `tests/test_search_backend_auto.py`, `tests/test_search_cancellation.py` — resilient search routing, cancellation và client lifecycle.
 - `tests/test_image_search.py` — image normalization/delivery.
-- `tests/test_x_reader.py`, `tests/test_url_service.py`, `tests/test_url_tool_integration.py` — X/direct URL pipeline.
+- `tests/test_crawl4ai_client.py`, `tests/test_crawl4ai_compose.py` — auth, bounded response, parsing, cancellation và Docker invariants.
+- `tests/test_x_reader.py`, `tests/test_url_service.py`, `tests/test_url_tool_integration.py` — X/direct URL routing, SSRF, fallback và tool semantics.
 - `tests/test_search_policy_prompt.py` — fetch-first policy và chống mirror-search loop.
 
-CI không chứng minh live provider/X/SearXNG E2E trên VPS production; live probe B.AI là bước manual riêng.
+CI không chứng minh live provider/X/SearXNG/Crawl4AI E2E trên VPS production; live Crawl4AI smoke và live provider probes là bước manual riêng.
 
 ---
 
@@ -443,14 +502,16 @@ app/
 └── search/
     ├── service.py / image_service.py / router.py / resilience.py / runtime.py
     ├── searxng_backend.py / ddgs_backend.py
-    ├── reader.py / url_service.py / x_reader.py
+    ├── reader.py / url_service.py / x_reader.py / crawl4ai_client.py
 
 scripts/
 ├── sync_env.py
-└── probe_bai.py
+├── probe_bai.py
+└── smoke_crawl4ai.py
 
 docs/
 ├── BAI_INTEGRATION.md
+├── CRAWL4AI_INTEGRATION.md
 ├── ENV_SYNC.md
 ├── SEARCH_RESILIENCE.md
 ├── TELEGRAM_FORMATTING.md

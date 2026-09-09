@@ -31,6 +31,21 @@ SearchError
 - Error/timeout/empty response không được cache.
 - `CancelledError` được propagate, không bị biến thành backend failure.
 
+## Search discovery vs URL reading
+
+Hai pipeline độc lập về trách nhiệm:
+
+```text
+Search discovery: SearXNG -> DDGS fallback
+URL reading:      X-specific -> Crawl4AI -> generic reader
+```
+
+Crawl4AI chỉ render/extract URL cho `fetch_url`; nó không thay thế `app/search/router.py`, không tham gia ranking/search cache/circuit breaker/singleflight/source policy và không được cấu hình LLM provider. Production dùng `POST /crawl`, không dùng `/md?f=fit` hoặc LLM filter path.
+
+Bot vẫn chạy `reader.validate_public_url()` trước khi gửi URL sang Crawl4AI. Nếu Crawl4AI timeout/network/401/403/429/5xx/malformed/failed/empty thì chỉ fallback một lần sang generic reader. `CancelledError` propagate và không khởi chạy fallback. X/Twitter specialized reader vẫn có priority cao hơn Crawl4AI.
+
+Chi tiết deployment/rollback: [CRAWL4AI_INTEGRATION.md](CRAWL4AI_INTEGRATION.md).
+
 ## Timeout budget
 
 Các timeout search độc lập với timeout AI provider:
@@ -42,6 +57,14 @@ SEARCH_TOTAL_TIMEOUT_SEC=15.0
 ```
 
 Router tạo một deadline tổng. Trước mỗi backend, effective timeout là giá trị nhỏ hơn giữa timeout backend và budget còn lại.
+
+Crawl4AI dùng budget riêng cho URL reading:
+
+```env
+CRAWL4AI_TIMEOUT_SEC=25.0
+```
+
+Giá trị này phải dương và nhỏ hơn `QUESTION_TIMEOUT_SEC`.
 
 ## Circuit breaker
 
@@ -99,6 +122,8 @@ Nếu production đã có `searxng/settings.yml`, phải merge thay đổi từ 
 
 SearXNG dùng shared `httpx.AsyncClient` theo `Settings` để reuse keep-alive/connection pool. `app.main` gọi `close_search_runtimes()` khi shutdown để đóng client deterministic.
 
+Crawl4AI cũng dùng một shared `httpx.AsyncClient` process-local với `trust_env=False`; `app.main` gọi `close_crawl4ai_client()` khi shutdown.
+
 ## SearXNG update policy
 
 SearXNG là rolling release và engine scraper thay đổi thường xuyên. Production nên stay near latest nhưng không để mutable `latest` tự đổi không kiểm soát:
@@ -121,7 +146,12 @@ Sau mỗi deploy, thực hiện failure injection:
 - cả hai down -> stale cache hoặc SearchError;
 - circuit OPEN -> cooldown -> HALF_OPEN -> CLOSED khi probe thành công;
 - Google CSE timeout và Brave 429 không làm crash toàn search;
-- burst concurrent query xác nhận singleflight và không leak task/client.
+- burst concurrent query xác nhận singleflight và không leak task/client;
+- Crawl4AI down/wrong token/timeout -> generic reader một lần;
+- `CRAWL4AI_ENABLED=0` -> Crawl4AI không được gọi;
+- private/localhost URL -> blocked trước mọi reader;
+- X status -> specialized reader vẫn chạy trước Crawl4AI;
+- cancellation -> không tạo generic fallback.
 
 Lặp quy trình:
 

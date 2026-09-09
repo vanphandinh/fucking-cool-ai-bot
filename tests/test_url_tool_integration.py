@@ -15,7 +15,7 @@ class _FetchTwiceRouter:
         self.outputs = []
 
     async def complete(self, messages, tools, tool_executor, **kwargs):
-        args = {"url": "https://x.com/a/status/1234567890", "mode": "auto"}
+        args = {"url": "https://example.org/article", "mode": "auto"}
         self.outputs.append(await tool_executor("fetch_url", args))
         self.outputs.append(await tool_executor("fetch_url", args))
         return "done", "fake"
@@ -43,13 +43,13 @@ class _FailureRouter:
 
 
 class UrlToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_same_x_url_is_fetched_once_per_question_and_source_is_canonical(self):
+    async def test_same_ordinary_url_is_fetched_once_and_crawl4ai_source_is_recorded(self):
         router = _FetchTwiceRouter()
         read = AsyncMock(
             return_value=UrlReadResult(
-                "post text",
-                "https://x.com/a/status/1234567890",
-                "fxtwitter_status",
+                "rendered body",
+                "https://example.org/article",
+                "crawl4ai",
                 True,
             )
         )
@@ -57,8 +57,10 @@ class UrlToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
             answer = await Orchestrator(Settings(_env_file=None), router).ask("đọc link này")
         read.assert_awaited_once()
         self.assertEqual(router.outputs[0], router.outputs[1])
+        self.assertIn("rendered body", router.outputs[0])
         self.assertTrue(answer.searched)
-        self.assertEqual(answer.sources[0]["url"], "https://x.com/a/status/1234567890")
+        self.assertEqual(len(answer.sources), 1)
+        self.assertEqual(answer.sources[0]["url"], "https://example.org/article")
 
     async def test_x_thread_mode_is_forwarded_to_url_service(self):
         read = AsyncMock(
