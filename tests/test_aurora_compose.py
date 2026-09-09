@@ -9,7 +9,8 @@ class AuroraComposeTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.compose = Path("docker-compose.yml").read_text(encoding="utf-8")
         marker = "\n  aurora:\n"
-        cls.assertIn(cls, marker, cls.compose)
+        if marker not in cls.compose:
+            raise AssertionError("Aurora service block is missing")
         cls.block = cls.compose.split(marker, 1)[1].split("\nvolumes:", 1)[0]
         cls.env = Path(".env.example").read_text(encoding="utf-8")
         cls.gitignore = Path(".gitignore").read_text(encoding="utf-8")
