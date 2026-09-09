@@ -21,12 +21,13 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
     def settings(self, **overrides) -> Settings:
         values = {
             "crawl4ai_api_token": "secret-test-token",
-            "crawl4ai_max_chars": 12,
+            "crawl4ai_max_chars": 1000,
         }
         values.update(overrides)
         return Settings(_env_file=None, **values)
 
     async def test_prefers_fit_markdown_and_truncates(self):
+        fit = "x" * 1200
         response = httpx.Response(
             200,
             request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
@@ -38,7 +39,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                         "url": "https://example.org/article",
                         "redirected_url": "https://example.org/article",
                         "markdown": {
-                            "fit_markdown": "# Article\nUseful body",
+                            "fit_markdown": fit,
                             "raw_markdown": "raw body",
                         },
                     }
@@ -51,7 +52,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             result = await read_page("https://example.org/article", self.settings())
         self.assertIsInstance(result, Crawl4AIReadResult)
         self.assertTrue(result.ok)
-        self.assertEqual(result.text, "# Article\nUs")
+        self.assertEqual(result.text, fit[:1000])
         self.assertEqual(result.source_url, "https://example.org/article")
         headers = client.post.await_args.kwargs["headers"]
         self.assertEqual(headers["Authorization"], "Bearer secret-test-token")
