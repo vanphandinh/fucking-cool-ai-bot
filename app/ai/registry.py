@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from ..config import Settings
+from .aurora import build_aurora_provider_slots
 from .bai import build_bai_provider_slots
 from .provider import AIProvider
 
@@ -12,6 +13,7 @@ ProviderFactory = Callable[[Settings], list[AIProvider]]
 
 PROVIDER_FACTORIES: dict[str, ProviderFactory] = {
     "bai": build_bai_provider_slots,
+    "aurora": build_aurora_provider_slots,
 }
 
 
