@@ -15,7 +15,8 @@ from .runtime import get_search_runtime
 
 logger = logging.getLogger(__name__)
 
-_MIN_RESULTS_BEFORE_TOPUP = 2
+_MIN_WEB_RESULTS_BEFORE_TOPUP = 2
+_MIN_IMAGE_RESULTS_BEFORE_TOPUP = 1
 
 
 class RoutedSearchError(RuntimeError):
@@ -32,13 +33,13 @@ def _canonical_url(value: object) -> str:
         return ""
     try:
         parts = urlsplit(raw)
+        port = parts.port
     except ValueError:
         return raw
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
     if not scheme or not host:
         return raw
-    port = parts.port
     default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
     netloc = host if port is None or default_port else f"{host}:{port}"
     path = parts.path or "/"
@@ -47,7 +48,13 @@ def _canonical_url(value: object) -> str:
     return urlunsplit((scheme, netloc, path, parts.query, ""))
 
 
-def _merge_results(current: list[dict], incoming: list[dict], *, key_name: str, limit: int) -> list[dict]:
+def _merge_results(
+    current: list[dict],
+    incoming: list[dict],
+    *,
+    key_name: str,
+    limit: int,
+) -> list[dict]:
     out = [dict(item) for item in current]
     seen = {_canonical_url(item.get(key_name)) for item in out}
     for item in incoming:
@@ -61,7 +68,7 @@ def _merge_results(current: list[dict], incoming: list[dict], *, key_name: str, 
     return out[:limit]
 
 
-def _classify_failure(exc: BaseException) -> FailureKind:
+def _classify_failure(exc: Exception) -> FailureKind:
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, httpx.TimeoutException)):
         return FailureKind.TIMEOUT
     if isinstance(exc, (httpx.ConnectError, httpx.NetworkError, OSError)):
@@ -89,7 +96,7 @@ async def _attempt(
     configured_timeout: float,
     call: Callable[[str, Settings, int], Awaitable[list[dict]]],
     attempted: set[str],
-) -> tuple[bool, list[dict], BaseException | None]:
+) -> tuple[bool, list[dict], Exception | None]:
     if name in attempted:
         return False, [], RuntimeError(f"backend {name} already attempted")
     attempted.add(name)
@@ -110,9 +117,7 @@ async def _attempt(
         results = await asyncio.wait_for(call(query, settings, limit), timeout=timeout)
         if not isinstance(results, list):
             raise RuntimeError(f"backend {name} returned non-list results")
-    except BaseException as exc:
-        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-            raise
+    except Exception as exc:  # cancellation propagates by design
         kind_failure = _classify_failure(exc)
         runtime.breaker.record_failure(key, kind_failure, str(exc))
         return True, [], exc
@@ -140,7 +145,6 @@ async def route_auto(
         return fresh[:limit]
 
     async def execute() -> list[dict]:
-        # A second cache check prevents a queued singleflight creator from repeating work.
         second_fresh = runtime.cache.get_fresh(cache_key)
         if second_fresh is not None:
             return second_fresh[:limit]
@@ -151,6 +155,11 @@ async def route_auto(
         merged: list[dict] = []
         had_successful_backend = False
         failures: list[str] = []
+        min_results = (
+            _MIN_IMAGE_RESULTS_BEFORE_TOPUP
+            if kind == "image"
+            else _MIN_WEB_RESULTS_BEFORE_TOPUP
+        )
 
         if searx_call is not None and settings.searxng_url.strip():
             attempted_now, results, error = await _attempt(
@@ -166,15 +175,20 @@ async def route_auto(
             )
             if attempted_now and error is None:
                 had_successful_backend = True
-                merged = _merge_results(merged, results, key_name=result_url_key, limit=limit)
-                if len(merged) >= _MIN_RESULTS_BEFORE_TOPUP:
+                merged = _merge_results(
+                    merged,
+                    results,
+                    key_name=result_url_key,
+                    limit=limit,
+                )
+                if len(merged) >= min_results:
                     _cache_success(runtime, cache_key, merged, settings, kind)
                     return merged
             elif error is not None:
                 failures.append(f"searxng:{type(error).__name__}")
                 logger.warning("SearXNG %s search lỗi, fallback DDGS: %s", kind, error)
 
-        if len(merged) < _MIN_RESULTS_BEFORE_TOPUP:
+        if len(merged) < min_results:
             attempted_now, results, error = await _attempt(
                 name="ddgs",
                 kind=kind,
@@ -188,7 +202,12 @@ async def route_auto(
             )
             if attempted_now and error is None:
                 had_successful_backend = True
-                merged = _merge_results(merged, results, key_name=result_url_key, limit=limit)
+                merged = _merge_results(
+                    merged,
+                    results,
+                    key_name=result_url_key,
+                    limit=limit,
+                )
             elif error is not None:
                 failures.append(f"ddgs:{type(error).__name__}")
                 logger.warning("DDGS %s search lỗi: %s", kind, error)
@@ -211,9 +230,10 @@ async def route_auto(
 
 
 def _cache_success(runtime, key: str, results: list[dict], settings: Settings, kind: str) -> None:
-    fresh_ttl = (
-        settings.search_image_cache_ttl_sec if kind == "image" else settings.search_web_cache_ttl_sec
-    )
+    if kind == "image":
+        fresh_ttl = settings.search_image_cache_ttl_sec
+    else:
+        fresh_ttl = settings.search_web_cache_ttl_sec
     runtime.cache.set(
         key,
         results,
