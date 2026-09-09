@@ -25,6 +25,29 @@ class _AsyncResponseContext:
         return False
 
 
+class _RaisingAsyncContext:
+    def __init__(self, error: BaseException):
+        self.error = error
+
+    async def __aenter__(self):
+        raise self.error
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+def _stream_client(response: httpx.Response) -> MagicMock:
+    client = MagicMock()
+    client.stream.return_value = _AsyncResponseContext(response)
+    return client
+
+
+def _raising_stream_client(error: BaseException) -> MagicMock:
+    client = MagicMock()
+    client.stream.return_value = _RaisingAsyncContext(error)
+    return client
+
+
 class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await close_crawl4ai_client()
@@ -57,8 +80,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        client = AsyncMock()
-        client.post.return_value = response
+        client = _stream_client(response)
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -68,9 +90,9 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.text, fit[:1000])
         self.assertEqual(result.source_url, "https://example.org/article")
-        headers = client.post.await_args.kwargs["headers"]
+        headers = client.stream.call_args.kwargs["headers"]
         self.assertEqual(headers["Authorization"], "Bearer secret-test-token")
-        payload = client.post.await_args.kwargs["json"]
+        payload = client.stream.call_args.kwargs["json"]
         self.assertEqual(payload["urls"], ["https://example.org/article"])
         self.assertEqual(payload["browser_config"], {})
         self.assertEqual(payload["crawler_config"], {})
@@ -85,9 +107,9 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 "results": [{"success": True, "markdown": huge_markdown}],
             },
         )
-        client = MagicMock()
-        client.stream.return_value = _AsyncResponseContext(response)
-        client.post = AsyncMock(return_value=response)
+        response.headers.pop("content-length", None)
+        client = _stream_client(response)
+        client.post = AsyncMock()
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -112,8 +134,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        client = AsyncMock()
-        client.post.return_value = response
+        client = _stream_client(response)
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -140,8 +161,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        client = AsyncMock()
-        client.post.return_value = response
+        client = _stream_client(response)
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -177,8 +197,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                     request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
                     json=body,
                 )
-                client = AsyncMock()
-                client.post.return_value = response
+                client = _stream_client(response)
                 with patch(
                     "app.search.crawl4ai_client._get_client",
                     new=AsyncMock(return_value=client),
@@ -189,28 +208,18 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("secret-test-token", result.reason)
 
     async def test_status_timeout_network_and_malformed_json_are_normalized(self):
-        async def run_post_effect(effect):
-            client = AsyncMock()
-            client.post.side_effect = effect
-            with patch(
-                "app.search.crawl4ai_client._get_client",
-                new=AsyncMock(return_value=client),
-            ):
-                return await read_page("https://example.org", self.settings())
-
-        statuses = (
+        for status, expected in (
             (401, "auth"),
             (403, "auth"),
             (429, "rate_limited"),
             (503, "upstream_5xx"),
-        )
-        for status, expected in statuses:
+        ):
             with self.subTest(status=status):
-                client = AsyncMock()
-                client.post.return_value = httpx.Response(
+                response = httpx.Response(
                     status,
                     request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
                 )
+                client = _stream_client(response)
                 with patch(
                     "app.search.crawl4ai_client._get_client",
                     new=AsyncMock(return_value=client),
@@ -219,10 +228,18 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result.ok)
                 self.assertEqual(result.reason, expected)
 
-        timeout = await run_post_effect(httpx.ReadTimeout("boom"))
-        network = await run_post_effect(httpx.ConnectError("boom"))
-        self.assertEqual(timeout.reason, "timeout")
-        self.assertEqual(network.reason, "network")
+        for effect, expected in (
+            (httpx.ReadTimeout("boom"), "timeout"),
+            (httpx.ConnectError("boom"), "network"),
+        ):
+            with self.subTest(expected=expected):
+                client = _raising_stream_client(effect)
+                with patch(
+                    "app.search.crawl4ai_client._get_client",
+                    new=AsyncMock(return_value=client),
+                ):
+                    result = await read_page("https://example.org", self.settings())
+                self.assertEqual(result.reason, expected)
 
         response = httpx.Response(
             200,
@@ -230,8 +247,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             content=b"not-json",
             headers={"content-type": "application/json"},
         )
-        client = AsyncMock()
-        client.post.return_value = response
+        client = _stream_client(response)
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -254,8 +270,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        client = AsyncMock()
-        client.post.return_value = response
+        client = _stream_client(response)
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),
@@ -265,8 +280,7 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.source_url, "https://example.org")
 
     async def test_cancelled_error_propagates(self):
-        client = AsyncMock()
-        client.post.side_effect = asyncio.CancelledError()
+        client = _raising_stream_client(asyncio.CancelledError())
         with patch(
             "app.search.crawl4ai_client._get_client",
             new=AsyncMock(return_value=client),

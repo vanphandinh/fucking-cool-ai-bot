@@ -13,6 +13,8 @@ import httpx
 from ..config import Settings
 from . import reader
 
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class Crawl4AIReadResult:
@@ -94,6 +96,29 @@ def _extract_markdown(value: object) -> str:
     return ""
 
 
+def _declared_response_too_large(response: httpx.Response) -> bool:
+    raw = response.headers.get("content-length", "").strip()
+    if not raw:
+        return False
+    try:
+        return int(raw) > _MAX_RESPONSE_BYTES
+    except ValueError:
+        return False
+
+
+async def _read_response_bytes(response: httpx.Response) -> bytes | None:
+    if _declared_response_too_large(response):
+        return None
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > _MAX_RESPONSE_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     """Read one public URL through Crawl4AI without retries or user-controlled config."""
     source_url = url
@@ -107,7 +132,21 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     endpoint = f"{settings.crawl4ai_url.rstrip('/')}/crawl"
 
     try:
-        response = await client.post(endpoint, headers=headers, json=payload)
+        async with client.stream(
+            "POST",
+            endpoint,
+            headers=headers,
+            json=payload,
+        ) as response:
+            if response.status_code in (401, 403):
+                return _failed(source_url, "auth")
+            if response.status_code == 429:
+                return _failed(source_url, "rate_limited")
+            if response.status_code >= 500:
+                return _failed(source_url, "upstream_5xx")
+            if response.status_code >= 400:
+                return _failed(source_url, f"http_{response.status_code}")
+            raw_body = await _read_response_bytes(response)
     except asyncio.CancelledError:
         raise
     except httpx.TimeoutException:
@@ -117,18 +156,11 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     except Exception:
         return _failed(source_url, "client_error")
 
-    if response.status_code in (401, 403):
-        return _failed(source_url, "auth")
-    if response.status_code == 429:
-        return _failed(source_url, "rate_limited")
-    if response.status_code >= 500:
-        return _failed(source_url, "upstream_5xx")
-    if response.status_code >= 400:
-        return _failed(source_url, f"http_{response.status_code}")
-
+    if raw_body is None:
+        return _failed(source_url, "response_too_large")
     try:
-        body = response.json()
-    except ValueError:
+        body = json.loads(raw_body)
+    except (TypeError, ValueError):
         return _failed(source_url, "malformed_json")
     if not isinstance(body, dict):
         return _failed(source_url, "malformed_response")
