@@ -1,4 +1,4 @@
-"""Capability-aware AI routing with shared tool budget and health handling."""
+"""Capability-aware AI routing with shared tool budget and portable state."""
 
 from __future__ import annotations
 
@@ -61,6 +61,14 @@ class _ToolBudget:
 
     def close(self) -> None:
         self.closed = True
+
+
+@dataclass
+class _RequestState:
+    base_messages: list[dict]
+    portable_messages: list[dict]
+    tool_outputs: list[str]
+    budget: _ToolBudget
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -179,9 +187,12 @@ class AIProviderRouter:
                 "Không có AI provider nào phù hợp capability của request"
             )
 
-        budget = _ToolBudget()
-        synthesis_base_messages = deepcopy(messages)
-        tool_outputs: list[str] = []
+        state = _RequestState(
+            base_messages=deepcopy(messages),
+            portable_messages=deepcopy(messages),
+            tool_outputs=[],
+            budget=_ToolBudget(),
+        )
         attempted: list[str] = []
         fallbacks: list[str] = []
         last_error: ProviderError | None = None
@@ -195,12 +206,9 @@ class AIProviderRouter:
             try:
                 text = await self._attempt_provider(
                     provider,
-                    messages,
                     tools,
                     tool_executor,
-                    budget,
-                    synthesis_base_messages,
-                    tool_outputs,
+                    state,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -216,14 +224,18 @@ class AIProviderRouter:
     async def _attempt_provider(
         self,
         provider: AIProvider,
-        messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
-        budget: _ToolBudget,
-        synthesis_base_messages: list[dict],
-        tool_outputs: list[str],
+        state: _RequestState,
     ) -> str:
-        provider_messages = deepcopy(messages)
+        if state.budget.exhausted(self.max_tool_rounds):
+            provider_messages = build_fresh_synthesis_messages(
+                state.base_messages,
+                state.tool_outputs,
+            )
+        else:
+            provider_messages = deepcopy(state.portable_messages)
+
         already_plain = False
         last_error: ProviderError | None = None
 
@@ -234,7 +246,7 @@ class AIProviderRouter:
                 if (
                     provider.supports_tools
                     and pass_no == 0
-                    and not budget.exhausted(self.max_tool_rounds)
+                    and not state.budget.exhausted(self.max_tool_rounds)
                 )
                 else None
             )
@@ -248,9 +260,7 @@ class AIProviderRouter:
                     local_msgs,
                     use_tools,
                     tool_executor,
-                    budget,
-                    synthesis_base_messages,
-                    tool_outputs,
+                    state,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -275,16 +285,14 @@ class AIProviderRouter:
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
-        budget: _ToolBudget,
-        synthesis_base_messages: list[dict],
-        tool_outputs: list[str],
+        state: _RequestState,
     ) -> str:
         active_tools = tools
         while True:
-            if active_tools and budget.exhausted(self.max_tool_rounds):
+            if active_tools and state.budget.exhausted(self.max_tool_rounds):
                 messages[:] = build_fresh_synthesis_messages(
-                    synthesis_base_messages,
-                    tool_outputs,
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
 
@@ -301,56 +309,77 @@ class AIProviderRouter:
                 )
 
             requested_calls = len(resp.tool_calls)
-            if not budget.can_execute(requested_calls, self.max_tool_rounds):
-                budget.close()
+            if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
+                state.budget.close()
                 messages[:] = build_fresh_synthesis_messages(
-                    synthesis_base_messages,
-                    tool_outputs,
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
                 continue
 
-            budget.rounds += 1
-            budget.calls += requested_calls
-            messages.append(_assistant_tool_message(resp))
+            state.budget.rounds += 1
+            state.budget.calls += requested_calls
+            messages.append(
+                _assistant_tool_message(resp, include_provider_metadata=True)
+            )
+            state.portable_messages.append(
+                _assistant_tool_message(resp, include_provider_metadata=False)
+            )
+
             outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
                 normalized_output = str(output)[:6000]
-                tool_outputs.append(normalized_output)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": normalized_output,
-                    }
-                )
+                state.tool_outputs.append(normalized_output)
+                tool_message = {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": normalized_output,
+                }
+                messages.append(deepcopy(tool_message))
+                state.portable_messages.append(tool_message)
 
-            if budget.exhausted(self.max_tool_rounds):
+            if state.budget.exhausted(self.max_tool_rounds):
                 messages[:] = build_fresh_synthesis_messages(
-                    synthesis_base_messages,
-                    tool_outputs,
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
 
 
-def _tool_call_message(tc: ToolCall) -> dict:
+def _tool_call_message(
+    tc: ToolCall,
+    *,
+    include_provider_metadata: bool = True,
+) -> dict:
     out = {
         "id": tc.id,
         "type": "function",
         "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
     }
-    if tc.extra_content is not None:
+    if include_provider_metadata and tc.extra_content is not None:
         out["extra_content"] = deepcopy(tc.extra_content)
     return out
 
 
-def _assistant_tool_message(resp: ChatResponse) -> dict:
+def _assistant_tool_message(
+    resp: ChatResponse,
+    *,
+    include_provider_metadata: bool = True,
+) -> dict:
     out = {
         "role": "assistant",
         "content": resp.content or "",
-        "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
+        "tool_calls": [
+            _tool_call_message(
+                tc,
+                include_provider_metadata=include_provider_metadata,
+            )
+            for tc in resp.tool_calls
+        ],
     }
-    out.update(deepcopy(resp.assistant_metadata))
+    if include_provider_metadata:
+        out.update(deepcopy(resp.assistant_metadata))
     return out
 
 
