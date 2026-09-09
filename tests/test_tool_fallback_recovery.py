@@ -105,6 +105,62 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[-1].get("tool_choice"), "none")
         self.assertNotIn("tools", requests[-1])
 
+    async def test_local_tool_policy_failures_do_not_cool_down_bai_vision(self) -> None:
+        bai_requests: list[dict] = []
+        gemini_requests: list[dict] = []
+
+        def bai_respond(request: httpx.Request) -> httpx.Response:
+            bai_requests.append(json.loads(request.content))
+            return _tool_response(request, f"call_{len(bai_requests)}")
+
+        def gemini_respond(request: httpx.Request) -> httpx.Response:
+            gemini_requests.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"role": "assistant", "content": "fallback done"}}
+                    ]
+                },
+                request=request,
+            )
+
+        bai = _make_bai_vision()
+        await bai.aclose()
+        bai._client = httpx.AsyncClient(
+            base_url="https://bai.test/v1/",
+            transport=httpx.MockTransport(bai_respond),
+        )
+        gemini = _make_gemini_vision()
+        await gemini.aclose()
+        gemini._client = httpx.AsyncClient(
+            base_url="https://gemini.test/v1/",
+            transport=httpx.MockTransport(gemini_respond),
+        )
+        router = AIProviderRouter([bai, gemini], max_tool_rounds=1)
+
+        async def execute(_name: str, _args: dict) -> str:
+            return "fetched content"
+
+        try:
+            result = await router.complete(
+                [{"role": "user", "content": "inspect and research"}],
+                [_fetch_url_tool()],
+                execute,
+                requires_vision=True,
+                image_count=1,
+            )
+        finally:
+            await bai.aclose()
+            await gemini.aclose()
+
+        self.assertEqual(result, ("fallback done", "gemini_vision"))
+        self.assertEqual(len(bai_requests), 3)
+        self.assertEqual(bai_requests[-1].get("tool_choice"), "none")
+        self.assertEqual(len(gemini_requests), 1)
+        self.assertTrue(bai.health.available())
+        self.assertEqual(bai.health.consecutive_transient_failures, 0)
+
 
 class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_bai_tool_history_can_fallback_to_gemini_without_signature_400(self) -> None:
@@ -250,24 +306,42 @@ class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(gemini_requests), 2)
 
 
-def _make_bai():
-    settings = SimpleNamespace(
+def _bai_settings() -> SimpleNamespace:
+    return SimpleNamespace(
         bai_api_key="secret",
         bai_text_model="qwen3.8-flash",
         bai_vision_model="qwen3.8-flash",
         bai_request_timeout_sec=30.0,
     )
-    return make_bai_provider(settings)
+
+
+def _make_bai():
+    return make_bai_provider(_bai_settings())
+
+
+def _make_bai_vision():
+    return make_bai_provider(_bai_settings(), name="bai_vision", vision=True)
+
+
+def _gemini_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        gemini_api_key="fake",
+        gemini_model="gemini-3.8-flash",
+        request_timeout_sec=30.0,
+        max_images_per_request=3,
+    )
 
 
 def _make_gemini():
+    return make_gemini_provider(_gemini_settings())
+
+
+def _make_gemini_vision():
     return make_gemini_provider(
-        SimpleNamespace(
-            gemini_api_key="fake",
-            gemini_model="gemini-3.8-flash",
-            request_timeout_sec=30.0,
-            max_images_per_request=3,
-        )
+        _gemini_settings(),
+        name="gemini_vision",
+        model="gemini-3.8-flash",
+        vision=True,
     )
 
 
