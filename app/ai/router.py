@@ -182,16 +182,21 @@ class AIProviderRouter:
                     raise ProviderError(f"{provider.name}: model trả về nội dung rỗng")
                 return text
             if not tools:
-                raise ProviderError(f"{provider.name}: model gọi tool khi tools đã tắt")
+                raise ProviderError(
+                    f"{provider.name}: model gọi tool khi tools đã tắt",
+                    transient=False,
+                )
             if budget.rounds >= self.max_tool_rounds:
                 raise ProviderError(
                     f"{provider.name}: model gọi tool quá {self.max_tool_rounds} vòng",
                     retry_without_tools=True,
+                    transient=False,
                 )
             if budget.calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
                 raise ProviderError(
                     f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call",
                     retry_without_tools=True,
+                    transient=False,
                 )
             budget.rounds += 1
             budget.calls += len(resp.tool_calls)
