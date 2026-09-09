@@ -7,6 +7,7 @@ capability-aware AI fallback và Telegram-native HTML formatting.
 ## Tài liệu đang duy trì
 
 - [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, routing, probe và rollout.
+- [Aurora ChatGPT Web integration](docs/AURORA_INTEGRATION.md) — private sidecar, credential boundary, probe, rollout và rollback.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md) — sanitizer, splitter và fallback plain text.
 - [Search resilience](docs/SEARCH_RESILIENCE.md) — timeout budget, circuit breaker, cache, singleflight và fallback.
@@ -27,9 +28,10 @@ capability-aware AI fallback và Telegram-native HTML formatting.
 - Có `LEARN_GROUP_ID_MODE` để bootstrap `chat_id`; ngoài learn-mode bot tự rời chat lạ khi được add.
 - Trigger bằng `/ask`, `@mention`, hoặc reply trực tiếp vào tin của bot.
 - Context hội thoại ngắn hạn giữ trong RAM. Chat thường dùng `chat_id`; Telegram forum topic được cô lập theo `(chat_id, message_thread_id)` để topic khác không dùng chung history/lock.
-- Text route theo `TEXT_PROVIDER_ORDER`; default: **B.AI → Gemini → Groq → Cloudflare → OpenRouter**.
-- Vision route theo `VISION_PROVIDER_ORDER`; default: **B.AI → Gemini → Groq Qwen 3.8 → Cloudflare → Groq Qwen 3.6**.
+- Text route theo `TEXT_PROVIDER_ORDER`; default: **B.AI → Aurora → Gemini → Groq → Cloudflare → OpenRouter**. Slot Aurora tự skip khi chưa cấu hình service key.
+- Vision route theo `VISION_PROVIDER_ORDER`; default: **B.AI → Gemini → Groq Qwen 3.8 → Cloudflare → Groq Qwen 3.6**. Aurora v1 không tham gia vision.
 - B.AI chỉ được tạo khi có key/model hợp lệ và slot `bai` còn nằm trong order; để trống key thì tự skip.
+- Aurora chỉ được tạo khi có `AURORA_BASE_URL`, `AURORA_API_KEY`, model và slot `aurora` còn trong order; ChatGPT session/access/refresh token không đi vào Python settings.
 - B.AI vision hiện cố ý giới hạn `max_images=1`; các provider vision khác có thể dùng ceiling `MAX_IMAGES_PER_REQUEST`.
 - Telegram loader lấy ảnh từ message hiện tại và/hoặc message được reply, nên flow hiện tại tối đa 2 ảnh thực tế/request.
 - Model có ba tool: `web_search`, `image_search`, `fetch_url`.
@@ -40,7 +42,7 @@ capability-aware AI fallback và Telegram-native HTML formatting.
 - Answer chính được sanitize/split thành Telegram HTML an toàn; message không có markup được gửi plain text, chỉ dùng `parse_mode="HTML"` khi cần.
 - `/status` cho admin hiển thị uptime, provider distribution, fallback, search, lỗi gần nhất và provider cooldown.
 - Fallback count là state request-local bằng `ContextVar`, nên request đồng thời không ghi đè metric của nhau.
-- CI kiểm tra Python 3.11/3.12, targeted Crawl4AI tests, full regression suite, Ruff, `pip check`, compile, Docker Compose config, dependency audit; job 3.12 còn validate SearXNG YAML và build production Docker image.
+- CI kiểm tra Python 3.11/3.12, targeted Crawl4AI/Aurora tests, full regression suite, Ruff, `pip check`, compile, Docker Compose config, dependency audit; job 3.12 còn validate SearXNG YAML và build production Docker image.
 
 ---
 
@@ -56,6 +58,7 @@ Telegram group / forum topic
 Orchestrator
    │
    ├─ text request  ──► text-capable provider pool
+   │                    B.AI → Aurora(private ChatGPT Web) → later fallbacks
    ├─ image request ──► vision-capable provider pool
    │
    └─ tools
@@ -72,6 +75,7 @@ Orchestrator
 
 Provider router lọc capability trước khi fallback. Tool budget dùng chung qua retry/fallback.
 Với URL cụ thể do user cung cấp và yêu cầu đọc nội dung, system policy ưu tiên `fetch_url` trước `web_search`.
+Aurora là gateway service tách riêng; bot chỉ gọi OpenAI-compatible `/v1/chat/completions` và vẫn tự thực thi mọi tool.
 
 ---
 
@@ -80,10 +84,11 @@ Với URL cụ thể do user cung cấp và yêu cầu đọc nội dung, system
 - Python runtime trong Docker: **3.12**.
 - Docker + Docker Compose plugin trên VPS.
 - Telegram bot token từ BotFather.
-- Tối thiểu một text provider khả dụng: B.AI, Gemini, Groq, Cloudflare Workers AI hoặc OpenRouter.
+- Tối thiểu một text provider khả dụng: B.AI, Aurora, Gemini, Groq, Cloudflare Workers AI hoặc OpenRouter.
+- Nếu dùng Aurora: một service key riêng (`AURORA_API_KEY`) và credential file ChatGPT cục bộ cho sidecar; xem [docs/AURORA_INTEGRATION.md](docs/AURORA_INTEGRATION.md).
 - Privacy Mode nên tắt nếu muốn bot đọc message/reply trong group theo workflow hiện tại.
 
-Default hiện tại tối ưu theo hướng **free-tier-first**, nhưng code không thể cưỡng chế billing. B.AI zero-credit là promotion có thể thay đổi; các provider khác cũng có quota/pricing riêng. Theo dõi dashboard/billing của từng account production.
+Default hiện tại tối ưu theo hướng **free-tier-first**, nhưng code không thể cưỡng chế billing. B.AI zero-credit là promotion có thể thay đổi; các provider khác cũng có quota/pricing riêng. Aurora là integration ChatGPT Web không chính thức và có thể break khi upstream web thay đổi.
 
 ---
 
@@ -98,7 +103,7 @@ nano .env
 
 # tối thiểu:
 # BOT_TOKEN=...
-# BAI_API_KEY=...       # hoặc Gemini / Groq / Cloudflare / OpenRouter
+# BAI_API_KEY=...       # hoặc Aurora / Gemini / Groq / Cloudflare / OpenRouter
 # ADMIN_IDS=...
 # ALLOWED_GROUP_IDS=... # hoặc dùng learn-mode ở mục 5
 docker compose up -d --build
@@ -124,11 +129,16 @@ Các default quan trọng hiện tại:
 BAI_TEXT_MODEL=qwen3.8-flash
 BAI_VISION_MODEL=qwen3.8-flash
 BAI_REQUEST_TIMEOUT_SEC=30.0
+AURORA_BASE_URL=http://aurora:8080/v1
+AURORA_API_KEY=
+AURORA_MODEL=auto
+AURORA_REQUEST_TIMEOUT_SEC=90.0
+AURORA_IMAGE=ghcr.io/aurora-develop/aurora:v2.6.3
 GEMINI_MODEL=gemini-3.8-flash
 GROQ_MODEL=openai/gpt-oss-120b
 OPENROUTER_MODEL=openrouter/free
 CLOUDFLARE_TEXT_MODEL=@cf/zai-org/glm-4.7-flash
-TEXT_PROVIDER_ORDER=bai,gemini,groq,cloudflare,openrouter
+TEXT_PROVIDER_ORDER=bai,aurora,gemini,groq,cloudflare,openrouter
 VISION_PROVIDER_ORDER=bai,gemini,groq_qwen38,cloudflare,groq_qwen36
 SEARCH_BACKEND=auto
 SEARXNG_TIMEOUT_SEC=7.0
@@ -212,12 +222,14 @@ Plain image không có text/caption trigger sẽ không tự gọi bot.
 | Biến | Default | Vai trò |
 |---|---|---|
 | `BAI_API_KEY` / `BAI_TEXT_MODEL` | `qwen3.8-flash` | Default slot đầu khi có key; promotion zero-credit cần theo dõi |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Default slot thứ hai |
+| `AURORA_BASE_URL` / `AURORA_API_KEY` / `AURORA_MODEL` | `http://aurora:8080/v1` / _(empty)_ / `auto` | Optional ChatGPT Web text fallback ngay sau B.AI |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `gemini-3.8-flash` | Fallback text sau Aurora khi cấu hình |
 | `GROQ_API_KEY` / `GROQ_MODEL` | `openai/gpt-oss-120b` | Fallback text |
 | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_TEXT_MODEL` | `@cf/zai-org/glm-4.7-flash` | Fallback text |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `openrouter/free` | Free-model router fallback |
-| `TEXT_PROVIDER_ORDER` | `bai,gemini,groq,cloudflare,openrouter` | Thứ tự hiệu lực |
+| `TEXT_PROVIDER_ORDER` | `bai,aurora,gemini,groq,cloudflare,openrouter` | Thứ tự hiệu lực |
 
+Aurora v1 chỉ có route text. `AURORA_API_KEY` là service key giữa bot và Aurora, không phải ChatGPT token. Credential ChatGPT chỉ nằm trong read-only sidecar mount.
 Startup yêu cầu ít nhất một provider vừa có credential/model hợp lệ vừa nằm trong order.
 
 ### Vision pool
@@ -240,7 +252,7 @@ MAX_TOTAL_IMAGE_BYTES=12582912
 
 Request có nhiều hơn capability của slot sẽ skip slot đó thay vì gửi payload không tương thích. Ví dụ request 2 ảnh sẽ bỏ qua B.AI vision và thử provider vision kế tiếp.
 
-Chi tiết B.AI: [docs/BAI_INTEGRATION.md](docs/BAI_INTEGRATION.md). Chi tiết Telegram vision: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
+Chi tiết B.AI: [docs/BAI_INTEGRATION.md](docs/BAI_INTEGRATION.md). Chi tiết Aurora: [docs/AURORA_INTEGRATION.md](docs/AURORA_INTEGRATION.md). Chi tiết Telegram vision: [docs/telegram-vision-input.md](docs/telegram-vision-input.md).
 
 ---
 
@@ -250,6 +262,7 @@ Default text:
 
 ```text
 B.AI / qwen3.8-flash
+  → Aurora / ChatGPT Web (nếu AURORA_API_KEY được cấu hình)
   → Gemini / gemini-3.8-flash
   → Groq / openai/gpt-oss-120b
   → Cloudflare / @cf/zai-org/glm-4.7-flash
@@ -268,13 +281,15 @@ B.AI / qwen3.8-flash
 
 Health state trong RAM:
 
-- `401/403`: disable slot đến process restart.
+- Provider thường `401/403`: disable slot đến process restart.
+- Aurora `401/403`: cooldown tạm 60 giây, hoặc theo numeric `Retry-After`, để gateway/session có thể recover mà không cần restart bot.
 - `429`: cooldown theo numeric `Retry-After`, nếu không parse được thì mặc định 60 giây.
 - Network/`5xx` transient: sau 2 lỗi liên tiếp cooldown 30 giây.
 - Success reset transient state.
 
 Tool budget dùng chung qua fallback: `MAX_TOOL_ROUNDS=2`, safety cap nội bộ tối đa 8 tool calls/completion.
 Provider-specific metadata được giữ trong cùng provider rồi strip trước cross-provider fallback.
+Aurora chỉ parse/emulate tool-call protocol; tool thực sự vẫn được bot execute và replay bằng `role=tool`.
 
 `last_fallbacks` là `ContextVar` request-local; `/status`/stats không bị sai chỉ vì hai request async fallback đồng thời.
 
@@ -352,7 +367,23 @@ Chi tiết: [docs/TELEGRAM_FORMATTING.md](docs/TELEGRAM_FORMATTING.md).
 
 ---
 
-## 12. SearXNG và Crawl4AI private profiles
+## 12. Aurora, SearXNG và Crawl4AI private profiles
+
+Aurora không publish port `8080`. Chuẩn bị credential file local và service key riêng, rồi bật profile:
+
+```bash
+mkdir -p aurora
+chmod 700 aurora
+# tạo aurora/session_tokens.txt local, một token mỗi dòng
+chmod 600 aurora/session_tokens.txt
+openssl rand -hex 32
+# đặt kết quả vào AURORA_API_KEY trong .env
+
+docker compose --profile aurora up -d aurora
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode models
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode chat
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode tool
+```
 
 Profile `searxng` không publish port ra host. Bot gọi nội bộ `http://searxng:8080`.
 
@@ -374,16 +405,18 @@ docker compose --profile searxng --profile crawl4ai up -d --build
 docker compose exec bot python scripts/smoke_crawl4ai.py
 ```
 
-Rollback URL renderer ngay bằng `CRAWL4AI_ENABLED=0`; search vẫn giữ SearXNG → DDGS như cũ.
+Rollback Aurora bằng cách bỏ `aurora` khỏi `TEXT_PROVIDER_ORDER` rồi stop profile. Rollback URL renderer bằng `CRAWL4AI_ENABLED=0`; search vẫn giữ SearXNG → DDGS như cũ.
 
-Guide đầy đủ: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md) và [docs/CRAWL4AI_INTEGRATION.md](docs/CRAWL4AI_INTEGRATION.md).
+Guide đầy đủ: [docs/AURORA_INTEGRATION.md](docs/AURORA_INTEGRATION.md), [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md) và [docs/CRAWL4AI_INTEGRATION.md](docs/CRAWL4AI_INTEGRATION.md).
 
 ---
 
 ## 13. Security và dữ liệu
 
-- `.env` và `searxng/settings.yml` chứa secret và nằm trong `.gitignore`.
-- Docker image chạy non-root (`appuser`).
+- `.env`, `searxng/settings.yml` và các Aurora credential file chứa secret và đều nằm trong `.gitignore`.
+- Aurora chỉ ở Docker network private, không publish `8080`; ChatGPT credential file được bind-mount read-only, còn bot chỉ biết `AURORA_API_KEY` service secret.
+- Aurora chạy với `FREE_ACCOUNTS=false`, `ENABLE_EXTERNAL_TOKEN=false`, `ENABLE_HISTORY=false`; bot vẫn là conversation-history owner duy nhất.
+- Docker image bot chạy non-root (`appuser`).
 - Không có database; context, stats, rate-limit, provider health và search runtime đều in-memory.
 - Raw image bytes không được ghi vào ChatMemory.
 - Generic web reader có SSRF guard cho URL/DNS/redirect.
@@ -423,6 +456,14 @@ print("MAX_TOOL_ROUNDS       =", s.max_tool_rounds)
 PY
 ```
 
+Nếu dùng Aurora:
+
+```bash
+docker compose --profile aurora ps
+docker compose logs --tail=100 aurora
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode all
+```
+
 Nếu dùng SearXNG:
 
 ```bash
@@ -447,6 +488,7 @@ docker compose exec bot python scripts/smoke_crawl4ai.py
 python -m pip install -r requirements.txt
 python -m pip install ruff==0.16.6 pip-audit==2.10.1
 
+python -m unittest discover -s tests -p 'test_aurora*.py' -v
 python -m unittest discover -s tests -p 'test_crawl4ai*.py' -v
 python -m unittest discover -s tests -p 'test_url_service.py' -v
 python -m unittest discover -s tests -p 'test_url_tool_integration.py' -v
@@ -456,23 +498,25 @@ python -m ruff check .
 python -m compileall -q app tests scripts
 python -m pip check
 python -m pip_audit --progress-spinner off
-cp .env.example .env && docker compose config --quiet
+cp .env.example .env && mkdir -p aurora && touch aurora/session_tokens.txt && docker compose --profile aurora config --quiet
 ```
 
 Workflow [Audit checks](.github/workflows/audit.yml) chạy trên push, pull request và `workflow_dispatch`:
 
 - Python 3.11 + 3.12.
-- Targeted Crawl4AI/URL tests trước full suite.
+- Targeted Crawl4AI/URL và Aurora tests trước full suite.
 - Ruff, `pip check`, `compileall`.
 - Offline regression/integration tests.
 - `pip-audit`.
-- Docker Compose config validation.
+- Docker Compose config validation với profile Aurora nhưng không start gateway/live ChatGPT.
 - SearXNG YAML validation và production Docker build ở Python 3.12.
 
 Coverage quan trọng:
 
 - `tests/test_free_routing.py` — B.AI-first defaults, capability order, provider metadata isolation.
 - `tests/test_bai_provider.py`, `tests/test_bai_probe.py` — B.AI contract/probe behavior.
+- `tests/test_aurora_health.py`, `tests/test_aurora_provider.py`, `tests/test_aurora_routing.py` — auth cooldown, factory/wire/tool contract và provider order.
+- `tests/test_aurora_compose.py`, `tests/test_aurora_probe.py` — private-sidecar invariants và safe smoke-probe helpers.
 - `tests/test_router_concurrency.py` — request-local fallback metric under concurrency.
 - `tests/test_forum_topic_isolation.py` — forum topic history/lock isolation.
 - `tests/test_search_backend_auto.py`, `tests/test_search_cancellation.py` — resilient search routing, cancellation và client lifecycle.
@@ -481,7 +525,7 @@ Coverage quan trọng:
 - `tests/test_x_reader.py`, `tests/test_url_service.py`, `tests/test_url_tool_integration.py` — X/direct URL routing, SSRF, fallback và tool semantics.
 - `tests/test_search_policy_prompt.py` — fetch-first policy và chống mirror-search loop.
 
-CI không chứng minh live provider/X/SearXNG/Crawl4AI E2E trên VPS production; live Crawl4AI smoke và live provider probes là bước manual riêng.
+CI không chứng minh live provider/Aurora/X/SearXNG/Crawl4AI E2E trên VPS production. Live Aurora `models/chat/tool` smoke và controlled B.AI → Aurora fallback là deployment canary manual trước merge.
 
 ---
 
@@ -492,7 +536,7 @@ app/
 ├── main.py
 ├── config.py
 ├── ai/
-│   ├── bai.py / gemini.py / groq.py / cloudflare.py / openrouter.py
+│   ├── bai.py / aurora.py / gemini.py / groq.py / cloudflare.py / openrouter.py
 │   ├── base.py / capabilities.py / health.py / router.py / multimodal.py
 ├── bot/
 │   ├── filters.py / handlers.py / image_results.py / media.py
@@ -507,9 +551,11 @@ app/
 scripts/
 ├── sync_env.py
 ├── probe_bai.py
+├── probe_aurora.py
 └── smoke_crawl4ai.py
 
 docs/
+├── AURORA_INTEGRATION.md
 ├── BAI_INTEGRATION.md
 ├── CRAWL4AI_INTEGRATION.md
 ├── ENV_SYNC.md
