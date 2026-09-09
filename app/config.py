@@ -125,8 +125,6 @@ class Settings(BaseSettings):
             raise ValueError("SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
         if self.ddgs_timeout_sec > total:
             raise ValueError("DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
-        if total > self.question_timeout_sec:
-            raise ValueError("SEARCH_TOTAL_TIMEOUT_SEC không được lớn hơn QUESTION_TIMEOUT_SEC")
         return self
 
     @property
