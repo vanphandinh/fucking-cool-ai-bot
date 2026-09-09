@@ -38,7 +38,7 @@ def make_bai_provider(
 ) -> OpenAICompatProvider:
     selected_model = model or (settings.bai_vision_model if vision else settings.bai_text_model)
     _validate_model(selected_model, vision=vision)
-    return OpenAICompatProvider(
+    provider = OpenAICompatProvider(
         name=name,
         base_url=_BASE_URL,
         api_key=settings.bai_api_key,
@@ -50,3 +50,8 @@ def make_bai_provider(
             max_images=1 if vision else 0,
         ),
     )
+    # B.AI may continue emitting function calls from prior tool history even when
+    # the tools array is omitted. The plain recovery pass must explicitly force
+    # tool selection off so it can synthesize a final answer from tool results.
+    provider.force_tool_choice_none_when_no_tools = True
+    return provider
