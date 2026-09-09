@@ -88,13 +88,14 @@ class BaiProviderModuleTests(unittest.TestCase):
 
 
 class BaiRoutingTests(unittest.TestCase):
-    def test_unordered_bai_config_does_not_affect_existing_router(self) -> None:
+    def test_bai_config_is_ignored_when_bai_is_removed_from_order(self) -> None:
         settings = Settings(
             _env_file=None,
             bai_api_key="b",
             bai_text_model="not-promoted",
             bai_vision_model="hy3",
             groq_api_key="g",
+            text_provider_order="groq",
             vision_enabled=False,
         )
         router = build_provider_router(settings)
@@ -106,24 +107,24 @@ class BaiRoutingTests(unittest.TestCase):
         finally:
             asyncio.run(_close_router(router))
 
-    def test_bai_is_available_only_when_explicitly_ordered(self) -> None:
+    def test_bai_is_first_when_key_is_present_in_default_order(self) -> None:
         settings = Settings(
             _env_file=None,
             bai_api_key="b",
+            gemini_api_key="m",
             groq_api_key="g",
-            text_provider_order="bai,groq",
             vision_enabled=False,
         )
-        self.assertEqual(settings.configured_provider_names, ["bai", "groq"])
+        self.assertEqual(settings.configured_provider_names, ["bai", "gemini", "groq"])
         router = build_provider_router(settings)
         try:
             self.assertEqual(
                 [provider.name for provider in router.capable_providers(requires_vision=False)],
-                ["bai", "groq"],
+                ["bai", "gemini", "groq"],
             )
             self.assertEqual(
                 [provider.model for provider in router.capable_providers(requires_vision=False)],
-                ["qwen3.8-flash", "openai/gpt-oss-120b"],
+                ["qwen3.8-flash", "gemini-3.8-flash", "openai/gpt-oss-120b"],
             )
         finally:
             asyncio.run(_close_router(router))
