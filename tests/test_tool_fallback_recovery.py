@@ -52,14 +52,16 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             if len(requests) == 1:
                 return _tool_response(request, "call_first")
 
-            history_has_result = any(
-                message.get("role") == "tool" and message.get("content") == "fetched content"
+            serialized_messages = json.dumps(payload["messages"], ensure_ascii=False)
+            has_structured_history = any(
+                message.get("role") == "tool" or bool(message.get("tool_calls"))
                 for message in payload["messages"]
             )
             if (
                 payload.get("tool_choice") != "none"
                 or "tools" in payload
-                or not history_has_result
+                or has_structured_history
+                or "fetched content" not in serialized_messages
             ):
                 return httpx.Response(
                     400,
@@ -417,7 +419,13 @@ class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
 
         def bai_respond(request: httpx.Request) -> httpx.Response:
             bai_requests.append(json.loads(request.content))
-            return _tool_response(request, f"call_{len(bai_requests)}")
+            if len(bai_requests) == 1:
+                return _tool_response(request, "call_bai")
+            return httpx.Response(
+                500,
+                json={"error": {"message": "bai upstream failed before exhaustion"}},
+                request=request,
+            )
 
         def gemini_respond(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
@@ -445,7 +453,7 @@ class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
             base_url="https://gemini.test/v1/",
             transport=httpx.MockTransport(gemini_respond),
         )
-        router = AIProviderRouter([bai, gemini], max_tool_rounds=1)
+        router = AIProviderRouter([bai, gemini], max_tool_rounds=3)
 
         async def execute(_name: str, _args: dict) -> str:
             return "fetched content"
@@ -464,7 +472,7 @@ class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
             await gemini.aclose()
 
         self.assertEqual(result, ("done", "gemini"))
-        self.assertGreaterEqual(len(bai_requests), 2)
+        self.assertEqual(len(bai_requests), 2)
         self.assertEqual(len(gemini_requests), 1)
         assistant_calls = _assistant_tool_calls(gemini_requests[0])
         self.assertTrue(assistant_calls)
