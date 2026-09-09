@@ -49,7 +49,15 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_crawl4ai_failure_falls_back_generic_exactly_once(self):
         settings = Settings(_env_file=None, crawl4ai_api_token="secret")
-        for reason in ("timeout", "auth", "rate_limited", "upstream_5xx", "malformed_json", "empty_content"):
+        reasons = (
+            "timeout",
+            "auth",
+            "rate_limited",
+            "upstream_5xx",
+            "malformed_json",
+            "empty_content",
+        )
+        for reason in reasons:
             with self.subTest(reason=reason):
                 crawl = AsyncMock(
                     return_value=Crawl4AIReadResult("", "https://example.org", False, reason)
