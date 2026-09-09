@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
-    text_provider_order: str = "groq,cloudflare,openrouter,gemini"
+    text_provider_order: str = "bai,gemini,groq,cloudflare,openrouter"
 
     # Vision pool.
     vision_enabled: bool = True
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     groq_vision_models: str = "qwen/qwen3.8-27b,qwen/qwen3.6-27b"
     cloudflare_vision_model: str = "@cf/google/gemma-4-26b-a4b-it"
     bai_vision_model: str = "qwen3.8-flash"
-    vision_provider_order: str = "groq_qwen38,cloudflare,groq_qwen36,gemini"
+    vision_provider_order: str = "bai,gemini,groq_qwen38,cloudflare,groq_qwen36"
     max_images_per_request: int = Field(default=3, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
