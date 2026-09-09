@@ -17,7 +17,7 @@
 - Approved design commit: `8c2ff30114adb757b464c90708bd81ce3d3ea4f1`
 - Design baseline: `main` commit `e9c1cfaf3fdecfdb714c701d544ea027fa31c1fe`.
 - Read the spec and this plan completely before editing runtime code.
-- At execution time inspect latest `main`. If an accepted provider-cleanup change has removed Gemini/Groq/Cloudflare/OpenRouter, rebase first and **do not resurrect removed providers**. Preserve `bai,aurora` ordering among the providers that remain.
+- At execution time inspect latest `main`. If an accepted provider-cleanup change has removed Gemini/Groq/Cloudflare/OpenRouter, rebase first and **do not resurrect removed providers**. Preserve `bai,aurora` ordering among providers that remain.
 - Create implementation branch `feat/aurora-chatgpt-web-integration` from the planning branch after syncing with latest `main`. Use `superpowers:using-git-worktrees` when available.
 - Use TDD for every runtime behavior change.
 - Never commit real Aurora/ChatGPT credentials.
@@ -38,11 +38,11 @@
 - Do not change B.AI model selection, Fresh Qwen Synthesis, `MAX_TOOL_ROUNDS`, `_MAX_TOOL_CALLS_TOTAL`, or `_MAX_PARALLEL_TOOL_CALLS`.
 - Do not change SearXNG/DDGS/Crawl4AI/search behavior.
 - Existing providers retain permanent in-process disable on 401/403.
-- Aurora 401/403 uses a temporary 60-second cooldown unless `Retry-After` is present.
+- Aurora 401/403 uses temporary 60-second cooldown unless `Retry-After` is present.
 - 429/5xx retain current generic health behavior.
 - Tools execute only in the bot; Aurora only converts tool-call protocol.
 - Never execute malformed/leaked raw `<tool_call>` markup.
-- CI must remain credential-free and offline with respect to Aurora/ChatGPT.
+- CI remains credential-free and offline with respect to Aurora/ChatGPT.
 
 ## File Structure
 
@@ -53,7 +53,7 @@
 - `tests/test_aurora_routing.py` — provider order/registration tests.
 - `tests/test_aurora_compose.py` — private-sidecar/security contract.
 - `scripts/probe_aurora.py` — credentialed manual smoke probe.
-- `tests/test_aurora_probe.py` — offline probe helper tests.
+- `tests/test_aurora_probe.py` — offline probe helper/image-packaging tests.
 
 **Modify**
 - `app/ai/health.py`
@@ -64,6 +64,7 @@
 - `.env.example`
 - `.gitignore`
 - `docker-compose.yml`
+- `Dockerfile` — include `scripts/` so the probe can run from the private Compose network.
 - `README.md`
 - `.github/workflows/audit.yml`
 
@@ -138,21 +139,15 @@ python -m unittest tests.test_aurora_health -v
 
 Expected: FAIL because the new policy field does not exist.
 
-- [ ] **Step 3: Implement the health policy**
+- [ ] **Step 3: Implement the policy**
 
-In `app/ai/health.py`:
+In `app/ai/health.py` add the field first in the dataclass:
 
 ```python
-@dataclass
-class ProviderHealth:
-    auth_failure_cooldown_sec: float | None = None
-    cooldown_until: float = 0.0
-    disabled: bool = False
-    consecutive_transient_failures: int = 0
-    last_error: str | None = None
+auth_failure_cooldown_sec: float | None = None
 ```
 
-Replace the existing 401/403 branch with:
+Replace the current 401/403 branch with:
 
 ```python
 if status_code in (401, 403):
@@ -164,23 +159,21 @@ if status_code in (401, 403):
     return
 ```
 
-In `OpenAICompatProvider.__init__()` add the final parameter:
+In `OpenAICompatProvider.__init__()` add final parameter:
 
 ```python
 auth_failure_cooldown_sec: float | None = None,
 ```
 
-and initialize health with:
+and initialize:
 
 ```python
-self.health = ProviderHealth(
-    auth_failure_cooldown_sec=auth_failure_cooldown_sec,
-)
+self.health = ProviderHealth(auth_failure_cooldown_sec=auth_failure_cooldown_sec)
 ```
 
 Do not add provider-name checks.
 
-- [ ] **Step 4: Run GREEN and existing health-adjacent regressions**
+- [ ] **Step 4: Run GREEN**
 
 ```bash
 python -m unittest tests.test_aurora_health tests.test_bai_provider tests.test_provider_metadata -v
@@ -210,9 +203,9 @@ git commit -m "feat: support temporary provider auth cooldown"
 **Interfaces:**
 - Produces `make_aurora_provider(settings: Settings, *, name: str = "aurora") -> OpenAICompatProvider`.
 - Settings: `aurora_base_url`, `aurora_api_key`, `aurora_model`, `aurora_request_timeout_sec`.
-- Aurora factory passes `auth_failure_cooldown_sec=60.0` and advertises text-only capability.
+- Factory passes `auth_failure_cooldown_sec=60.0` and text-only capability.
 
-- [ ] **Step 1: Write failing factory/order tests**
+- [ ] **Step 1: Write failing factory and routing tests**
 
 ```python
 # tests/test_aurora_provider.py
@@ -328,7 +321,7 @@ python -m unittest tests.test_aurora_provider.AuroraProviderFactoryTests tests.t
 
 Expected: FAIL because Aurora settings/factory/router slot do not exist.
 
-- [ ] **Step 3: Add Aurora settings and configured-provider detection**
+- [ ] **Step 3: Add settings and configured-provider detection**
 
 In `app/config.py` add:
 
@@ -339,7 +332,7 @@ aurora_model: str = "auto"
 aurora_request_timeout_sec: float = Field(default=90.0, gt=0, allow_inf_nan=False)
 ```
 
-Change current-baseline order to:
+Set current-baseline order:
 
 ```python
 text_provider_order: str = "bai,aurora,gemini,groq,cloudflare,openrouter"
@@ -352,9 +345,9 @@ if self.aurora_base_url.strip() and self.aurora_api_key and self.aurora_model:
     available.add("aurora")
 ```
 
-If latest accepted `main` already removed later providers, keep the equivalent surviving order `bai,aurora` and do not restore deleted fields/factories.
+If latest accepted `main` removed later providers, keep the surviving order `bai,aurora` and do not restore deleted provider code.
 
-- [ ] **Step 4: Create the Aurora factory**
+- [ ] **Step 4: Create factory**
 
 ```python
 # app/ai/aurora.py
@@ -369,35 +362,27 @@ from .capabilities import ProviderCapabilities
 _AUTH_FAILURE_COOLDOWN_SEC = 60.0
 
 
-def make_aurora_provider(
-    settings: Settings,
-    *,
-    name: str = "aurora",
-) -> OpenAICompatProvider:
+def make_aurora_provider(settings: Settings, *, name: str = "aurora") -> OpenAICompatProvider:
     return OpenAICompatProvider(
         name=name,
         base_url=settings.aurora_base_url,
         api_key=settings.aurora_api_key,
         model=settings.aurora_model,
         timeout=settings.aurora_request_timeout_sec,
-        capabilities=ProviderCapabilities(
-            route="text",
-            supports_vision=False,
-            max_images=0,
-        ),
+        capabilities=ProviderCapabilities(route="text", supports_vision=False, max_images=0),
         auth_failure_cooldown_sec=_AUTH_FAILURE_COOLDOWN_SEC,
     )
 ```
 
-- [ ] **Step 5: Register Aurora in `build_provider_router()`**
+- [ ] **Step 5: Register factory in `build_provider_router()`**
 
-Add import:
+Add:
 
 ```python
 from .aurora import make_aurora_provider
 ```
 
-Add to the text-provider construction block:
+and in text-provider construction:
 
 ```python
 if (
@@ -411,7 +396,7 @@ if (
 
 Keep the existing order loop; do not create an Aurora-specific fallback branch.
 
-- [ ] **Step 6: Run GREEN and routing regressions**
+- [ ] **Step 6: Run GREEN**
 
 ```bash
 python -m unittest tests.test_aurora_provider.AuroraProviderFactoryTests tests.test_aurora_routing tests.test_provider_order -v
@@ -429,7 +414,7 @@ git commit -m "feat: route Aurora after B.AI"
 
 ---
 
-### Task 3: Lock the Aurora wire contract and full client-side tool loop
+### Task 3: Lock wire contract and full client-side tool loop
 
 **Files:**
 - Modify: `tests/test_aurora_provider.py`
@@ -437,11 +422,11 @@ git commit -m "feat: route Aurora after B.AI"
 
 **Interfaces:**
 - No new runtime interface expected.
-- Aurora uses existing `POST /v1/chat/completions`, Bearer service auth, `choices[0].message`, and OpenAI-format `tool_calls`.
+- Uses existing `POST /v1/chat/completions`, Bearer service auth, `choices[0].message`, and OpenAI-format `tool_calls`.
 
-- [ ] **Step 1: Add exact mock-transport helpers and tests**
+- [ ] **Step 1: Extend the import block at the top of `tests/test_aurora_provider.py`**
 
-Append to `tests/test_aurora_provider.py`:
+Add these imports to the existing top import section, not after class definitions:
 
 ```python
 import json
@@ -449,8 +434,13 @@ import httpx
 
 from app.ai.base import ProviderError
 from app.ai.router import AIProviderRouter
+```
 
+- [ ] **Step 2: Add exact mock helper and wire/tool tests**
 
+Append below the factory tests:
+
+```python
 def _search_tool() -> dict:
     return {
         "type": "function",
@@ -593,34 +583,28 @@ class AuroraWireContractTests(unittest.IsolatedAsyncioTestCase):
             await provider.aclose()
 ```
 
-- [ ] **Step 2: Run tests**
+- [ ] **Step 3: Run compatibility tests**
 
 ```bash
 python -m unittest tests.test_aurora_provider.AuroraWireContractTests -v
-```
-
-Expected: PASS with the generic provider layer. If RED exposes a real mismatch, change only the minimal generic compatibility code needed and preserve existing providers.
-
-- [ ] **Step 3: Run tool/fresh-synthesis regressions**
-
-```bash
 python -m unittest tests.test_tool_fallback_recovery tests.test_fresh_synthesis_routing -v
 ```
 
-Expected: PASS with tool-budget constants unchanged.
+Expected: PASS using generic provider/router code. If a test is RED, make only the minimal generic compatibility change proven by that failure and rerun these commands.
 
-- [ ] **Step 4: Commit tests and any proven compatibility fix**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add tests/test_aurora_provider.py app/ai/base.py app/ai/router.py
+git add tests/test_aurora_provider.py
+git add -u app/ai/base.py app/ai/router.py
 git commit -m "test: lock Aurora chat and tool contract"
 ```
 
-If runtime files did not change, stage only the test file.
+`git add -u` stages runtime files only if they actually changed.
 
 ---
 
-### Task 4: Add private pinned Aurora sidecar and deployment security boundary
+### Task 4: Add private pinned sidecar and deployment security boundary
 
 **Files:**
 - Create: `tests/test_aurora_compose.py`
@@ -633,7 +617,7 @@ If runtime files did not change, stage only the test file.
 - Compose profile `aurora`.
 - Bot endpoint `http://aurora:8080/v1`.
 - Deploy vars `AURORA_IMAGE`, `AURORA_CREDENTIAL_FILE`, `AURORA_CREDENTIAL_TARGET`.
-- Default credential mount `./aurora/session_tokens.txt` -> `/session_tokens.txt`, read-only.
+- Default mount `./aurora/session_tokens.txt` -> `/session_tokens.txt`, read-only.
 
 - [ ] **Step 1: Write failing static contract tests**
 
@@ -689,7 +673,7 @@ python -m unittest tests.test_aurora_compose -v
 
 Expected: FAIL because sidecar/deploy settings do not exist.
 
-- [ ] **Step 3: Add service/deploy settings only to `.env.example`**
+- [ ] **Step 3: Add service/deploy settings to `.env.example`**
 
 ```dotenv
 # ============ Aurora / ChatGPT Web fallback ============
@@ -712,7 +696,7 @@ aurora/refresh_tokens.txt
 aurora/access_tokens.txt
 ```
 
-- [ ] **Step 5: Add the private Compose service**
+- [ ] **Step 5: Add private Compose service**
 
 ```yaml
   aurora:
@@ -739,11 +723,11 @@ aurora/access_tokens.txt
         read_only: true
 ```
 
-Do not add `ports:` or a hard bot `depends_on: aurora`.
+Do not add `ports:` or hard bot `depends_on: aurora`.
 
-- [ ] **Step 6: Add exact operator guidance to README**
+- [ ] **Step 6: Add exact README operator guidance**
 
-Document these commands and facts:
+Document:
 
 ```bash
 mkdir -p aurora
@@ -753,14 +737,14 @@ chmod 600 aurora/session_tokens.txt
 docker compose --profile aurora up -d aurora
 ```
 
-Document refresh-token alternative:
+Refresh-token alternative:
 
 ```dotenv
 AURORA_CREDENTIAL_FILE=./aurora/refresh_tokens.txt
 AURORA_CREDENTIAL_TARGET=/refresh_tokens.txt
 ```
 
-Document: unofficial ChatGPT Web gateway may break after upstream web changes; `AURORA_API_KEY` is the internal service key, not the ChatGPT token; rollout starts as B.AI fallback; rollback removes `aurora` from `TEXT_PROVIDER_ORDER` and stops the profile.
+Also state: Aurora is an unofficial ChatGPT Web gateway that may break after upstream web changes; `AURORA_API_KEY` is the internal service key, not a ChatGPT token; rollout starts as B.AI fallback; rollback removes `aurora` from `TEXT_PROVIDER_ORDER` and stops the profile.
 
 - [ ] **Step 7: Run GREEN and Compose validation**
 
@@ -774,7 +758,7 @@ rm -f .env aurora/session_tokens.txt
 rmdir aurora 2>/dev/null || true
 ```
 
-Expected: PASS; no real token and no image start/pull required.
+Expected: PASS without a real token or starting Aurora.
 
 - [ ] **Step 8: Commit**
 
@@ -785,24 +769,27 @@ git commit -m "feat: add private Aurora sidecar"
 
 ---
 
-### Task 5: Add operator-safe Aurora smoke probe
+### Task 5: Add operator-safe smoke probe inside the bot image
 
 **Files:**
 - Create: `scripts/probe_aurora.py`
 - Create: `tests/test_aurora_probe.py`
+- Modify: `Dockerfile`
 
 **Interfaces:**
 - Reads only `AURORA_BASE_URL`, `AURORA_API_KEY`, `AURORA_MODEL`.
-- Modes: `models`, `chat`, `tool`, `all`.
+- Modes `models`, `chat`, `tool`, `all`.
 - Never reads ChatGPT token files.
 - Tool mode forces `echo_probe` but never executes it.
+- `scripts/` is copied into `/app/scripts` so the probe runs in the existing private Compose network.
 
-- [ ] **Step 1: Write failing helper tests**
+- [ ] **Step 1: Write failing helper/packaging tests**
 
 ```python
 # tests/test_aurora_probe.py
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from scripts.probe_aurora import _bounded_redacted, _extract_chat_text, _extract_tool_call
@@ -830,6 +817,10 @@ class AuroraProbeHelperTests(unittest.TestCase):
             }]}}]
         })
         self.assertEqual(call["function"]["name"], "echo_probe")
+
+    def test_production_image_copies_scripts(self) -> None:
+        dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY scripts ./scripts", dockerfile)
 ```
 
 - [ ] **Step 2: Run RED**
@@ -838,7 +829,7 @@ class AuroraProbeHelperTests(unittest.TestCase):
 python -m unittest tests.test_aurora_probe -v
 ```
 
-Expected: FAIL because the script does not exist.
+Expected: FAIL because the script does not exist and Dockerfile does not copy scripts.
 
 - [ ] **Step 3: Create the complete probe**
 
@@ -928,10 +919,7 @@ def _probe_tool(client: httpx.Client, model: str) -> None:
                     },
                 },
             }],
-            "tool_choice": {
-                "type": "function",
-                "function": {"name": "echo_probe"},
-            },
+            "tool_choice": {"type": "function", "function": {"name": "echo_probe"}},
         },
     )
     response.raise_for_status()
@@ -959,11 +947,7 @@ def main() -> int:
                 _probe_tool(client, model)
         return 0
     except (httpx.HTTPError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
-        print(
-            "aurora probe failed:",
-            _bounded_redacted(str(exc), secret=api_key),
-            file=sys.stderr,
-        )
+        print("aurora probe failed:", _bounded_redacted(str(exc), secret=api_key), file=sys.stderr)
         return 1
 
 
@@ -971,7 +955,17 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Package scripts in Dockerfile**
+
+Immediately after the existing `COPY app ./app` line add:
+
+```dockerfile
+COPY scripts ./scripts
+```
+
+Do not change the container command or user.
+
+- [ ] **Step 5: Run GREEN**
 
 ```bash
 python -m unittest tests.test_aurora_probe -v
@@ -980,10 +974,10 @@ python -m compileall -q scripts/probe_aurora.py
 
 Expected: PASS without network access.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/probe_aurora.py tests/test_aurora_probe.py
+git add scripts/probe_aurora.py tests/test_aurora_probe.py Dockerfile
 git commit -m "feat: add Aurora smoke probe"
 ```
 
@@ -996,13 +990,13 @@ git commit -m "feat: add Aurora smoke probe"
 - Modify only if verification exposes a real defect: directly responsible files.
 
 **Interfaces:**
-- CI remains offline for Aurora/ChatGPT.
+- CI stays offline for Aurora/ChatGPT.
 - Matrix stays Python 3.11/3.12.
-- Existing dependency audit and production image build remain enabled.
+- Existing dependency audit and bot image build stay enabled.
 
 - [ ] **Step 1: Add targeted Aurora CI step**
 
-Add before general regression tests:
+Before general regression tests add:
 
 ```yaml
       - name: Targeted Aurora tests
@@ -1010,7 +1004,7 @@ Add before general regression tests:
           python -m unittest discover -s tests -p 'test_aurora*.py' -v
 ```
 
-In the Python 3.12 Compose-validation step use:
+In Python 3.12 Compose validation use:
 
 ```yaml
           cp .env.example .env
@@ -1019,7 +1013,7 @@ In the Python 3.12 Compose-validation step use:
           docker compose --profile aurora config --quiet
 ```
 
-Do not run the Aurora container in CI.
+Do not start Aurora in CI.
 
 - [ ] **Step 2: Run targeted tests**
 
@@ -1049,7 +1043,7 @@ python -m compileall -q app tests scripts
 
 Expected: PASS.
 
-- [ ] **Step 5: Validate Compose and build production image**
+- [ ] **Step 5: Validate Compose and production image**
 
 ```bash
 cp .env.example .env
@@ -1063,15 +1057,17 @@ rmdir aurora 2>/dev/null || true
 
 Expected: PASS.
 
-- [ ] **Step 6: Audit the diff**
+- [ ] **Step 6: Audit complete diff**
 
 ```bash
+git fetch origin main
+BASE_SHA="$(git merge-base HEAD origin/main)"
 git diff --check
 git status --short
-git diff <implementation-base>...HEAD -- app tests scripts docker-compose.yml .env.example .gitignore README.md .github/workflows/audit.yml
+git diff "$BASE_SHA"...HEAD -- app tests scripts Dockerfile docker-compose.yml .env.example .gitignore README.md .github/workflows/audit.yml
 ```
 
-Review for these exact forbidden changes:
+Reject any diff containing:
 
 ```text
 real ChatGPT/Aurora secrets
@@ -1085,7 +1081,7 @@ B.AI model/tool-budget/Fresh Qwen changes
 resurrection of providers removed by an accepted concurrent cleanup
 ```
 
-If any are found, fix them and rerun Steps 2-5.
+Fix any finding and rerun Steps 2-5.
 
 - [ ] **Step 7: Commit CI changes**
 
@@ -1094,22 +1090,22 @@ git add .github/workflows/audit.yml
 git commit -m "ci: cover Aurora integration"
 ```
 
-- [ ] **Step 8: Push and verify GitHub Actions**
+- [ ] **Step 8: Push and verify Actions**
 
-Push `feat/aurora-chatgpt-web-integration`, open a PR to `main`, and verify both Python 3.11 and 3.12 jobs pass. Do not merge.
+Push `feat/aurora-chatgpt-web-integration`, open a PR to `main`, verify Python 3.11 and 3.12 jobs pass, and leave the PR unmerged.
 
 ---
 
 ### Task 7: Run credentialed deployment canary after CI passes
 
 **Files:**
-- No committed changes unless the canary exposes a reproducible defect that gets a new failing test first.
+- No committed changes unless the canary exposes a reproducible defect; add a failing test before fixing such a defect.
 
 **Interfaces:**
 - Uses local `aurora/session_tokens.txt` or refresh-token alternative.
 - Uses `AURORA_API_KEY` only as bot-to-Aurora service auth.
 
-- [ ] **Step 1: Prepare local credentials securely**
+- [ ] **Step 1: Prepare local credentials**
 
 ```bash
 mkdir -p aurora
@@ -1126,21 +1122,21 @@ Generate a distinct strong `AURORA_API_KEY` in deployment `.env`; never commit i
 docker compose --profile aurora up -d aurora
 ```
 
-Verify the container is running and no host port 8080 is published.
+Verify no host port 8080 is published.
 
-- [ ] **Step 3: Run private-network smoke probes**
+- [ ] **Step 3: Run probes from the private Compose network**
 
-From the bot container or another one-off container on the Compose network:
+Use the bot image, which now contains `scripts/`:
 
 ```bash
-python scripts/probe_aurora.py --mode models
-python scripts/probe_aurora.py --mode chat
-python scripts/probe_aurora.py --mode tool
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode models
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode chat
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode tool
 ```
 
-Required: all exit 0; tool mode returns a parseable `echo_probe` call without executing it.
+Required: all exit 0; tool mode returns a parseable `echo_probe` call and never executes it.
 
-- [ ] **Step 4: Enable B.AI -> Aurora canary order**
+- [ ] **Step 4: Enable canary order**
 
 Current baseline:
 
@@ -1148,17 +1144,17 @@ Current baseline:
 TEXT_PROVIDER_ORDER=bai,aurora,gemini,groq,cloudflare,openrouter
 ```
 
-If accepted cleanup removed later providers:
+After accepted provider cleanup:
 
 ```dotenv
 TEXT_PROVIDER_ORDER=bai,aurora
 ```
 
-Verify normal B.AI-success requests still select B.AI.
+Verify ordinary B.AI-success requests still select B.AI.
 
 - [ ] **Step 5: Exercise one controlled fallback and one tool round-trip**
 
-In staging/test configuration, induce one controlled B.AI failure without changing production B.AI model settings. Verify Aurora answers, fallback count increments, no ChatGPT token appears in logs, and one safe read/search tool completes:
+In staging/test configuration induce one controlled B.AI failure without changing production B.AI model settings. Verify Aurora answers, fallback count increments, no ChatGPT token appears in logs, and one safe read/search tool completes:
 
 ```text
 Aurora tool_calls -> bot executes tool -> role=tool -> Aurora final text
@@ -1169,8 +1165,6 @@ Aurora tool_calls -> bot executes tool -> role=tool -> Aurora final text
 Cause one staging Aurora auth failure, observe 60-second cooldown, restore valid Aurora/session state, and verify Aurora becomes eligible again without bot restart. Do not repeatedly hammer a real account.
 
 - [ ] **Step 7: Record non-secret canary result on the PR**
-
-Use exactly this checklist format:
 
 ```text
 Aurora v2.6.3 canary
@@ -1183,7 +1177,7 @@ Aurora v2.6.3 canary
 - secrets observed in logs: NO
 ```
 
-If a canary fails, do not merge; reproduce with an offline failing test where possible, fix with TDD, and rerun the affected verification gate.
+If canary fails, do not merge; reproduce with an offline failing test where possible, fix with TDD, and rerun the affected verification gate.
 
 ---
 
@@ -1213,7 +1207,7 @@ If a canary fails, do not merge; reproduce with an offline failing test where po
 - [ ] All targeted and full offline tests pass.
 - [ ] Ruff and `compileall` pass.
 - [ ] `docker compose --profile aurora config --quiet` passes.
-- [ ] Production bot image builds.
+- [ ] Production bot image builds and contains `scripts/probe_aurora.py`.
 - [ ] GitHub Actions passes on Python 3.11 and 3.12.
 - [ ] Credentialed models/chat/tool canary passes before merge.
 - [ ] PR remains unmerged until explicit user approval.
