@@ -164,20 +164,35 @@ class SearchCache:
 T = TypeVar("T")
 
 
+@dataclass
+class _Flight:
+    task: asyncio.Task
+    waiters: int = 0
+
+
 class SingleFlight:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._flights: dict[str, _Flight] = {}
 
     async def run(self, key: str, factory: Callable[[], Awaitable[T]]) -> T:
         async with self._lock:
-            task = self._tasks.get(key)
-            if task is None:
-                task = asyncio.create_task(factory())
-                self._tasks[key] = task
-                task.add_done_callback(lambda done, k=key: self._discard(k, done))
-        return await asyncio.shield(task)
+            flight = self._flights.get(key)
+            if flight is None:
+                flight = _Flight(task=asyncio.create_task(factory()))
+                self._flights[key] = flight
+            flight.waiters += 1
 
-    def _discard(self, key: str, task: asyncio.Task) -> None:
-        if self._tasks.get(key) is task:
-            self._tasks.pop(key, None)
+        try:
+            return await asyncio.shield(flight.task)
+        finally:
+            async with self._lock:
+                current = self._flights.get(key)
+                if current is not flight:
+                    return
+                flight.waiters -= 1
+                if flight.waiters > 0:
+                    return
+                self._flights.pop(key, None)
+                if not flight.task.done():
+                    flight.task.cancel()
