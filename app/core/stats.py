@@ -18,11 +18,11 @@ class Stats:
         self.questions_total = 0
         self.questions_today = 0
         self.searches = 0
+        self.fallback_count = 0
         self._day = _today_vn()
         self.by_provider: Counter[str] = Counter()
         self.last_provider: str | None = None
         self.last_error: str | None = None
-        self.fallback_count = 0
 
     def live_questions_today(self) -> int:
         self._roll_day()
@@ -38,16 +38,14 @@ class Stats:
         self.by_provider[provider] += 1
         self.last_provider = provider
 
+    def record_fallbacks(self, fallbacks: tuple[str, ...]) -> None:
+        self.fallback_count += len(fallbacks)
+
     def record_search(self) -> None:
         self.searches += 1
 
-    def record_fallback(self, count: int = 1) -> None:
-        self.fallback_count += max(0, count)
-
-    def record_error(self, message: str, *, fallback: bool = False) -> None:
+    def record_error(self, message: str) -> None:
         self.last_error = (message or "")[:300]
-        if fallback:
-            self.fallback_count += 1
 
     def _roll_day(self) -> None:
         today = _today_vn()

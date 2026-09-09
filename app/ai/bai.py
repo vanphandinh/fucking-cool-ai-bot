@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..config import Settings
 from .base import OpenAICompatProvider
 from .capabilities import ProviderCapabilities
+from .provider import AIProvider
 
 _BASE_URL = "https://api.b.ai/v1"
 SUPPORTED_PROMO_MODELS = frozenset(
@@ -55,3 +56,19 @@ def make_bai_provider(
     # tool selection off so it can synthesize a final answer from tool results.
     provider.force_tool_choice_none_when_no_tools = True
     return provider
+
+
+def build_bai_provider_slots(settings: Settings) -> list[AIProvider]:
+    """Build only B.AI route slots that are selected by provider order."""
+    if not settings.bai_api_key:
+        return []
+
+    text_enabled = "bai" in settings.text_provider_order_list
+    vision_enabled = "bai" in settings.vision_provider_order_list
+
+    slots: list[AIProvider] = []
+    if text_enabled and settings.bai_text_model:
+        slots.append(make_bai_provider(settings, name="bai"))
+    if vision_enabled and settings.vision_enabled and settings.bai_vision_model:
+        slots.append(make_bai_provider(settings, name="bai", vision=True))
+    return slots

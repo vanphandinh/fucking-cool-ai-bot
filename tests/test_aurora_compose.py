@@ -4,41 +4,47 @@ from pathlib import Path
 import unittest
 
 
-class AuroraComposeTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.compose = Path("docker-compose.yml").read_text(encoding="utf-8")
-        marker = "\n  aurora:\n"
-        if marker not in cls.compose:
-            raise AssertionError("Aurora service block is missing")
-        cls.block = cls.compose.split(marker, 1)[1].split("\nvolumes:", 1)[0]
-        cls.env = Path(".env.example").read_text(encoding="utf-8")
-        cls.gitignore = Path(".gitignore").read_text(encoding="utf-8")
+def _aurora_block() -> str:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    marker = "\n  aurora:\n"
+    if marker not in compose:
+        return ""
+    return compose.split(marker, 1)[1].split("\nvolumes:", 1)[0]
 
+
+class AuroraComposeTests(unittest.TestCase):
     def test_aurora_is_profiled_private_and_pinned(self) -> None:
-        self.assertIn('profiles: ["aurora"]', self.block)
-        self.assertIn("ghcr.io/aurora-develop/aurora:v2.6.3", self.block)
-        self.assertNotIn("ports:", self.block)
-        self.assertNotIn("8080:8080", self.block)
+        block = _aurora_block()
+        self.assertTrue(block, "Aurora service block is missing")
+        self.assertIn('profiles: ["aurora"]', block)
+        self.assertIn("ghcr.io/aurora-develop/aurora:v2.6.3", block)
+        self.assertNotIn("ports:", block)
+        self.assertNotIn("8080:8080", block)
 
     def test_risky_gateway_features_are_disabled(self) -> None:
-        self.assertIn('FREE_ACCOUNTS: "false"', self.block)
-        self.assertIn('ENABLE_EXTERNAL_TOKEN: "false"', self.block)
-        self.assertIn('ENABLE_HISTORY: "false"', self.block)
-        self.assertIn('TOOL_CALLING_ENABLED: "true"', self.block)
-        self.assertIn('STREAM_MODE: "false"', self.block)
-        self.assertIn('REFUSAL_RETRIES: "3"', self.block)
+        block = _aurora_block()
+        self.assertTrue(block, "Aurora service block is missing")
+        self.assertIn('FREE_ACCOUNTS: "false"', block)
+        self.assertIn('ENABLE_EXTERNAL_TOKEN: "false"', block)
+        self.assertIn('ENABLE_HISTORY: "false"', block)
+        self.assertIn('TOOL_CALLING_ENABLED: "true"', block)
+        self.assertIn('STREAM_MODE: "false"', block)
+        self.assertIn('REFUSAL_RETRIES: "3"', block)
 
     def test_chatgpt_credentials_are_read_only_files_not_env_values(self) -> None:
-        self.assertIn("AURORA_CREDENTIAL_FILE", self.block)
-        self.assertIn("AURORA_CREDENTIAL_TARGET", self.block)
-        self.assertIn("read_only: true", self.block)
-        self.assertNotIn("SESSION_TOKEN=", self.env)
-        self.assertNotIn("REFRESH_TOKEN=", self.env)
-        self.assertNotIn("ACCESS_TOKEN=", self.env)
-        self.assertIn("aurora/session_tokens.txt", self.gitignore)
-        self.assertIn("aurora/refresh_tokens.txt", self.gitignore)
-        self.assertIn("aurora/access_tokens.txt", self.gitignore)
+        block = _aurora_block()
+        self.assertTrue(block, "Aurora service block is missing")
+        env = Path(".env.example").read_text(encoding="utf-8")
+        gitignore = Path(".gitignore").read_text(encoding="utf-8")
+        self.assertIn("AURORA_CREDENTIAL_FILE", block)
+        self.assertIn("AURORA_CREDENTIAL_TARGET", block)
+        self.assertIn("read_only: true", block)
+        self.assertNotIn("SESSION_TOKEN=", env)
+        self.assertNotIn("REFRESH_TOKEN=", env)
+        self.assertNotIn("ACCESS_TOKEN=", env)
+        self.assertIn("aurora/session_tokens.txt", gitignore)
+        self.assertIn("aurora/refresh_tokens.txt", gitignore)
+        self.assertIn("aurora/access_tokens.txt", gitignore)
 
 
 if __name__ == "__main__":

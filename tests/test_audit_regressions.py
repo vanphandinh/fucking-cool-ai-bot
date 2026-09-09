@@ -6,6 +6,7 @@ External I/O is replaced at the transport/provider boundary.
 
 import asyncio
 import gzip
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -15,7 +16,6 @@ from app.ai.base import (
     AllProvidersFailed,
     ChatResponse,
     OpenAICompatProvider,
-    ProviderError,
     ToolCall,
 )
 from app.ai.router import AIProviderRouter
@@ -24,6 +24,15 @@ from app.search import reader
 
 
 TOOLS = [{"type": "function", "function": {"name": "web_search"}}]
+
+
+def _startup_router(provider):
+    return SimpleNamespace(
+        providers=[provider],
+        configured_provider_names=lambda requires_vision: (
+            () if requires_vision else (provider.name,)
+        ),
+    )
 
 
 class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
@@ -46,89 +55,35 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
                         }
                     },
                 )
-            return httpx.Response(200, json={"choices": [{"message": {"content": "answer"}}]})
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "answer"}}]},
+            )
 
-        provider = OpenAICompatProvider("groq", "https://example.org/v1", "fake", "fake")
+        provider = OpenAICompatProvider(
+            "bai-test",
+            "https://example.org/v1",
+            "fake",
+            "fake",
+        )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
-            base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
+            base_url="https://example.org/v1/",
+            transport=httpx.MockTransport(respond),
         )
         try:
             router = AIProviderRouter([provider])
             for _ in range(2):
-                text, _ = await router.complete(
-                    [{"role": "user", "content": "question"}], TOOLS, AsyncMock()
+                result = await router.complete(
+                    [{"role": "user", "content": "question"}],
+                    TOOLS,
+                    AsyncMock(),
                 )
-                self.assertEqual(text, "answer")
+                self.assertEqual(result.content, "answer")
             self.assertEqual(sent_tools, [True, False, True])
             self.assertTrue(provider.supports_tools)
         finally:
             await provider.aclose()
-
-    async def test_fallback_cannot_reset_total_tool_call_budget(self):
-        executed = []
-
-        class FailingAfterTools:
-            supports_tools = True
-
-            def __init__(self, name):
-                self.name = name
-                self.called = False
-
-            async def chat(self, messages, tools):
-                if not tools:
-                    return ChatResponse(content="answer using existing results")
-                if self.called:
-                    raise ProviderError("upstream unavailable after search")
-                self.called = True
-                return ChatResponse(
-                    tool_calls=[
-                        ToolCall(f"{self.name}-{i}", "web_search", {"query": str(i)})
-                        for i in range(4)
-                    ]
-                )
-
-        async def execute(name, args):
-            executed.append(args["query"])
-            return "search result"
-
-        router = AIProviderRouter([FailingAfterTools(str(i)) for i in range(3)])
-        try:
-            await router.complete([{"role": "user", "content": "question"}], TOOLS, execute)
-        except AllProvidersFailed:
-            pass
-        self.assertEqual(len(executed), 8, "fallback must share the per-question quota")
-
-    async def test_fallback_cannot_reset_tool_round_budget(self):
-        executed = []
-
-        class FailingAfterOneRound:
-            supports_tools = True
-
-            def __init__(self, name):
-                self.name = name
-                self.called = False
-
-            async def chat(self, messages, tools):
-                if not tools:
-                    return ChatResponse(content="answer")
-                if self.called:
-                    raise ProviderError("upstream failed")
-                self.called = True
-                return ChatResponse(tool_calls=[ToolCall(self.name, "web_search", {})])
-
-        async def execute(name, args):
-            executed.append(name)
-            return "search result"
-
-        router = AIProviderRouter(
-            [FailingAfterOneRound(str(i)) for i in range(3)], max_tool_rounds=1
-        )
-        try:
-            await router.complete([{"role": "user", "content": "question"}], TOOLS, execute)
-        except AllProvidersFailed:
-            pass
-        self.assertEqual(len(executed), 1)
 
     async def test_plain_pass_does_not_execute_unsolicited_tools(self):
         executed = []
@@ -144,9 +99,13 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
             executed.append(name)
             return "search result"
 
-        router = AIProviderRouter([IgnoresToolsFlag()])
+        router = AIProviderRouter([IgnoresToolsFlag()])  # type: ignore[list-item]
         with self.assertRaises(AllProvidersFailed):
-            await router.complete([{"role": "user", "content": "question"}], TOOLS, execute)
+            await router.complete(
+                [{"role": "user", "content": "question"}],
+                TOOLS,
+                execute,
+            )
         self.assertEqual(executed, [])
 
 
@@ -176,13 +135,15 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=Page())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-            result = await reader.read_page("https://example.org", timeout=0.02, client=client)
+            result = await reader.read_page(
+                "https://example.org",
+                timeout=0.02,
+                client=client,
+            )
         self.assertTrue(heartbeat.is_set(), "HTML parsing must not block other chat tasks")
         self.assertTrue(result.startswith("Không tải được trang") or result.startswith("x x"))
 
     async def test_non_unicast_and_translation_addresses_are_blocked_everywhere(self):
-        from unittest.mock import AsyncMock
-
         transport = AsyncMock()
         backend = reader.SSRFCheckBackend(transport)
         for address in ("224.0.0.1", "ff02::1", "64:ff9b::7f00:1"):
@@ -205,7 +166,11 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=SlowBody())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-            result = await reader.read_page("https://example.org", timeout=0.025, client=client)
+            result = await reader.read_page(
+                "https://example.org",
+                timeout=0.025,
+                client=client,
+            )
         self.assertTrue(result.startswith("Không tải được trang"), result)
 
     async def test_compressed_page_rejected_before_decoding(self):
@@ -215,7 +180,9 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request):
             return httpx.Response(
-                200, headers={"Content-Encoding": "gzip"}, stream=CompressedBody()
+                200,
+                headers={"Content-Encoding": "gzip"},
+                stream=CompressedBody(),
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -225,8 +192,6 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_releases_chat_and_does_not_remember_unsent_answer(self):
-        from types import SimpleNamespace
-
         from app.bot.handlers import _ChatLocks, _handle_question
         from app.core.context import ChatMemory
         from app.core.orchestrator import Answer
@@ -244,7 +209,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
 
         async def slow_answer(**kwargs):
             await asyncio.sleep(0.08)
-            return Answer(text="late answer", provider="gemini")
+            return Answer(text="late answer", provider="bai")
 
         settings = Settings(_env_file=None, question_timeout_sec=0.02)
         await _handle_question(
@@ -263,8 +228,6 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("quá thời gian", message.reply.call_args.args[0])
 
     async def test_timeout_includes_waiting_for_chat_lock(self):
-        from types import SimpleNamespace
-
         from app.bot.handlers import _ChatLocks, _handle_question
         from app.core.context import ChatMemory
         from app.core.orchestrator import Answer
@@ -281,7 +244,8 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(send_chat_action=AsyncMock()),
             reply=AsyncMock(),
         )
-        orchestrator = SimpleNamespace(ask=AsyncMock(return_value=Answer("answer", "gemini")))
+        answer = Answer("answer", "bai")
+        orchestrator = SimpleNamespace(ask=AsyncMock(return_value=answer))
         task = asyncio.create_task(
             _handle_question(
                 message,
@@ -307,57 +271,72 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_restart_preserves_pending_telegram_updates(self):
-        from types import SimpleNamespace
+    async def test_missing_bai_text_backend_fails_before_bot_creation(self):
+        from app import main
 
+        with patch.object(main, "Bot") as bot_cls:
+            code = await main._amain(
+                Settings(_env_file=None, bot_token="123:test")
+            )
+        self.assertEqual(code, 1)
+        bot_cls.assert_not_called()
+
+    async def test_restart_preserves_pending_telegram_updates(self):
         from app import main
 
         bot = SimpleNamespace(
-            get_me=AsyncMock(return_value=SimpleNamespace(username="testbot", first_name="Test")),
+            get_me=AsyncMock(
+                return_value=SimpleNamespace(username="testbot", first_name="Test")
+            ),
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="fake", aclose=AsyncMock())
+        provider = SimpleNamespace(name="bai", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=_startup_router(provider),
             ),
             patch.object(main.Dispatcher, "start_polling", new=AsyncMock()),
         ):
             code = await main._amain(
-                Settings(_env_file=None, bot_token="123:test", gemini_api_key="k")
+                Settings(_env_file=None, bot_token="123:test", bai_api_key="k")
             )
         self.assertEqual(code, 0)
-        self.assertFalse(bot.delete_webhook.call_args.kwargs.get("drop_pending_updates", False))
+        drop_pending = bot.delete_webhook.call_args.kwargs.get("drop_pending_updates", False)
+        self.assertFalse(drop_pending)
         provider.aclose.assert_awaited_once()
 
     async def test_unexpected_startup_failure_closes_all_clients(self):
-        from types import SimpleNamespace
-
         from app import main
 
         bot = SimpleNamespace(
             get_me=AsyncMock(side_effect=RuntimeError("startup failed")),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="fake", aclose=AsyncMock())
+        provider = SimpleNamespace(name="bai", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=_startup_router(provider),
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "startup failed"):
                 await main._amain(
-                    Settings(_env_file=None, bot_token="123:test", gemini_api_key="k")
+                    Settings(
+                        _env_file=None,
+                        bot_token="123:test",
+                        bai_api_key="k",
+                    )
                 )
         bot.session.close.assert_awaited_once()
         provider.aclose.assert_awaited_once()
 
     async def test_shutdown_finishes_active_handlers_before_closing_providers(self):
-        from types import SimpleNamespace
-
         from app import main
 
         events = []
@@ -380,19 +359,28 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             events.append("provider closed")
 
         bot = SimpleNamespace(
-            get_me=AsyncMock(return_value=SimpleNamespace(username="testbot", first_name="Test")),
+            get_me=AsyncMock(
+                return_value=SimpleNamespace(username="testbot", first_name="Test")
+            ),
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="fake", aclose=close_provider)
+        provider = SimpleNamespace(name="bai", aclose=close_provider)
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=_startup_router(provider),
             ),
             patch.object(main.Dispatcher, "start_polling", new=polling),
         ):
-            await main._amain(Settings(_env_file=None, bot_token="123:test", gemini_api_key="k"))
+            settings = Settings(
+                _env_file=None,
+                bot_token="123:test",
+                bai_api_key="k",
+            )
+            await main._amain(settings)
         self.assertEqual(events, ["handler stopped", "provider closed"])
 
 

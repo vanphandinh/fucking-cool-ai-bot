@@ -3,14 +3,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from app.ai.router import CompletionResult
 from app.config import Settings
 from app.core.orchestrator import Orchestrator
 from app.search.url_service import UrlReadResult
 
 
 class _FetchTwiceRouter:
-    last_fallbacks = 0
-
     def __init__(self):
         self.outputs = []
 
@@ -18,28 +17,24 @@ class _FetchTwiceRouter:
         args = {"url": "https://example.org/article", "mode": "auto"}
         self.outputs.append(await tool_executor("fetch_url", args))
         self.outputs.append(await tool_executor("fetch_url", args))
-        return "done", "fake"
+        return CompletionResult("done", "fake", ())
 
 
 class _ThreadRouter:
-    last_fallbacks = 0
-
     async def complete(self, messages, tools, tool_executor, **kwargs):
         await tool_executor(
             "fetch_url",
             {"url": "https://x.com/a/status/1234567890", "mode": "x_thread"},
         )
-        return "thread done", "fake"
+        return CompletionResult("thread done", "fake", ())
 
 
 class _FailureRouter:
-    last_fallbacks = 0
-
     async def complete(self, messages, tools, tool_executor, **kwargs):
         self.output = await tool_executor(
             "fetch_url", {"url": "https://x.com/a/status/1234567890"}
         )
-        return "không đọc được post", "fake"
+        return CompletionResult("không đọc được post", "fake", ())
 
 
 class UrlToolIntegrationTests(unittest.IsolatedAsyncioTestCase):

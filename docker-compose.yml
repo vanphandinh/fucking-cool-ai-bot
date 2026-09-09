@@ -9,32 +9,6 @@ services:
     init: true
     stop_grace_period: 30s
 
-  # Aurora — PRIVATE ChatGPT Web gateway fallback. No host port is published.
-  # Start explicitly with: docker compose --profile aurora up -d aurora
-  # The bot reaches it over the Compose network at http://aurora:8080/v1.
-  aurora:
-    image: ${AURORA_IMAGE:-ghcr.io/aurora-develop/aurora:v2.6.3}
-    container_name: fcai-aurora
-    profiles: ["aurora"]
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 30s
-    environment:
-      SERVER_HOST: "0.0.0.0"
-      SERVER_PORT: "8080"
-      Authorization: ${AURORA_API_KEY:-}
-      FREE_ACCOUNTS: "false"
-      ENABLE_EXTERNAL_TOKEN: "false"
-      ENABLE_HISTORY: "false"
-      TOOL_CALLING_ENABLED: "true"
-      STREAM_MODE: "false"
-      REFUSAL_RETRIES: "3"
-    volumes:
-      - type: bind
-        source: ${AURORA_CREDENTIAL_FILE:-./aurora/session_tokens.txt}
-        target: ${AURORA_CREDENTIAL_TARGET:-/session_tokens.txt}
-        read_only: true
-
   # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
   # - Bật theo yêu cầu bằng profile:  docker compose --profile searxng up -d
   # - Bot gọi nội bộ qua Docker network: http://searxng:8080

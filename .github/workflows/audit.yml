@@ -41,9 +41,7 @@ jobs:
         if: matrix.python == '3.12'
         run: |
           cp .env.example .env
-          mkdir -p aurora
-          touch aurora/session_tokens.txt
-          docker compose --profile aurora config --quiet
+          docker compose config --quiet
       - name: Check lint and dependency compatibility
         run: |
           python -m ruff check .
@@ -54,9 +52,6 @@ jobs:
           python -m unittest discover -s tests -p 'test_crawl4ai*.py' -v
           python -m unittest discover -s tests -p 'test_url_service.py' -v
           python -m unittest discover -s tests -p 'test_url_tool_integration.py' -v
-      - name: Targeted Aurora tests
-        run: |
-          python -m unittest discover -s tests -p 'test_aurora*.py' -v
       - name: Offline regression and integration tests
         run: |
           python tests/run_tests.py

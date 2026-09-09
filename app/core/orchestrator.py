@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from ..ai.base import AllProvidersFailed, NoCapableProvider
 from ..ai.multimodal import build_user_content
 from ..ai.router import AIProviderRouter
 from ..config import Settings
@@ -15,7 +13,6 @@ from ..search import image_service, service as search_service, url_service
 from .request import UserRequest
 from .source_policy import canonicalize_source_url, select_diverse_sources
 
-logger = logging.getLogger(__name__)
 _VN_TZ = timezone(timedelta(hours=7))
 
 TOOLS: list[dict] = [
@@ -87,10 +84,10 @@ TOOLS: list[dict] = [
 class Answer:
     text: str
     provider: str
+    fallbacks: tuple[str, ...] = ()
     searched: bool = False
     sources: list[dict] = field(default_factory=list)
     images: list[dict] = field(default_factory=list)
-    fallbacks: int = 0
 
 
 class Orchestrator:
@@ -211,6 +208,7 @@ class Orchestrator:
 
                 task = url_inflight.get(key)
                 if task is None:
+
                     async def fetch() -> str:
                         nonlocal searched
                         result = await url_service.read_url(url, self.settings, mode)
@@ -236,27 +234,21 @@ class Orchestrator:
                         url_inflight.pop(key, None)
             return f"Tool '{name}' không tồn tại."
 
-        try:
-            text, provider = await self.router.complete(
-                messages,
-                TOOLS,
-                tool_executor,
-                requires_vision=request.requires_vision,
-                image_count=len(request.images),
-            )
-        except (AllProvidersFailed, NoCapableProvider):
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Lỗi orchestrator")
-            raise AllProvidersFailed(str(exc)) from exc
+        result = await self.router.complete(
+            messages,
+            TOOLS,
+            tool_executor,
+            requires_vision=request.requires_vision,
+            image_count=len(request.images),
+        )
 
         return Answer(
-            text=text,
-            provider=provider,
+            text=result.content,
+            provider=result.provider,
+            fallbacks=result.fallbacks,
             searched=searched,
             sources=_dedupe_sources(sources),
             images=_dedupe_images(image_results, self.settings.image_search_max_results),
-            fallbacks=self.router.last_fallbacks,
         )
 
 

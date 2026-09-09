@@ -15,11 +15,6 @@ searxng/settings.yml
 # Backup file thật cũng chứa secret (hướng dẫn nâng cấp dùng settings.yml.bak)
 searxng/settings.yml.*
 
-# Aurora ChatGPT Web credentials — never commit.
-aurora/session_tokens.txt
-aurora/refresh_tokens.txt
-aurora/access_tokens.txt
-
 # IDE / OS
 .idea/
 .vscode/
