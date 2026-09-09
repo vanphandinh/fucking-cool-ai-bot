@@ -46,3 +46,25 @@ search:
   formats:
     - html
     - json
+  # Không retry dồn dập engine vừa bị upstream chặn. 429 giữ engine ngoài vòng
+  # search trong 1 giờ; CAPTCHA/access-denied cooldown dài hơn.
+  suspended_times:
+    SearxEngineAccessDenied: 86400
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
+    cf_SearxEngineCaptcha: 1296000
+    cf_SearxEngineAccessDenied: 86400
+    recaptcha_SearxEngineCaptcha: 604800
+
+# Global engine timeout ngắn để SearXNG phản hồi nhanh; Google CSE được nới riêng
+# lên 5s vì log production cho thấy đôi lúc vượt default 3s.
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 5.0
+
+# Khi use_default_settings được bật, entry cùng `name` sẽ merge vào engine mặc định.
+engines:
+  - name: google cse
+    timeout: 5.0
+  - name: google cse images
+    timeout: 5.0
