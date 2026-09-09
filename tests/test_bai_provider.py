@@ -87,28 +87,37 @@ class BaiProviderModuleTests(unittest.TestCase):
             asyncio.run(provider.aclose())
 
 
-class BaiOnlyConfigTests(unittest.TestCase):
-    def test_only_bai_text_provider_is_reported(self) -> None:
-        settings = Settings(_env_file=None, bai_api_key="b")
-        self.assertEqual(settings.configured_provider_names, ["bai"])
-
-    def test_missing_bai_key_reports_no_text_provider(self) -> None:
-        settings = Settings(_env_file=None)
-        self.assertEqual(settings.configured_provider_names, [])
-
-    def test_only_bai_vision_provider_is_reported(self) -> None:
-        settings = Settings(_env_file=None, bai_api_key="b", vision_enabled=True)
-        self.assertEqual(settings.configured_vision_provider_names, ["bai"])
-
-    def test_vision_disable_switch_reports_no_vision_provider(self) -> None:
-        settings = Settings(_env_file=None, bai_api_key="b", vision_enabled=False)
-        self.assertEqual(settings.configured_vision_provider_names, [])
-
+class BaiDeploymentConfigTests(unittest.TestCase):
     def test_bai_defaults_remain_qwen_flash(self) -> None:
         settings = Settings(_env_file=None)
         self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
         self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
         self.assertEqual(settings.max_images_per_request, 1)
+        self.assertEqual(settings.text_provider_order_list, ["bai"])
+        self.assertEqual(settings.vision_provider_order_list, ["bai"])
+
+    def test_current_deployment_reports_bai_only_when_configured(self) -> None:
+        router = build_provider_router(Settings(_env_file=None, bai_api_key="b"))
+        try:
+            self.assertEqual(router.configured_provider_names(False), ("bai",))
+            self.assertEqual(router.configured_provider_names(True), ("bai",))
+        finally:
+            asyncio.run(_close_router(router))
+
+    def test_missing_bai_key_builds_no_configured_provider_slots(self) -> None:
+        router = build_provider_router(Settings(_env_file=None))
+        self.assertEqual(router.configured_provider_names(False), ())
+        self.assertEqual(router.configured_provider_names(True), ())
+
+    def test_vision_disable_switch_removes_only_vision_slot(self) -> None:
+        router = build_provider_router(
+            Settings(_env_file=None, bai_api_key="b", vision_enabled=False)
+        )
+        try:
+            self.assertEqual(router.configured_provider_names(False), ("bai",))
+            self.assertEqual(router.configured_provider_names(True), ())
+        finally:
+            asyncio.run(_close_router(router))
 
 
 class BaiOnlyRouterTests(unittest.TestCase):
@@ -122,13 +131,14 @@ class BaiOnlyRouterTests(unittest.TestCase):
         finally:
             asyncio.run(_close_router(router))
 
-    def test_router_builds_only_bai_vision_slot_for_one_image(self) -> None:
+    def test_router_builds_bai_vision_family_slot_for_one_image(self) -> None:
         settings = Settings(_env_file=None, bai_api_key="b")
         router = build_provider_router(settings)
         try:
             one = router.capable_providers(requires_vision=True, image_count=1)
             two = router.capable_providers(requires_vision=True, image_count=2)
-            self.assertEqual([p.name for p in one], ["bai_vision"])
+            self.assertEqual([p.name for p in one], ["bai"])
+            self.assertEqual([p.capabilities.route for p in one], ["vision"])
             self.assertEqual(two, [])
         finally:
             asyncio.run(_close_router(router))
@@ -221,7 +231,10 @@ class BaiWireContractTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(response.assistant_metadata, {"reasoning_content": "opaque-reasoning"})
+        self.assertEqual(
+            response.assistant_metadata,
+            {"reasoning_content": "opaque-reasoning"},
+        )
         self.assertEqual(response.tool_calls[0].name, "web_search")
 
 
