@@ -46,6 +46,19 @@ class AuroraComposeTests(unittest.TestCase):
         self.assertIn("aurora/refresh_tokens.txt", gitignore)
         self.assertIn("aurora/access_tokens.txt", gitignore)
 
+    def test_session_token_mount_targets_aurora_nonroot_home(self) -> None:
+        block = _aurora_block()
+
+        self.assertIn(
+            "target: ${AURORA_CREDENTIAL_TARGET:-/home/nonroot/session_tokens.txt}",
+            block,
+        )
+
+        self.assertNotIn(
+            "target: ${AURORA_CREDENTIAL_TARGET:-/session_tokens.txt}",
+            block,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,7 +32,7 @@ services:
     volumes:
       - type: bind
         source: ${AURORA_CREDENTIAL_FILE:-./aurora/session_tokens.txt}
-        target: ${AURORA_CREDENTIAL_TARGET:-/session_tokens.txt}
+        target: ${AURORA_CREDENTIAL_TARGET:-/home/nonroot/session_tokens.txt}
         read_only: true
 
   # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.

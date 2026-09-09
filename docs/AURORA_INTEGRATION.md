@@ -64,7 +64,7 @@ AURORA_MODEL=auto
 AURORA_REQUEST_TIMEOUT_SEC=90.0
 AURORA_IMAGE=ghcr.io/aurora-develop/aurora:v2.6.3
 AURORA_CREDENTIAL_FILE=./aurora/session_tokens.txt
-AURORA_CREDENTIAL_TARGET=/session_tokens.txt
+AURORA_CREDENTIAL_TARGET=/home/nonroot/session_tokens.txt
 ```
 
 Credential files are Git-ignored:

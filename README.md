@@ -102,7 +102,7 @@ AURORA_MODEL=auto
 AURORA_REQUEST_TIMEOUT_SEC=90.0
 AURORA_IMAGE=ghcr.io/aurora-develop/aurora:v2.6.3
 AURORA_CREDENTIAL_FILE=./aurora/session_tokens.txt
-AURORA_CREDENTIAL_TARGET=/session_tokens.txt
+AURORA_CREDENTIAL_TARGET=/home/nonroot/session_tokens.txt
 ```
 
 `AURORA_API_KEY` chỉ là internal bot-to-Aurora service key. ChatGPT Web session/access/refresh credentials không đi vào Python settings hay `.env`; chúng được mount read-only trực tiếp vào sidecar Aurora và bị Git-ignore.
