@@ -14,6 +14,7 @@ RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2' \
 
 # Copy mã nguồn
 COPY app ./app
+COPY scripts ./scripts
 
 # Chạy bằng user non-root
 RUN useradd --create-home --uid 10001 appuser \
