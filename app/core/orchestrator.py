@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -165,6 +166,7 @@ class Orchestrator:
         sources: list[dict] = []
         image_results: list[dict] = []
         url_cache: dict[tuple[str, str], str] = {}
+        url_inflight: dict[tuple[str, str], asyncio.Task[str]] = {}
 
         async def tool_executor(name: str, args: dict) -> str:
             nonlocal searched
@@ -206,15 +208,32 @@ class Orchestrator:
                 key = (cache_url, mode)
                 if key in url_cache:
                     return url_cache[key]
-                result = await url_service.read_url(url, self.settings, mode)
-                if result.ok:
-                    searched = True
-                    sources.append(
-                        {"title": result.source_url, "url": result.source_url, "snippet": ""}
-                    )
-                payload = f"Nội dung URL {result.source_url}:\n{result.text}"
-                url_cache[key] = payload
-                return payload
+
+                task = url_inflight.get(key)
+                if task is None:
+                    async def fetch() -> str:
+                        nonlocal searched
+                        result = await url_service.read_url(url, self.settings, mode)
+                        if result.ok:
+                            searched = True
+                            sources.append(
+                                {
+                                    "title": result.source_url,
+                                    "url": result.source_url,
+                                    "snippet": "",
+                                }
+                            )
+                        payload = f"Nội dung URL {result.source_url}:\n{result.text}"
+                        url_cache[key] = payload
+                        return payload
+
+                    task = asyncio.create_task(fetch())
+                    url_inflight[key] = task
+                try:
+                    return await task
+                finally:
+                    if task.done() and url_inflight.get(key) is task:
+                        url_inflight.pop(key, None)
             return f"Tool '{name}' không tồn tại."
 
         try:

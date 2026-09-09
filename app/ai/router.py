@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextvars import ContextVar
 from copy import deepcopy
@@ -27,6 +28,7 @@ from .openrouter import make_openrouter_provider
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
+_MAX_PARALLEL_TOOL_CALLS = 2
 _PROVIDER_MESSAGE_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 _GEMINI_DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
 
@@ -64,6 +66,22 @@ def _record_error(provider: object, error: ProviderError) -> None:
             retry_after=error.retry_after,
             transient=error.transient,
         )
+
+
+async def _execute_tool_batch(
+    tool_calls: list[ToolCall],
+    tool_executor: ToolExecutor,
+) -> list[str]:
+    semaphore = asyncio.Semaphore(_MAX_PARALLEL_TOOL_CALLS)
+
+    async def run(tc: ToolCall) -> str:
+        async with semaphore:
+            try:
+                return await tool_executor(tc.name, tc.arguments)
+            except Exception as exc:  # noqa: BLE001
+                return f"Lỗi khi chạy tool '{tc.name}': {exc}"
+
+    return await asyncio.gather(*(run(tc) for tc in tool_calls))
 
 
 class AIProviderRouter:
@@ -201,11 +219,8 @@ class AIProviderRouter:
             budget.rounds += 1
             budget.calls += len(resp.tool_calls)
             messages.append(_assistant_tool_message(resp))
-            for tc in resp.tool_calls:
-                try:
-                    output = await tool_executor(tc.name, tc.arguments)
-                except Exception as exc:  # noqa: BLE001
-                    output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
+            outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
+            for tc, output in zip(resp.tool_calls, outputs, strict=True):
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": str(output)[:6000]}
                 )
