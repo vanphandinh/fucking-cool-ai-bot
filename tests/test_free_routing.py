@@ -25,7 +25,7 @@ class FreeFirstDefaultsTests(unittest.TestCase):
         self.assertEqual(settings.gemini_model, "gemini-3.8-flash")
         self.assertEqual(
             settings.text_provider_order,
-            "bai,gemini,groq,cloudflare,openrouter",
+            "bai,aurora,gemini,groq,cloudflare,openrouter",
         )
         self.assertEqual(
             settings.vision_provider_order,
