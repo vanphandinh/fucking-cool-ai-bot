@@ -93,7 +93,7 @@ class BaiDeploymentConfigTests(unittest.TestCase):
         self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
         self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
         self.assertEqual(settings.max_images_per_request, 1)
-        self.assertEqual(settings.text_provider_order_list, ["bai"])
+        self.assertEqual(settings.text_provider_order_list, ["bai", "aurora"])
         self.assertEqual(settings.vision_provider_order_list, ["bai"])
 
     def test_current_deployment_reports_bai_only_when_configured(self) -> None:
