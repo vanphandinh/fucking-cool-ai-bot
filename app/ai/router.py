@@ -27,6 +27,13 @@ _MAX_TOOL_CALLS_TOTAL = 8
 _MAX_PARALLEL_TOOL_CALLS = 2
 
 
+@dataclass(frozen=True)
+class CompletionResult:
+    content: str
+    provider: str
+    fallbacks: tuple[str, ...] = ()
+
+
 @dataclass
 class _ToolBudget:
     calls: int = 0
@@ -157,23 +164,60 @@ class AIProviderRouter:
         *,
         requires_vision: bool = False,
         image_count: int = 0,
-    ) -> tuple[str, str]:
+    ) -> CompletionResult:
         candidates = self.capable_providers(
             requires_vision=requires_vision,
             image_count=image_count,
         )
         if not candidates:
             raise NoCapableProvider(
-                "Không có B.AI provider phù hợp capability của request"
+                "Không có AI provider nào phù hợp capability của request"
             )
-
-        provider = candidates[0]
-        if not _available(provider):
-            raise AllProvidersFailed("B.AI provider đang cooldown hoặc unavailable")
 
         budget = _ToolBudget()
         synthesis_base_messages = deepcopy(messages)
         tool_outputs: list[str] = []
+        attempted: list[str] = []
+        fallbacks: list[str] = []
+        last_error: ProviderError | None = None
+
+        for provider in candidates:
+            if not _available(provider):
+                continue
+            if attempted:
+                fallbacks.append(provider.name)
+            attempted.append(provider.name)
+            try:
+                text = await self._attempt_provider(
+                    provider,
+                    messages,
+                    tools,
+                    tool_executor,
+                    budget,
+                    synthesis_base_messages,
+                    tool_outputs,
+                )
+            except ProviderError as exc:
+                last_error = exc
+                _record_error(provider, exc)
+                logger.warning("AI provider %s lỗi: %s", provider.name, exc)
+                continue
+            _record_success(provider)
+            return CompletionResult(text, provider.name, tuple(fallbacks))
+
+        message = str(last_error) if last_error else "Không có AI provider khả dụng"
+        raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
+
+    async def _attempt_provider(
+        self,
+        provider: AIProvider,
+        messages: list[dict],
+        tools: list[dict] | None,
+        tool_executor: ToolExecutor,
+        budget: _ToolBudget,
+        synthesis_base_messages: list[dict],
+        tool_outputs: list[str],
+    ) -> str:
         provider_messages = deepcopy(messages)
         already_plain = False
         last_error: ProviderError | None = None
@@ -194,7 +238,7 @@ class AIProviderRouter:
             if use_tools is None:
                 already_plain = True
             try:
-                text = await self._complete_with_provider(
+                return await self._complete_with_provider(
                     provider,
                     local_msgs,
                     use_tools,
@@ -203,12 +247,8 @@ class AIProviderRouter:
                     synthesis_base_messages,
                     tool_outputs,
                 )
-                _record_success(provider)
-                return text, provider.name
             except ProviderError as exc:
                 last_error = exc
-                _record_error(provider, exc)
-                logger.warning("B.AI provider %s lỗi: %s", provider.name, exc)
                 if len(local_msgs) > len(provider_messages):
                     provider_messages = local_msgs
                 if exc.unsupported_tools and provider.supports_tools:
@@ -216,19 +256,13 @@ class AIProviderRouter:
                     continue
                 if exc.retry_without_tools:
                     continue
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_error = ProviderError(f"{provider.name}: {exc}")
-                _record_error(provider, last_error)
-                logger.warning(
-                    "B.AI provider %s lỗi không lường trước: %s",
-                    provider.name,
-                    exc,
-                )
-                break
+                raise
 
-        message = str(last_error) if last_error else "B.AI không thể hoàn tất request"
-        raise AllProvidersFailed(message)
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(
+            f"{provider.name}: không thể hoàn tất provider-local recovery"
+        )
 
     async def _complete_with_provider(
         self,
