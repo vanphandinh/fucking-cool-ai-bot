@@ -300,7 +300,7 @@ def _messages_for_provider(messages: list[dict], provider: OpenAICompatProvider)
             google = extra_content.setdefault("google", {})
             if not isinstance(google, dict):
                 google = {}
-                extra_content["google"] = extra_content
+                extra_content["google"] = google
             google.setdefault("thought_signature", _GEMINI_DUMMY_THOUGHT_SIGNATURE)
     return out
 
