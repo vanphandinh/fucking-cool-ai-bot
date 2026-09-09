@@ -1225,6 +1225,13 @@ def t_ai_router_mock():
                     STATE["loop_retry_has_tool_msg"] = any(
                         isinstance(m, dict) and m.get("role") == "tool" for m in req["messages"]
                     )
+                    STATE["loop_retry_has_evidence"] = (
+                        "Kết quả tìm kiếm" in json.dumps(req["messages"], ensure_ascii=False)
+                    )
+                    STATE["loop_retry_has_tool_calls"] = any(
+                        isinstance(m, dict) and bool(m.get("tool_calls"))
+                        for m in req["messages"]
+                    )
                 if tools:
                     return self._send(
                         {
@@ -1379,8 +1386,10 @@ def t_ai_router_mock():
                 str(STATE["loop_with_tools"]),
             )
             check(
-                "tool-loop: retry giữ transcript tool",
-                STATE.get("loop_retry_has_tool_msg") is True,
+                "tool-loop: synthesis dùng fresh evidence",
+                STATE.get("loop_retry_has_tool_msg") is False
+                and STATE.get("loop_retry_has_tool_calls") is False
+                and STATE.get("loop_retry_has_evidence") is True,
             )
 
             p_noid = OpenAICompatProvider("noid", base, "k", "no-id", timeout=5)
