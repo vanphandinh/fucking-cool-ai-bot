@@ -347,7 +347,9 @@ async def _handle_question(
                         )
                 except NoCapableProvider as exc:
                     stats.record_error(str(exc))
-                    await message.reply("B.AI vision hiện chưa được cấu hình hoặc không hỗ trợ yêu cầu này.")
+                    await message.reply(
+                        "B.AI vision hiện chưa được cấu hình hoặc không hỗ trợ yêu cầu này."
+                    )
                     return
                 except AllProvidersFailed as exc:
                     stats.record_error(str(exc))

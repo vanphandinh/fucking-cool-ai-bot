@@ -42,7 +42,9 @@ async def _amain(settings: Settings) -> int:
         logger.error("Thiếu BOT_TOKEN trong .env — bot không thể chạy.")
         return 1
     if not settings.configured_provider_names:
-        logger.error("Thiếu BAI_API_KEY hoặc BAI_TEXT_MODEL — bot không có AI backend text.")
+        logger.error(
+            "Thiếu BAI_API_KEY hoặc BAI_TEXT_MODEL — bot không có AI backend text."
+        )
         return 1
 
     if settings.vision_enabled and not settings.configured_vision_provider_names:
@@ -59,7 +61,9 @@ async def _amain(settings: Settings) -> int:
     if settings.search_backend == "searxng" and not settings.searxng_url.strip():
         logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
     if settings.crawl4ai_enabled and not settings.crawl4ai_url.strip():
-        logger.warning("CRAWL4AI_ENABLED=1 nhưng CRAWL4AI_URL đang trống; dùng generic reader.")
+        logger.warning(
+            "CRAWL4AI_ENABLED=1 nhưng CRAWL4AI_URL đang trống; dùng generic reader."
+        )
     if settings.crawl4ai_enabled and not settings.crawl4ai_api_token.strip():
         logger.warning(
             "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
