@@ -1,12 +1,14 @@
 # B.AI integration
 
-B.AI là **AI provider duy nhất** của runtime. Integration dùng OpenAI-compatible Chat Completions:
+B.AI là **provider production duy nhất đang được register hiện tại**, nhưng không phải architectural singleton. Runtime dùng generic `AIProvider` contract + registry + ordered routing; B.AI là một provider-family adapter trong framework đó.
+
+B.AI dùng OpenAI-compatible Chat Completions:
 
 ```text
 POST https://api.b.ai/v1/chat/completions
 ```
 
-Runtime không thêm reasoning knobs không được đảm bảo bởi schema upstream và không tự rotate model.
+Provider-specific behavior như auth, payload parsing, `tool_choice=none`, model allowlist và reasoning replay nằm trong B.AI/OpenAI-compatible adapter; core router không branch theo tên `bai`.
 
 ## Supported promoted models
 
@@ -19,7 +21,9 @@ Allowlist hiện tại:
 | `hy3` | yes | no | Text-only trong integration |
 | `glm-5.3-flash` | yes | yes | Selectable, không auto-fallback |
 
-Promotion/zero-credit status có thể thay đổi upstream. Việc model nằm trong allowlist chỉ có nghĩa integration đã khóa contract tương thích, không đảm bảo pricing vĩnh viễn.
+Promotion/zero-credit status có thể thay đổi upstream. Model nằm trong allowlist chỉ có nghĩa integration đã khóa contract tương thích, không đảm bảo pricing vĩnh viễn.
+
+Không có automatic B.AI model rotation/fallback giữa các model allowlist.
 
 ## Configuration
 
@@ -27,54 +31,60 @@ Promotion/zero-credit status có thể thay đổi upstream. Việc model nằm 
 BAI_API_KEY=...
 BAI_TEXT_MODEL=qwen3.8-flash
 BAI_REQUEST_TIMEOUT_SEC=30.0
+TEXT_PROVIDER_ORDER=bai
 
 VISION_ENABLED=1
 BAI_VISION_MODEL=qwen3.8-flash
+VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-`BAI_API_KEY` là credential AI duy nhất mà startup yêu cầu cho text runtime.
+`TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` là config generic của framework. Production registry hiện chỉ có `bai`, nên current orders đều mặc định `bai`.
 
-Không còn `TEXT_PROVIDER_ORDER` hoặc `VISION_PROVIDER_ORDER`; không còn Gemini/Groq/OpenRouter/Cloudflare Workers AI factory trong runtime.
+Startup yêu cầu ít nhất một configured text provider có thể build theo `TEXT_PROVIDER_ORDER`; core startup không hard-code `BAI_API_KEY`. Với registry hiện tại, thiếu B.AI config tự nhiên dẫn đến không có text provider hợp lệ.
 
-## Text / vision slots
+## Provider-family slots
 
-Router vẫn giữ hai provider instances có capability khác nhau:
+B.AI family factory trả route slots dưới cùng stable provider key:
 
 ```text
-bai         -> route=text
-bai_vision  -> route=vision, supports_vision=True, max_images=1
+bai / route=text
+bai / route=vision / supports_vision=True / max_images=1
 ```
 
-Một text request chỉ chọn `bai`. Một request đúng một ảnh chỉ chọn `bai_vision`. Request nhiều hơn một ảnh không có capable provider và bị chặn với UX B.AI-specific.
+Route identity nằm trong `ProviderCapabilities`, không encode bằng tên UI kiểu `bai_vision`.
+
+Một text request hiện chọn B.AI text slot. Một image request trong capability limit hiện chọn B.AI vision slot. Nếu sau này registry có provider vision khác, router có thể route/fallback theo `VISION_PROVIDER_ORDER` mà không đổi B.AI adapter.
 
 ## Tool calling
 
-B.AI dùng shared OpenAI-compatible parser và hỗ trợ:
+B.AI dùng shared OpenAI-compatible parser và hỗ trợ schema tool generic của bot:
 
 - `web_search`
 - `image_search`
 - `fetch_url`
 
-Hard safety limits:
+Hard request-wide safety limits:
 
-- tối đa 8 tool calls/completion;
-- tối đa 2 tool calls song song;
+- tối đa 8 tool calls/request;
+- tối đa 2 tool calls chạy song song;
 - `MAX_TOOL_ROUNDS` điều khiển discovery rounds.
 
-Assistant metadata do chính B.AI trả (`reasoning_details`, `reasoning`, `reasoning_content`) vẫn được replay trong **cùng provider** khi cần cho tool continuation. Việc giữ metadata này không phải cross-provider compatibility.
+Tool budget không reset khi router chuyển provider.
 
-## Fresh synthesis
+Assistant metadata do B.AI trả (`reasoning_details`, `reasoning`, `reasoning_content`) chỉ được replay trong **cùng provider attempt** khi cần cho continuation. Portable cross-provider state loại bỏ metadata này. `ToolCall.extra_content` provider-specific cũng không được chuyển sang provider khác.
 
-Sau khi discovery budget hết, router tạo fresh no-tool context từ:
+## Fresh Synthesis
 
-1. original request messages;
+Khi discovery budget đóng/hết, router tạo provider-neutral Fresh Synthesis context từ:
+
+1. original canonical request messages;
 2. bounded untrusted evidence từ successful tool outputs;
 3. instruction tổng hợp và không gọi tools.
 
-Structured current-request `tool` messages/tool-call trajectory không được replay vào fresh synthesis.
+Structured provider-local tool trajectory và vendor metadata không được replay vào fresh synthesis.
 
-B.AI provider đặt:
+B.AI adapter đặt:
 
 ```json
 {"tool_choice":"none"}
@@ -82,21 +92,36 @@ B.AI provider đặt:
 
 khi request không có tools.
 
-Nếu fresh synthesis vẫn trả tool call, tool đó không thực thi, không retry vô hạn và không fallback sang external AI provider.
+Nếu B.AI vẫn trả tool call sau khi tools đã tắt, tool đó không thực thi và B.AI attempt fail với non-transient `ProviderError`. Nếu sau này còn provider candidate khác, router có thể thử provider đó bằng **cùng closed tool budget** và generic Fresh Synthesis context; current production chưa có provider thứ hai nên request sẽ kết thúc.
 
-## Health behavior
+## Health và ordered fallback
+
+B.AI slot health behavior:
 
 - `401/403`: disable slot tới process restart;
 - `429`: cooldown, honor numeric `Retry-After` khi có;
 - network/`5xx`: transient health handling;
-- local no-tool policy violation: non-transient, không được biến thành cooldown giả;
+- local protocol/no-tool policy violation: provider-local failure, không tạo transient cooldown giả nếu marked non-transient;
 - success: reset transient state.
 
-Text và vision slot có health state riêng.
+Text và vision slots có health state riêng.
+
+Generic router chỉ fallback khi provider adapter phát `ProviderError` sau local recovery. Lỗi lập trình/runtime arbitrary thoát khỏi provider contract không bị che bằng fallback sang provider khác.
+
+## Thêm provider khác bên cạnh B.AI
+
+B.AI adapter không cần sửa. Provider mới nên:
+
+1. implement `AIProvider` trực tiếp hoặc reuse `OpenAICompatProvider`;
+2. thêm namespaced settings;
+3. tạo provider-family factory;
+4. register factory trong `PROVIDER_FACTORIES`;
+5. khai báo capabilities và thêm key vào text/vision order;
+6. pass generic registry/routing/portability tests + provider-specific tests.
 
 ## Manual compatibility probe
 
-Probe không chạy trong CI và đọc `BAI_API_KEY` từ environment:
+Probe B.AI không chạy trong CI và đọc `BAI_API_KEY` từ environment:
 
 ```bash
 BAI_API_KEY=... python scripts/probe_bai.py
@@ -108,10 +133,11 @@ Probe không in Authorization header. Experimental reasoning flags chỉ dùng �
 
 ## Rollout checklist
 
-1. Chạy baseline text probe với model định dùng.
+1. Chạy baseline text probe với model B.AI định dùng.
 2. Chạy `--tools` và xác nhận tool continuation.
 3. Nếu dùng vision, probe đúng một ảnh.
-4. Không nâng `max_images=1` nếu chưa có live multi-image compatibility test riêng.
-5. Rebuild/restart bot.
-6. Smoke text, web-search, direct URL, one-image vision và `/status`.
-7. Kiểm tra failure path: B.AI lỗi phải kết thúc request, không phát sinh external AI request.
+4. Không nâng B.AI `max_images=1` nếu chưa có live multi-image compatibility test riêng.
+5. Xác nhận `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` chỉ chứa provider đã register.
+6. Rebuild/restart bot.
+7. Smoke text, web-search, direct URL, one-image vision và `/status`.
+8. Kiểm tra B.AI failure path; với registry hiện tại request phải fail sạch vì chưa có provider thứ hai.
