@@ -25,7 +25,7 @@ async def _request(query: str, settings: Settings, params: dict[str, str]) -> di
     url = (settings.searxng_url or "").rstrip("/")
     if not url:
         raise RuntimeError("SEARXNG_URL chưa được cấu hình")
-    timeout = max(5.0, min(float(settings.request_timeout_sec), 30.0))
+    timeout = float(settings.searxng_timeout_sec)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(
             f"{url}/search",
