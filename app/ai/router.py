@@ -1,4 +1,4 @@
-"""Capability-aware B.AI router with shared tool budget and health handling."""
+"""Capability-aware AI routing with shared tool budget and health handling."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
-from .bai import make_bai_provider
 from .base import (
     AllProvidersFailed,
     ChatResponse,
@@ -19,6 +18,7 @@ from .base import (
 )
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
+from .registry import build_registered_providers
 from .synthesis import build_fresh_synthesis_messages
 
 logger = logging.getLogger(__name__)
@@ -101,9 +101,24 @@ class AIProviderRouter:
         self,
         providers: list[AIProvider],
         max_tool_rounds: int = 4,
+        *,
+        text_provider_order: tuple[str, ...] | None = None,
+        vision_provider_order: tuple[str, ...] | None = None,
     ) -> None:
         self.providers = providers
+        default_order = tuple(dict.fromkeys(provider.name for provider in providers))
+        self.text_provider_order = (
+            default_order if text_provider_order is None else text_provider_order
+        )
+        self.vision_provider_order = (
+            default_order if vision_provider_order is None else vision_provider_order
+        )
         self.max_tool_rounds = max_tool_rounds
+
+    def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
+        if requires_vision:
+            return self.vision_provider_order
+        return self.text_provider_order
 
     def capable_providers(
         self,
@@ -112,13 +127,27 @@ class AIProviderRouter:
         image_count: int = 0,
     ) -> list[AIProvider]:
         out: list[AIProvider] = []
-        for provider in self.providers:
-            if _capabilities(provider).accepts(
-                requires_vision=requires_vision,
-                image_count=image_count,
-            ):
-                out.append(provider)
+        for provider_name in self.provider_order(requires_vision):
+            for provider in self.providers:
+                if provider.name != provider_name:
+                    continue
+                if _capabilities(provider).accepts(
+                    requires_vision=requires_vision,
+                    image_count=image_count,
+                ):
+                    out.append(provider)
         return out
+
+    def configured_provider_names(self, requires_vision: bool) -> tuple[str, ...]:
+        providers = self.capable_providers(
+            requires_vision=requires_vision,
+            image_count=1 if requires_vision else 0,
+        )
+        return tuple(dict.fromkeys(provider.name for provider in providers))
+
+    def max_supported_images(self) -> int:
+        providers = self.capable_providers(requires_vision=True, image_count=1)
+        return max((_capabilities(provider).max_images for provider in providers), default=0)
 
     async def complete(
         self,
@@ -293,23 +322,13 @@ def _json_dumps(data: dict) -> str:
 
 
 def build_provider_router(settings: Settings) -> AIProviderRouter:
-    providers: list[AIProvider] = []
-
-    if settings.bai_api_key and settings.bai_text_model:
-        providers.append(make_bai_provider(settings))
-
-    vision_configured = (
-        settings.vision_enabled
-        and settings.bai_api_key
-        and settings.bai_vision_model
+    text_order = tuple(settings.text_provider_order_list)
+    vision_order = tuple(settings.vision_provider_order_list)
+    registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
+    providers = build_registered_providers(settings, registered_names)
+    return AIProviderRouter(
+        providers,
+        max_tool_rounds=settings.max_tool_rounds,
+        text_provider_order=text_order,
+        vision_provider_order=vision_order,
     )
-    if vision_configured:
-        providers.append(
-            make_bai_provider(
-                settings,
-                name="bai_vision",
-                vision=True,
-            )
-        )
-
-    return AIProviderRouter(providers, max_tool_rounds=settings.max_tool_rounds)
