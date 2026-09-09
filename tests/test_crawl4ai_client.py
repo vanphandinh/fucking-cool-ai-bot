@@ -48,7 +48,10 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         )
         client = AsyncMock()
         client.post.return_value = response
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
             result = await read_page("https://example.org/article", self.settings())
         self.assertIsInstance(result, Crawl4AIReadResult)
         self.assertTrue(result.ok)
@@ -68,14 +71,23 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             json={
                 "success": True,
                 "results": [
-                    {"success": True, "markdown": {"fit_markdown": "", "raw_markdown": "raw body"}}
+                    {
+                        "success": True,
+                        "markdown": {"fit_markdown": "", "raw_markdown": "raw body"},
+                    }
                 ],
             },
         )
         client = AsyncMock()
         client.post.return_value = response
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
-            result = await read_page("https://example.org", self.settings(crawl4ai_max_chars=12000))
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
+            result = await read_page(
+                "https://example.org",
+                self.settings(crawl4ai_max_chars=12000),
+            )
         self.assertTrue(result.ok)
         self.assertEqual(result.text, "raw body")
 
@@ -86,14 +98,24 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             json={
                 "success": True,
                 "results": [
-                    {"success": True, "markdown": {}, "cleaned_html": "<main><h1>Title</h1><p>Body</p></main>"}
+                    {
+                        "success": True,
+                        "markdown": {},
+                        "cleaned_html": "<main><h1>Title</h1><p>Body</p></main>",
+                    }
                 ],
             },
         )
         client = AsyncMock()
         client.post.return_value = response
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
-            result = await read_page("https://example.org", self.settings(crawl4ai_max_chars=12000))
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
+            result = await read_page(
+                "https://example.org",
+                self.settings(crawl4ai_max_chars=12000),
+            )
         self.assertTrue(result.ok)
         self.assertIn("Title", result.text)
         self.assertIn("Body", result.text)
@@ -102,8 +124,17 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_failure_shapes_are_normalized(self):
         cases = [
             ({"success": True, "results": "not-a-list"}, "malformed_response"),
-            ({"success": True, "results": [{"success": False, "error_message": "blocked"}]}, "crawl_failed"),
-            ({"success": True, "results": [{"success": True, "markdown": {}}]}, "empty_content"),
+            (
+                {
+                    "success": True,
+                    "results": [{"success": False, "error_message": "blocked"}],
+                },
+                "crawl_failed",
+            ),
+            (
+                {"success": True, "results": [{"success": True, "markdown": {}}]},
+                "empty_content",
+            ),
         ]
         for body, reason in cases:
             with self.subTest(reason=reason):
@@ -115,7 +146,8 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                 client = AsyncMock()
                 client.post.return_value = response
                 with patch(
-                    "app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)
+                    "app.search.crawl4ai_client._get_client",
+                    new=AsyncMock(return_value=client),
                 ):
                     result = await read_page("https://example.org", self.settings())
                 self.assertFalse(result.ok)
@@ -126,10 +158,19 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         async def run_post_effect(effect):
             client = AsyncMock()
             client.post.side_effect = effect
-            with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
+            with patch(
+                "app.search.crawl4ai_client._get_client",
+                new=AsyncMock(return_value=client),
+            ):
                 return await read_page("https://example.org", self.settings())
 
-        for status, expected in ((401, "auth"), (403, "auth"), (429, "rate_limited"), (503, "upstream_5xx")):
+        statuses = (
+            (401, "auth"),
+            (403, "auth"),
+            (429, "rate_limited"),
+            (503, "upstream_5xx"),
+        )
+        for status, expected in statuses:
             with self.subTest(status=status):
                 client = AsyncMock()
                 client.post.return_value = httpx.Response(
@@ -137,7 +178,8 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
                     request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
                 )
                 with patch(
-                    "app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)
+                    "app.search.crawl4ai_client._get_client",
+                    new=AsyncMock(return_value=client),
                 ):
                     result = await read_page("https://example.org", self.settings())
                 self.assertFalse(result.ok)
@@ -156,7 +198,10 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         )
         client = AsyncMock()
         client.post.return_value = response
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
             malformed = await read_page("https://example.org", self.settings())
         self.assertEqual(malformed.reason, "malformed_json")
 
@@ -177,7 +222,10 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         )
         client = AsyncMock()
         client.post.return_value = response
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
             result = await read_page("https://example.org", self.settings())
         self.assertTrue(result.ok)
         self.assertEqual(result.source_url, "https://example.org")
@@ -185,7 +233,10 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_error_propagates(self):
         client = AsyncMock()
         client.post.side_effect = asyncio.CancelledError()
-        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock(return_value=client)):
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
             with self.assertRaises(asyncio.CancelledError):
                 await read_page("https://example.org", self.settings())
 
