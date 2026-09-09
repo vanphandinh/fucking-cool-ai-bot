@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -58,13 +59,21 @@ async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadR
         and settings.crawl4ai_url.strip()
         and settings.crawl4ai_api_token.strip()
     ):
-        crawl = await crawl4ai_client.read_page(fetch_url, settings)
-        if crawl.ok:
-            return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
-        logger.warning(
-            "Crawl4AI URL read failed (%s); fallback generic reader",
-            crawl.reason,
-        )
+        try:
+            crawl = await crawl4ai_client.read_page(fetch_url, settings)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - this boundary must degrade to generic reading
+            logger.warning(
+                "Crawl4AI URL read failed (unexpected_client_error); fallback generic reader"
+            )
+        else:
+            if crawl.ok:
+                return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
+            logger.warning(
+                "Crawl4AI URL read failed (%s); fallback generic reader",
+                crawl.reason,
+            )
 
     text = await reader.read_page(fetch_url, timeout=settings.request_timeout_sec)
     ok = bool(text) and not text.startswith("Không tải được trang")
