@@ -28,7 +28,7 @@ class UnifiedSearchConfigTests(unittest.TestCase):
 
 
 class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_auto_prefers_searxng_and_does_not_call_ddgs_when_results_are_enough(self) -> None:
+    async def test_auto_uses_searxng_alone_when_results_are_enough(self) -> None:
         searx = AsyncMock(
             return_value=[
                 {"title": "x1", "url": "https://x/1", "snippet": ""},
