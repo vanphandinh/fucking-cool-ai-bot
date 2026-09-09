@@ -138,16 +138,18 @@ async def _amain(settings: Settings) -> int:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-        if bot is not None:
-            await bot.session.close()
         try:
-            await close_crawl4ai_client()
+            if bot is not None:
+                await bot.session.close()
         finally:
             try:
-                await close_search_runtimes()
+                await close_crawl4ai_client()
             finally:
-                if provider_router is not None:
-                    await _close_providers(provider_router)
+                try:
+                    await close_search_runtimes()
+                finally:
+                    if provider_router is not None:
+                        await _close_providers(provider_router)
 
 
 def main() -> None:
