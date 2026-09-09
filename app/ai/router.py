@@ -97,7 +97,11 @@ async def _execute_tool_batch(
 
 
 class AIProviderRouter:
-    def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
+    def __init__(
+        self,
+        providers: list[OpenAICompatProvider],
+        max_tool_rounds: int = 4,
+    ) -> None:
         self.providers = providers
         self.max_tool_rounds = max_tool_rounds
 
@@ -130,7 +134,9 @@ class AIProviderRouter:
             image_count=image_count,
         )
         if not candidates:
-            raise NoCapableProvider("Không có B.AI provider phù hợp capability của request")
+            raise NoCapableProvider(
+                "Không có B.AI provider phù hợp capability của request"
+            )
 
         provider = candidates[0]
         if not _available(provider):
@@ -185,10 +191,15 @@ class AIProviderRouter:
             except Exception as exc:  # noqa: BLE001
                 last_error = ProviderError(f"{provider.name}: {exc}")
                 _record_error(provider, last_error)
-                logger.warning("B.AI provider %s lỗi không lường trước: %s", provider.name, exc)
+                logger.warning(
+                    "B.AI provider %s lỗi không lường trước: %s",
+                    provider.name,
+                    exc,
+                )
                 break
 
-        raise AllProvidersFailed(str(last_error) if last_error else "B.AI không thể hoàn tất request")
+        message = str(last_error) if last_error else "B.AI không thể hoàn tất request"
+        raise AllProvidersFailed(message)
 
     async def _complete_with_provider(
         self,
@@ -287,7 +298,12 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     if settings.bai_api_key and settings.bai_text_model:
         providers.append(make_bai_provider(settings))
 
-    if settings.vision_enabled and settings.bai_api_key and settings.bai_vision_model:
+    vision_configured = (
+        settings.vision_enabled
+        and settings.bai_api_key
+        and settings.bai_vision_model
+    )
+    if vision_configured:
         providers.append(
             make_bai_provider(
                 settings,

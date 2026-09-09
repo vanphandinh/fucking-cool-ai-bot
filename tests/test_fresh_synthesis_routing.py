@@ -27,12 +27,17 @@ async def _make_bai(responder) -> OpenAICompatProvider:
     provider = make_bai_provider(_bai_settings())
     await provider.aclose()
     provider._client = httpx.AsyncClient(
-        base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(responder)
+        base_url="https://api.b.ai/v1/",
+        transport=httpx.MockTransport(responder),
     )
     return provider
 
 
-def _tool_response_many(request: httpx.Request, prefix: str, count: int) -> httpx.Response:
+def _tool_response_many(
+    request: httpx.Request,
+    prefix: str,
+    count: int,
+) -> httpx.Response:
     calls = [
         {
             "id": f"call_{prefix}_{i}",
@@ -46,7 +51,17 @@ def _tool_response_many(request: httpx.Request, prefix: str, count: int) -> http
     ]
     return httpx.Response(
         200,
-        json={"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls}}]},
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": calls,
+                    }
+                }
+            ]
+        },
         request=request,
     )
 
@@ -104,19 +119,9 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
             if not fresh_ok:
                 return _tool_response_many(request, "illegal_synthesis", 1)
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "HYPE synthesis from collected evidence",
-                            }
-                        }
-                    ]
-                },
-                request=request,
+            return _text_response(
+                request,
+                "HYPE synthesis from collected evidence",
             )
 
         provider = await _make_bai(respond)
@@ -185,6 +190,18 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(illegal_executed)
         self.assertTrue(provider.health.available())
         self.assertEqual(provider.health.consecutive_transient_failures, 0)
+
+
+def _text_response(request: httpx.Request, content: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {"message": {"role": "assistant", "content": content}}
+            ]
+        },
+        request=request,
+    )
 
 
 if __name__ == "__main__":

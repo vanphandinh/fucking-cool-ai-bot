@@ -19,19 +19,16 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
-            return httpx.Response(
-                200,
-                json={"choices": [{"message": {"role": "assistant", "content": "done"}}]},
-                request=request,
-            )
+            return _text_response(request, "done")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         try:
-            response = await provider.chat([{"role": "user", "content": "answer now"}], None)
+            response = await provider.chat(
+                [{"role": "user", "content": "answer now"}],
+                None,
+            )
         finally:
             await provider.aclose()
 
@@ -54,32 +51,23 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 message.get("role") == "tool" or bool(message.get("tool_calls"))
                 for message in payload["messages"]
             )
-            if (
-                payload.get("tool_choice") != "none"
-                or "tools" in payload
-                or structured
-                or "fetched content" not in serialized
-            ):
+            valid = (
+                payload.get("tool_choice") == "none"
+                and "tools" not in payload
+                and not structured
+                and "fetched content" in serialized
+            )
+            if not valid:
                 return httpx.Response(
                     400,
                     json={"error": {"message": "synthesis contract violated"}},
                     request=request,
                 )
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"role": "assistant", "content": "recovered from tool result"}}
-                    ]
-                },
-                request=request,
-            )
+            return _text_response(request, "recovered from tool result")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
 
         async def execute(name: str, _args: dict) -> str:
@@ -104,21 +92,14 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         executed: list[str] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
-            payload = json.loads(request.content)
-            requests.append(payload)
+            requests.append(json.loads(request.content))
             if len(requests) <= 3:
                 return _tool_response(request, f"call_{len(requests)}")
-            return httpx.Response(
-                200,
-                json={"choices": [{"message": {"role": "assistant", "content": "synthesized"}}]},
-                request=request,
-            )
+            return _text_response(request, "synthesized")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(name: str, _args: dict) -> str:
@@ -150,9 +131,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         provider = _make_bai_vision()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
 
         async def execute(_name: str, _args: dict) -> str:
@@ -187,9 +166,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(name: str, _args: dict) -> str:
@@ -222,21 +199,11 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             if len(requests) == 1:
                 return _tool_response_many(request, "call", 8)
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"role": "assistant", "content": "eight-call synthesis"}}
-                    ]
-                },
-                request=request,
-            )
+            return _text_response(request, "eight-call synthesis")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
 
         async def execute(name: str, _args: dict) -> str:
@@ -265,26 +232,11 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             if len(requests) == 1:
                 return _tool_response_many(request, "oversized", 9)
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "synthesized without overflow",
-                            }
-                        }
-                    ]
-                },
-                request=request,
-            )
+            return _text_response(request, "synthesized without overflow")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
 
         async def execute(name: str, _args: dict) -> str:
@@ -309,17 +261,11 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
-            return httpx.Response(
-                200,
-                json={"choices": [{"message": {"role": "assistant", "content": "plain only"}}]},
-                request=request,
-            )
+            return _text_response(request, "plain only")
 
         provider = _make_bai()
         await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/", transport=httpx.MockTransport(respond)
-        )
+        provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=0)
 
         async def execute(_name: str, _args: dict) -> str:
@@ -357,6 +303,25 @@ def _make_bai_vision():
     return make_bai_provider(_bai_settings(), name="bai_vision", vision=True)
 
 
+def _mock_client(responder) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        base_url="https://api.b.ai/v1/",
+        transport=httpx.MockTransport(responder),
+    )
+
+
+def _text_response(request: httpx.Request, content: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {"message": {"role": "assistant", "content": content}}
+            ]
+        },
+        request=request,
+    )
+
+
 def _tool_response(request: httpx.Request, call_id: str) -> httpx.Response:
     return httpx.Response(
         200,
@@ -384,7 +349,11 @@ def _tool_response(request: httpx.Request, call_id: str) -> httpx.Response:
     )
 
 
-def _tool_response_many(request: httpx.Request, prefix: str, count: int) -> httpx.Response:
+def _tool_response_many(
+    request: httpx.Request,
+    prefix: str,
+    count: int,
+) -> httpx.Response:
     calls = [
         {
             "id": f"{prefix}_{index}",
@@ -398,7 +367,17 @@ def _tool_response_many(request: httpx.Request, prefix: str, count: int) -> http
     ]
     return httpx.Response(
         200,
-        json={"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls}}]},
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": calls,
+                    }
+                }
+            ]
+        },
         request=request,
     )
 

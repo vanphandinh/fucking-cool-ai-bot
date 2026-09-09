@@ -11,7 +11,12 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.ai.base import AllProvidersFailed, ChatResponse, OpenAICompatProvider, ToolCall
+from app.ai.base import (
+    AllProvidersFailed,
+    ChatResponse,
+    OpenAICompatProvider,
+    ToolCall,
+)
 from app.ai.router import AIProviderRouter
 from app.config import Settings
 from app.search import reader
@@ -40,18 +45,29 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
                         }
                     },
                 )
-            return httpx.Response(200, json={"choices": [{"message": {"content": "answer"}}]})
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "answer"}}]},
+            )
 
-        provider = OpenAICompatProvider("bai-test", "https://example.org/v1", "fake", "fake")
+        provider = OpenAICompatProvider(
+            "bai-test",
+            "https://example.org/v1",
+            "fake",
+            "fake",
+        )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
-            base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
+            base_url="https://example.org/v1/",
+            transport=httpx.MockTransport(respond),
         )
         try:
             router = AIProviderRouter([provider])
             for _ in range(2):
                 text, _ = await router.complete(
-                    [{"role": "user", "content": "question"}], TOOLS, AsyncMock()
+                    [{"role": "user", "content": "question"}],
+                    TOOLS,
+                    AsyncMock(),
                 )
                 self.assertEqual(text, "answer")
             self.assertEqual(sent_tools, [True, False, True])
@@ -75,7 +91,11 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
 
         router = AIProviderRouter([IgnoresToolsFlag()])  # type: ignore[list-item]
         with self.assertRaises(AllProvidersFailed):
-            await router.complete([{"role": "user", "content": "question"}], TOOLS, execute)
+            await router.complete(
+                [{"role": "user", "content": "question"}],
+                TOOLS,
+                execute,
+            )
         self.assertEqual(executed, [])
 
 
@@ -105,7 +125,11 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=Page())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-            result = await reader.read_page("https://example.org", timeout=0.02, client=client)
+            result = await reader.read_page(
+                "https://example.org",
+                timeout=0.02,
+                client=client,
+            )
         self.assertTrue(heartbeat.is_set(), "HTML parsing must not block other chat tasks")
         self.assertTrue(result.startswith("Không tải được trang") or result.startswith("x x"))
 
@@ -132,7 +156,11 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=SlowBody())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-            result = await reader.read_page("https://example.org", timeout=0.025, client=client)
+            result = await reader.read_page(
+                "https://example.org",
+                timeout=0.025,
+                client=client,
+            )
         self.assertTrue(result.startswith("Không tải được trang"), result)
 
     async def test_compressed_page_rejected_before_decoding(self):
@@ -142,7 +170,9 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request):
             return httpx.Response(
-                200, headers={"Content-Encoding": "gzip"}, stream=CompressedBody()
+                200,
+                headers={"Content-Encoding": "gzip"},
+                stream=CompressedBody(),
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -208,7 +238,8 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(send_chat_action=AsyncMock()),
             reply=AsyncMock(),
         )
-        orchestrator = SimpleNamespace(ask=AsyncMock(return_value=Answer("answer", "bai")))
+        answer = Answer("answer", "bai")
+        orchestrator = SimpleNamespace(ask=AsyncMock(return_value=answer))
         task = asyncio.create_task(
             _handle_question(
                 message,
@@ -238,7 +269,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         from app import main
 
         with patch.object(main, "Bot") as bot_cls:
-            code = await main._amain(Settings(_env_file=None, bot_token="123:test"))
+            code = await main._amain(
+                Settings(_env_file=None, bot_token="123:test")
+            )
         self.assertEqual(code, 1)
         bot_cls.assert_not_called()
 
@@ -248,7 +281,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         from app import main
 
         bot = SimpleNamespace(
-            get_me=AsyncMock(return_value=SimpleNamespace(username="testbot", first_name="Test")),
+            get_me=AsyncMock(
+                return_value=SimpleNamespace(username="testbot", first_name="Test")
+            ),
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
@@ -256,7 +291,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=SimpleNamespace(providers=[provider]),
             ),
             patch.object(main.Dispatcher, "start_polling", new=AsyncMock()),
         ):
@@ -264,7 +301,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 Settings(_env_file=None, bot_token="123:test", bai_api_key="k")
             )
         self.assertEqual(code, 0)
-        self.assertFalse(bot.delete_webhook.call_args.kwargs.get("drop_pending_updates", False))
+        drop_pending = bot.delete_webhook.call_args.kwargs.get("drop_pending_updates", False)
+        self.assertFalse(drop_pending)
         provider.aclose.assert_awaited_once()
 
     async def test_unexpected_startup_failure_closes_all_clients(self):
@@ -280,12 +318,18 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=SimpleNamespace(providers=[provider]),
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "startup failed"):
                 await main._amain(
-                    Settings(_env_file=None, bot_token="123:test", bai_api_key="k")
+                    Settings(
+                        _env_file=None,
+                        bot_token="123:test",
+                        bai_api_key="k",
+                    )
                 )
         bot.session.close.assert_awaited_once()
         provider.aclose.assert_awaited_once()
@@ -315,7 +359,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             events.append("provider closed")
 
         bot = SimpleNamespace(
-            get_me=AsyncMock(return_value=SimpleNamespace(username="testbot", first_name="Test")),
+            get_me=AsyncMock(
+                return_value=SimpleNamespace(username="testbot", first_name="Test")
+            ),
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
@@ -323,11 +369,18 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
-                main, "build_provider_router", return_value=SimpleNamespace(providers=[provider])
+                main,
+                "build_provider_router",
+                return_value=SimpleNamespace(providers=[provider]),
             ),
             patch.object(main.Dispatcher, "start_polling", new=polling),
         ):
-            await main._amain(Settings(_env_file=None, bot_token="123:test", bai_api_key="k"))
+            settings = Settings(
+                _env_file=None,
+                bot_token="123:test",
+                bai_api_key="k",
+            )
+            await main._amain(settings)
         self.assertEqual(events, ["handler stopped", "provider closed"])
 
 
