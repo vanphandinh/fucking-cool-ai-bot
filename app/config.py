@@ -132,7 +132,12 @@ class Settings(BaseSettings):
             raise ValueError("SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
         if self.ddgs_timeout_sec > total:
             raise ValueError("DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
-        if self.crawl4ai_timeout_sec >= self.question_timeout_sec:
+        crawl4ai_active = (
+            self.crawl4ai_enabled
+            and bool(self.crawl4ai_url.strip())
+            and bool(self.crawl4ai_api_token.strip())
+        )
+        if crawl4ai_active and self.crawl4ai_timeout_sec >= self.question_timeout_sec:
             raise ValueError("CRAWL4AI_TIMEOUT_SEC phải nhỏ hơn QUESTION_TIMEOUT_SEC")
         return self
 
