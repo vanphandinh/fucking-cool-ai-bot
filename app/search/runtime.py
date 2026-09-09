@@ -20,7 +20,7 @@ class SearchRuntime:
 
     def get_http_client(self) -> httpx.AsyncClient:
         if self.http_client is None:
-            self.http_client = httpx.AsyncClient()
+            self.http_client = httpx.AsyncClient(timeout=self.settings.searxng_timeout_sec)
         return self.http_client
 
     async def aclose(self) -> None:
