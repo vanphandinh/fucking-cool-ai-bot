@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
+from .aurora import make_aurora_provider
 from .bai import make_bai_provider
 from .base import (
     AllProvidersFailed,
@@ -389,6 +390,13 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
         and settings.bai_text_model
     ):
         text["bai"] = make_bai_provider(settings)
+    if (
+        "aurora" in settings.text_provider_order_list
+        and settings.aurora_base_url.strip()
+        and settings.aurora_api_key
+        and settings.aurora_model
+    ):
+        text["aurora"] = make_aurora_provider(settings)
     if (
         settings.cloudflare_account_id
         and settings.cloudflare_api_token
