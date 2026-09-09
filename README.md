@@ -2,15 +2,16 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Current configured AI provider: B.AI.** B.AI là provider duy nhất đang được register trong production hiện tại; Gemini, Groq, OpenRouter và Cloudflare Workers AI đã bị xóa khỏi source/runtime.
+**Current registered production providers: B.AI + optional Aurora text fallback.** B.AI cung cấp text + vision; Aurora chỉ cung cấp text và tự skip khi chưa có `AURORA_API_KEY`. Gemini, Groq, OpenRouter và Cloudflare Workers AI vẫn đã bị xóa khỏi source/runtime và không được PR này khôi phục.
 
-**Architecture: generic capability-aware, health-aware, ordered multi-provider framework.** Core router, orchestrator, startup, metrics và Telegram handlers không coi B.AI là provider đặc biệt, nên có thể thêm provider khác sau này mà không viết lại state machine chính.
+**Architecture: generic capability-aware, health-aware, ordered multi-provider framework.** Core router, orchestrator, startup, metrics và Telegram handlers không coi B.AI/Aurora là provider đặc biệt. Provider family được add qua registry, không viết provider-name branch vào router state machine.
 
 Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input và Telegram-native HTML formatting.
 
 ## Tài liệu đang duy trì
 
 - [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, adapter behavior, tool calling, health và synthesis.
+- [Aurora integration](docs/AURORA_INTEGRATION.md) — registry wiring, private sidecar, credential boundary, probe, rollout và rollback.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md).
 - [Search resilience](docs/SEARCH_RESILIENCE.md).
@@ -40,25 +41,31 @@ AIProviderRouter
    ├─ health/cooldown filtering
    └─ ordered provider attempts
           │
-          └─ current production registry: B.AI
-               ├─ text slot
-               └─ vision slot (max_images=1)
+          ▼
+      PROVIDER_FACTORIES
+          ├─ bai
+          │    ├─ text slot
+          │    └─ vision slot (max_images=1)
+          └─ aurora
+               └─ text slot only
 ```
 
-Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. `OpenAICompatProvider` chỉ là transport/parser reusable cho API kiểu OpenAI Chat Completions. B.AI hiện dùng implementation đó qua:
-
-```text
-POST https://api.b.ai/v1/chat/completions
-```
+Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. `OpenAICompatProvider` chỉ là transport/parser reusable cho API kiểu OpenAI Chat Completions. B.AI và Aurora hiện đều reuse transport này, nhưng được tạo qua provider-family factory riêng.
 
 Current production orders:
 
 ```env
-TEXT_PROVIDER_ORDER=bai
+TEXT_PROVIDER_ORDER=bai,aurora
 VISION_PROVIDER_ORDER=bai
 ```
 
-Framework hỗ trợ ordered fallback. Vì registry production hiện chỉ có `bai`, một B.AI outage hiện vẫn kết thúc request sau local recovery; không có provider thứ hai để thử. Khi provider mới được register và thêm vào order, router có thể chuyển sang provider đó theo cùng generic state machine.
+Nếu chỉ có `BAI_API_KEY`, effective configured text providers vẫn chỉ là `bai`; Aurora family nằm trong order nhưng không tạo slot cho tới khi có `AURORA_API_KEY`. Khi cả hai được cấu hình, text fallback là:
+
+```text
+B.AI -> Aurora
+```
+
+Vision vẫn B.AI-only. `router.py` không import B.AI hay Aurora; nó chỉ dùng registry + generic provider protocol.
 
 ---
 
@@ -84,12 +91,46 @@ B.AI vision hiện advertise `max_images=1`. Đây là capability của adapter,
 
 ---
 
-## 3. Ordered fallback, tool state và Fresh Synthesis
+## 3. Aurora fallback
+
+Aurora là **optional text-only provider family**. Default settings:
+
+```env
+AURORA_BASE_URL=http://aurora:8080/v1
+AURORA_API_KEY=
+AURORA_MODEL=auto
+AURORA_REQUEST_TIMEOUT_SEC=90.0
+AURORA_IMAGE=ghcr.io/aurora-develop/aurora:v2.6.3
+AURORA_CREDENTIAL_FILE=./aurora/session_tokens.txt
+AURORA_CREDENTIAL_TARGET=/session_tokens.txt
+```
+
+`AURORA_API_KEY` chỉ là internal bot-to-Aurora service key. ChatGPT Web session/access/refresh credentials không đi vào Python settings hay `.env`; chúng được mount read-only trực tiếp vào sidecar Aurora và bị Git-ignore.
+
+Private profile:
+
+```bash
+mkdir -p aurora
+chmod 700 aurora
+# create aurora/session_tokens.txt locally, one token per line
+chmod 600 aurora/session_tokens.txt
+
+docker compose --profile aurora up -d aurora
+```
+
+Aurora không publish port ra host. Compose pin `v2.6.3`, tắt external token/history/free-account behavior và bật tool calling theo contract đã test.
+
+Chi tiết: [docs/AURORA_INTEGRATION.md](docs/AURORA_INTEGRATION.md).
+
+---
+
+## 4. Ordered fallback, tool state và Fresh Synthesis
 
 Router chọn candidate theo route order, capability và health:
 
 ```text
 configured order
+ -> configured slot?
  -> capable slot?
  -> healthy?
  -> attempt provider
@@ -110,21 +151,38 @@ Router tách hai state:
 - provider-local continuation state — có thể chứa metadata riêng của provider;
 - portable state — chỉ chứa canonical messages, generic tool calls/results và normalized evidence.
 
-Ví dụ `reasoning_content` của B.AI `mimo-v2.5` có thể replay trong cùng provider, nhưng không được leak sang provider khác.
+Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original request + bounded untrusted plain-text evidence, tắt tools và bỏ structured provider-local trajectory. Nếu provider hiện tại fail ở synthesis stage và còn provider sau, provider sau nhận cùng generic Fresh Synthesis context với tools vẫn tắt.
 
-Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original request + bounded untrusted plain-text evidence, tắt tools và bỏ structured provider-local trajectory. Nếu provider hiện tại fail ở synthesis stage và còn provider sau, provider sau nhận cùng generic Fresh Synthesis context với tools vẫn tắt. Với B.AI, no-tool request còn đặt `tool_choice=none`.
+Aurora sử dụng chính generic tool loop hiện tại:
 
-Tool call phát sinh sau khi tools đã tắt không bao giờ được execute.
+```text
+Aurora tool_calls -> bot executes approved tool -> role=tool -> Aurora final text
+```
+
+Không có Aurora-specific tool executor/router loop.
 
 ---
 
-## 4. Cài đặt nhanh
+## 5. Provider health
+
+Default provider health semantics vẫn giữ từ PR #38:
+
+- `401/403` → disable slot đến process restart;
+- `429` → cooldown, ưu tiên numeric `Retry-After`;
+- network/`5xx` transient → cooldown theo generic health policy;
+- success → reset transient state.
+
+Aurora opt-in policy riêng qua generic constructor parameter: `401/403` dùng temporary cooldown 60 giây thay vì permanent disable; numeric `Retry-After` nếu có sẽ override 60 giây. Đây là policy của slot, không phải provider-name special case trong router.
+
+---
+
+## 6. Cài đặt nhanh
 
 Yêu cầu:
 
 - Docker + Docker Compose plugin;
 - Telegram bot token;
-- credential của ít nhất một text provider trong configured order; hiện tại là B.AI API key;
+- ít nhất một configured text provider; production cơ bản vẫn có thể chạy chỉ với B.AI;
 - Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
 
 ```bash
@@ -134,18 +192,20 @@ cp .env.example .env
 nano .env
 ```
 
-Cấu hình tối thiểu hiện tại:
+Cấu hình tối thiểu B.AI-only:
 
 ```env
 BOT_TOKEN=...
 BAI_API_KEY=...
-TEXT_PROVIDER_ORDER=bai
+TEXT_PROVIDER_ORDER=bai,aurora
 VISION_PROVIDER_ORDER=bai
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
 
-Khởi động:
+Để bật Aurora fallback, thêm strong internal `AURORA_API_KEY`, chuẩn bị credential file local rồi start profile Aurora như mục 3.
+
+Khởi động bot:
 
 ```bash
 docker compose up -d --build
@@ -154,13 +214,19 @@ docker compose logs -f bot
 
 ---
 
-## 5. Cấu hình AI + vision
+## 7. Cấu hình AI + vision
 
 ```env
 BAI_API_KEY=
 BAI_TEXT_MODEL=qwen3.8-flash
 BAI_REQUEST_TIMEOUT_SEC=30.0
-TEXT_PROVIDER_ORDER=bai
+
+AURORA_BASE_URL=http://aurora:8080/v1
+AURORA_API_KEY=
+AURORA_MODEL=auto
+AURORA_REQUEST_TIMEOUT_SEC=90.0
+
+TEXT_PROVIDER_ORDER=bai,aurora
 
 VISION_ENABLED=1
 BAI_VISION_MODEL=qwen3.8-flash
@@ -170,13 +236,13 @@ MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
 ```
 
-`VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động.
+`VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động. Aurora không tham gia vision.
 
-Effective image limit là giới hạn nhỏ hơn giữa application limit và capability của các configured vision providers. Với production hiện tại, B.AI advertise `max_images=1`, nên effective limit là một ảnh.
+Effective image limit là giới hạn nhỏ hơn giữa application limit và capability của các configured vision providers. B.AI advertise `max_images=1`, nên effective limit hiện tại là một ảnh.
 
 ---
 
-## 6. Thêm AI provider mới
+## 8. Thêm AI provider mới
 
 Một provider thông thường nên được add mà **không sửa** router state machine, orchestrator, stats, startup hoặc Telegram handlers:
 
@@ -189,9 +255,11 @@ Một provider thông thường nên được add mà **không sửa** router st
 
 Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks phải nằm trong adapter, không đưa vào core router.
 
+Aurora trong PR này là implementation mẫu đầu tiên chứng minh registry của PR #38 có thể thêm provider mới mà không sửa `router.py`.
+
 ---
 
-## 7. Nâng cấp deployment cũ
+## 9. Nâng cấp deployment cũ
 
 Không copy đè `.env` bằng `.env.example`. Sau `git pull`, backup rồi sync:
 
@@ -205,22 +273,25 @@ Script giữ value của key còn tồn tại và xóa key không còn trong `.e
 Migration hiện tại:
 
 - giữ B.AI settings hiện có;
-- giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng vẫn là generic routing config;
-- xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
+- thêm Aurora keys mới từ `.env.example` nếu chưa có;
+- giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng là generic routing config;
+- xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng vẫn không còn trong template;
 - giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
 
-Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` **giữ nguyên intent đó** thay vì silently sửa. Startup sẽ reject unknown provider rõ ràng. Trước khi restart production, sửa order về các provider đang register; hiện tại:
+Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` giữ nguyên intent đó thay vì silently sửa; startup sẽ reject unknown provider rõ ràng. Trước khi restart production, order hợp lệ hiện tại là:
 
 ```env
-TEXT_PROVIDER_ORDER=bai
+TEXT_PROVIDER_ORDER=bai,aurora
 VISION_PROVIDER_ORDER=bai
 ```
+
+Aurora chưa có service key thì tự skip, nên có thể giữ default order trên deployment B.AI-only.
 
 Chi tiết: [docs/ENV_SYNC.md](docs/ENV_SYNC.md).
 
 ---
 
-## 8. Search / URL reading
+## 10. Search / URL reading
 
 Search không phụ thuộc provider registry.
 
@@ -248,7 +319,7 @@ Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về
 
 ---
 
-## 9. Telegram usage và observability
+## 11. Telegram usage và observability
 
 | Flow | Ví dụ / hành vi |
 |---|---|
@@ -264,39 +335,44 @@ Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về
 
 Plain image không có text/caption trigger sẽ không tự gọi bot. Forum topic được cô lập history/lock bằng `(chat_id, message_thread_id)`.
 
-Provider health state là per-slot:
-
-- `401/403` → disable slot đến process restart;
-- `429` → cooldown, ưu tiên numeric `Retry-After`;
-- network/`5xx` transient → cooldown theo health policy;
-- success → reset transient state.
-
-`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Trong B.AI-only production bình thường, fallback count thường là `0` vì chưa có provider thứ hai.
+`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Khi chỉ B.AI được cấu hình, text configured list vẫn chỉ có B.AI dù default order có Aurora. Khi cả hai được cấu hình, fallback transition có thể hiển thị `bai -> aurora`.
 
 ---
 
-## 10. Verification
+## 12. Verification
 
 ```bash
+python -m unittest discover -s tests -p 'test_aurora*.py' -v
 python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
 python -m pip check
 python -m compileall -q app tests scripts
 cp .env.example .env
-docker compose config --quiet
-docker build --tag fcai-bai-generic-provider-test .
+mkdir -p aurora
+touch aurora/session_tokens.txt
+docker compose --profile aurora config --quiet
+docker build --tag fcai-provider-test .
 ```
 
-GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXNG YAML và build production image.
+GitHub Actions chạy Python 3.11/3.12. Python 3.12 còn validate Compose/SearXNG YAML và build production image. CI không start Aurora và không dùng live ChatGPT credential.
 
-Manual production smoke sau deploy nên gồm:
+Manual Aurora canary trước merge/deploy:
 
-1. text query không tool;
-2. query cần web search;
-3. direct URL;
-4. một ảnh;
-5. request vượt effective image limit;
-6. `/status`;
-7. B.AI failure path hiện tại;
-8. nếu sau này có provider thứ hai, một controlled provider-local failure để xác nhận ordered fallback và metadata isolation.
+```bash
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode models
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode chat
+docker compose run --rm --no-deps bot python scripts/probe_aurora.py --mode tool
+```
+
+Sau đó exercise một controlled B.AI provider-local failure trong staging để xác nhận B.AI → Aurora fallback, tool round-trip và observability. Live canary là manual gate riêng; automated CI không chứng minh ChatGPT Web compatibility thực tế.
+
+Rollback Aurora:
+
+```env
+TEXT_PROVIDER_ORDER=bai
+```
+
+```bash
+docker compose --profile aurora stop aurora
+```
