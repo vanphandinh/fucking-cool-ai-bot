@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 
 from ..config import Settings
-from .runtime import get_search_runtime
+from . import runtime as search_runtime
+
+# Giữ seam mock cũ `searxng_backend.httpx.AsyncClient` trong khi ownership của
+# shared client nằm ở runtime. Cả hai tham chiếu cùng một module object.
+httpx = search_runtime.httpx
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,7 @@ async def _request(query: str, settings: Settings, params: dict[str, str]) -> di
     url = (settings.searxng_url or "").rstrip("/")
     if not url:
         raise RuntimeError("SEARXNG_URL chưa được cấu hình")
-    client = get_search_runtime(settings).get_http_client()
+    client = search_runtime.get_search_runtime(settings).get_http_client()
     resp = await client.get(
         f"{url}/search",
         params={"q": query, "format": "json", **params},
