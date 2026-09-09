@@ -18,6 +18,7 @@ class Stats:
         self.questions_total = 0
         self.questions_today = 0
         self.searches = 0
+        self.fallback_count = 0
         self._day = _today_vn()
         self.by_provider: Counter[str] = Counter()
         self.last_provider: str | None = None
@@ -36,6 +37,9 @@ class Stats:
         self._roll_day()
         self.by_provider[provider] += 1
         self.last_provider = provider
+
+    def record_fallbacks(self, fallbacks: tuple[str, ...]) -> None:
+        self.fallback_count += len(fallbacks)
 
     def record_search(self) -> None:
         self.searches += 1
