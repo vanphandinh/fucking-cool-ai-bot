@@ -105,7 +105,8 @@ class GeminiCrossProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
                         "error": {
                             "code": 400,
                             "message": (
-                                "Function call is missing a thought_signature in functionCall parts."
+                                "Function call is missing a thought_signature "
+                                "in functionCall parts."
                             ),
                             "status": "INVALID_ARGUMENT",
                         }
