@@ -1,4 +1,4 @@
-"""Generic provider contract and registry regressions."""
+"""Generic provider contract, registry, and ordering regressions."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.ai.capabilities import ProviderCapabilities
 from app.ai.health import ProviderHealth
 from app.ai.provider import AIProvider
 from app.ai.registry import build_registered_providers
+from app.ai.router import AIProviderRouter, build_provider_router
 from app.config import Settings
 
 
@@ -40,6 +41,11 @@ class FakeProvider:
 
 async def _close_slots(slots: list[AIProvider]) -> None:
     for provider in slots:
+        await provider.aclose()
+
+
+async def _close_router(router: AIProviderRouter) -> None:
+    for provider in router.providers:
         await provider.aclose()
 
 
@@ -80,6 +86,61 @@ class ProviderContractTests(unittest.TestCase):
             self.assertEqual(slots[1].capabilities.max_images, 1)
         finally:
             asyncio.run(_close_slots(slots))
+
+
+class ProviderOrderTests(unittest.TestCase):
+    def test_provider_orders_default_to_bai(self) -> None:
+        settings = Settings(_env_file=None)
+        self.assertEqual(settings.text_provider_order_list, ["bai"])
+        self.assertEqual(settings.vision_provider_order_list, ["bai"])
+
+    def test_orders_normalize_and_preserve_first_occurrence(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            text_provider_order=" Foo,bai,foo,BAR ",
+            vision_provider_order="bar,BAI,bar",
+        )
+        self.assertEqual(settings.text_provider_order_list, ["foo", "bai", "bar"])
+        self.assertEqual(settings.vision_provider_order_list, ["bar", "bai"])
+
+    def test_text_and_vision_orders_route_independently(self) -> None:
+        providers: list[AIProvider] = [
+            FakeProvider("first", "text"),
+            FakeProvider("first", "vision", 2),
+            FakeProvider("second", "text"),
+            FakeProvider("second", "vision", 4),
+        ]
+        router = AIProviderRouter(
+            providers,
+            text_provider_order=("first", "second"),
+            vision_provider_order=("second", "first"),
+        )
+        text = router.capable_providers(requires_vision=False)
+        vision = router.capable_providers(requires_vision=True, image_count=1)
+        self.assertEqual([provider.name for provider in text], ["first", "second"])
+        self.assertEqual([provider.name for provider in vision], ["second", "first"])
+
+    def test_production_router_is_bai_only_but_order_aware(self) -> None:
+        router = build_provider_router(
+            Settings(_env_file=None, bai_api_key="secret")
+        )
+        try:
+            self.assertEqual(router.provider_order(False), ("bai",))
+            self.assertEqual(router.provider_order(True), ("bai",))
+            self.assertEqual(router.configured_provider_names(False), ("bai",))
+            self.assertEqual(router.configured_provider_names(True), ("bai",))
+            self.assertEqual(router.max_supported_images(), 1)
+        finally:
+            asyncio.run(_close_router(router))
+
+    def test_unknown_order_name_fails_during_build(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            text_provider_order="missing",
+            vision_provider_order="",
+        )
+        with self.assertRaisesRegex(ValueError, "chưa được đăng ký"):
+            build_provider_router(settings)
 
 
 if __name__ == "__main__":
