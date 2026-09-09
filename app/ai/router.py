@@ -6,7 +6,7 @@ import asyncio
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Iterator
 
 from ..config import Settings
 from .base import (
@@ -32,6 +32,11 @@ class CompletionResult:
     content: str
     provider: str
     fallbacks: tuple[str, ...] = ()
+
+    def __iter__(self) -> Iterator[str]:
+        """Keep existing two-value call sites working during result propagation."""
+        yield self.content
+        yield self.provider
 
 
 @dataclass
