@@ -24,6 +24,18 @@ def parse_csv_ints(raw: str | None) -> list[int]:
     return out
 
 
+def parse_unique_csv(raw: str | None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in (raw or "").split(","):
+        value = part.strip().lower()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -33,14 +45,16 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Sole AI backend: B.AI.
+    # Provider-specific AI credentials/models. Routing order stays provider-agnostic.
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
     bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    text_provider_order: str = "bai"
 
-    # Vision input. B.AI is intentionally capped at one image/request.
+    # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
     bai_vision_model: str = "qwen3.8-flash"
+    vision_provider_order: str = "bai"
     max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
@@ -124,18 +138,12 @@ class Settings(BaseSettings):
         return self.bot_username.lower().lstrip("@")
 
     @property
-    def configured_provider_names(self) -> list[str]:
-        if self.bai_api_key and self.bai_text_model:
-            return ["bai"]
-        return []
+    def text_provider_order_list(self) -> list[str]:
+        return parse_unique_csv(self.text_provider_order)
 
     @property
-    def configured_vision_provider_names(self) -> list[str]:
-        if not self.vision_enabled:
-            return []
-        if self.bai_api_key and self.bai_vision_model:
-            return ["bai"]
-        return []
+    def vision_provider_order_list(self) -> list[str]:
+        return parse_unique_csv(self.vision_provider_order)
 
 
 @lru_cache
