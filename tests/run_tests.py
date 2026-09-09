@@ -57,7 +57,6 @@ def t_config_formatting():
     s.bot_username = "FuckingCoolAIbot"
     check("username clean", s.bot_username_clean == "fuckingcoolaibot")
 
-    # SEARCH_BACKEND: chấp nhận viết hoa cho backend hợp lệ, từ chối Tavily/giá trị lạ.
     old_backend = os.environ.get("SEARCH_BACKEND")
     try:
         os.environ["SEARCH_BACKEND"] = "AUTO"
@@ -1364,8 +1363,8 @@ def t_ai_router_mock():
             r4 = AIProviderRouter([p_loop], max_tool_rounds=2)
             text4, prov4 = await r4.complete([{"role": "user", "content": "hi"}], tools, ex)
             check(
-                "tool-loop: retry không tools sau khi đủ vòng",
-                text4 == "loop-plain-answer" and prov4 == "loop" and STATE["loop_n"] == 4,
+                "tool-loop: synthesis không tools ngay sau khi đủ vòng",
+                text4 == "loop-plain-answer" and prov4 == "loop" and STATE["loop_n"] == 3,
                 f"{text4} n={STATE['loop_n']}",
             )
             check(
