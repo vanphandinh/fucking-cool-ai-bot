@@ -8,12 +8,12 @@ from app.config import Settings
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_default_orders_prefer_bai_then_gemini(self) -> None:
+    def test_default_orders_prefer_bai_then_aurora(self) -> None:
         settings = Settings(_env_file=None)
 
         self.assertEqual(
             settings.text_provider_order_list,
-            ["bai", "gemini", "groq", "cloudflare", "openrouter"],
+            ["bai", "aurora", "gemini", "groq", "cloudflare", "openrouter"],
         )
         self.assertEqual(
             settings.vision_provider_order_list,
