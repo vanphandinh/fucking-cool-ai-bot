@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No ping-pong retry in one request; each backend is attempted at most once.
-- Search deadlines are independent from AI provider timeouts.
+- Search deadlines are independent from AI provider timeouts and the outer question deadline.
 - Web partial results are preserved and may be topped up; image search avoids unnecessary top-up.
 - Errors, timeouts, and empty responses are never cached.
 - Cancellation propagates.
@@ -27,7 +27,7 @@
 **Files:** `app/config.py`, `.env.example`, `app/search/searxng_backend.py`, `app/search/ddgs_backend.py`, `tests/test_search_resilience.py`
 
 - [x] Add `SEARXNG_TIMEOUT_SEC=7`, `DDGS_TIMEOUT_SEC=8`, `SEARCH_TOTAL_TIMEOUT_SEC=15`.
-- [x] Validate backend timeout <= total search timeout <= question timeout.
+- [x] Validate each backend timeout <= total search timeout; let the outer question deadline cancel earlier when configured shorter.
 - [x] Stop using generic `REQUEST_TIMEOUT_SEC` for search.
 - [x] Add regression tests.
 
