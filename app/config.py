@@ -59,10 +59,14 @@ class Settings(BaseSettings):
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
     bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    aurora_base_url: str = "http://aurora:8080/v1"
+    aurora_api_key: str = ""
+    aurora_model: str = "auto"
+    aurora_request_timeout_sec: float = Field(default=90.0, gt=0, allow_inf_nan=False)
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
-    text_provider_order: str = "bai,gemini,groq,cloudflare,openrouter"
+    text_provider_order: str = "bai,aurora,gemini,groq,cloudflare,openrouter"
 
     # Vision pool.
     vision_enabled: bool = True
@@ -176,6 +180,8 @@ class Settings(BaseSettings):
             available.add("openrouter")
         if self.bai_api_key and self.bai_text_model:
             available.add("bai")
+        if self.aurora_base_url.strip() and self.aurora_api_key and self.aurora_model:
+            available.add("aurora")
         if (
             self.cloudflare_account_id
             and self.cloudflare_api_token
