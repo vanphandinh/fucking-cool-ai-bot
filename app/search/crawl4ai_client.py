@@ -151,7 +151,11 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
         return _failed(source_url, "empty_content")
 
     candidate = item.get("redirected_url") or item.get("url")
-    if isinstance(candidate, str) and candidate.strip() and reader.validate_public_url(candidate.strip()) is None:
+    if (
+        isinstance(candidate, str)
+        and candidate.strip()
+        and reader.validate_public_url(candidate.strip()) is None
+    ):
         source_url = candidate.strip()
 
     return Crawl4AIReadResult(
