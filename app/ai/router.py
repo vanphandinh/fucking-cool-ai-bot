@@ -24,6 +24,7 @@ from .cloudflare import make_cloudflare_provider
 from .gemini import make_gemini_provider
 from .groq import make_groq_provider
 from .openrouter import make_openrouter_provider
+from .synthesis import build_fresh_synthesis_messages
 
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
@@ -155,6 +156,8 @@ class AIProviderRouter:
         budget = _ToolBudget()
         attempted = 0
         self.last_fallbacks = 0
+        synthesis_base_messages = _portable_messages(messages)
+        tool_outputs: list[str] = []
 
         for provider in candidates:
             if not _available(provider):
@@ -163,7 +166,16 @@ class AIProviderRouter:
                 self.last_fallbacks += 1
             attempted += 1
             already_plain = False
-            provider_messages = _messages_for_provider(messages, provider)
+            if budget.exhausted(self.max_tool_rounds):
+                provider_messages = _messages_for_provider(
+                    build_fresh_synthesis_messages(
+                        synthesis_base_messages,
+                        tool_outputs,
+                    ),
+                    provider,
+                )
+            else:
+                provider_messages = _messages_for_provider(messages, provider)
             for pass_no in (0, 1):
                 local_msgs = deepcopy(provider_messages)
                 use_tools = (
@@ -181,7 +193,13 @@ class AIProviderRouter:
                     already_plain = True
                 try:
                     text = await self._complete_with_provider(
-                        provider, local_msgs, use_tools, tool_executor, budget
+                        provider,
+                        local_msgs,
+                        use_tools,
+                        tool_executor,
+                        budget,
+                        synthesis_base_messages,
+                        tool_outputs,
                     )
                     _record_success(provider)
                     return text, provider.name
@@ -217,10 +235,19 @@ class AIProviderRouter:
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
         budget: _ToolBudget,
+        synthesis_base_messages: list[dict],
+        tool_outputs: list[str],
     ) -> str:
         active_tools = tools
         while True:
             if active_tools and budget.exhausted(self.max_tool_rounds):
+                messages[:] = _messages_for_provider(
+                    build_fresh_synthesis_messages(
+                        synthesis_base_messages,
+                        tool_outputs,
+                    ),
+                    provider,
+                )
                 active_tools = None
 
             resp = await provider.chat(messages, active_tools)
@@ -238,6 +265,13 @@ class AIProviderRouter:
             requested_calls = len(resp.tool_calls)
             if not budget.can_execute(requested_calls, self.max_tool_rounds):
                 budget.close()
+                messages[:] = _messages_for_provider(
+                    build_fresh_synthesis_messages(
+                        synthesis_base_messages,
+                        tool_outputs,
+                    ),
+                    provider,
+                )
                 active_tools = None
                 continue
 
@@ -246,11 +280,24 @@ class AIProviderRouter:
             messages.append(_assistant_tool_message(resp))
             outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
+                normalized_output = str(output)[:6000]
+                tool_outputs.append(normalized_output)
                 messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": str(output)[:6000]}
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": normalized_output,
+                    }
                 )
 
             if budget.exhausted(self.max_tool_rounds):
+                messages[:] = _messages_for_provider(
+                    build_fresh_synthesis_messages(
+                        synthesis_base_messages,
+                        tool_outputs,
+                    ),
+                    provider,
+                )
                 active_tools = None
 
 
