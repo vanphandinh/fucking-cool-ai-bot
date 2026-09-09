@@ -14,11 +14,11 @@ from .base import (
     AllProvidersFailed,
     ChatResponse,
     NoCapableProvider,
-    OpenAICompatProvider,
     ProviderError,
     ToolCall,
 )
 from .capabilities import ProviderCapabilities
+from .provider import AIProvider
 from .synthesis import build_fresh_synthesis_messages
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ async def _execute_tool_batch(
 class AIProviderRouter:
     def __init__(
         self,
-        providers: list[OpenAICompatProvider],
+        providers: list[AIProvider],
         max_tool_rounds: int = 4,
     ) -> None:
         self.providers = providers
@@ -110,8 +110,8 @@ class AIProviderRouter:
         *,
         requires_vision: bool,
         image_count: int = 0,
-    ) -> list[OpenAICompatProvider]:
-        out: list[OpenAICompatProvider] = []
+    ) -> list[AIProvider]:
+        out: list[AIProvider] = []
         for provider in self.providers:
             if _capabilities(provider).accepts(
                 requires_vision=requires_vision,
@@ -203,7 +203,7 @@ class AIProviderRouter:
 
     async def _complete_with_provider(
         self,
-        provider: OpenAICompatProvider,
+        provider: AIProvider,
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
@@ -293,7 +293,7 @@ def _json_dumps(data: dict) -> str:
 
 
 def build_provider_router(settings: Settings) -> AIProviderRouter:
-    providers: list[OpenAICompatProvider] = []
+    providers: list[AIProvider] = []
 
     if settings.bai_api_key and settings.bai_text_model:
         providers.append(make_bai_provider(settings))
