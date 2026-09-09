@@ -59,13 +59,16 @@ def make_bai_provider(
 
 
 def build_bai_provider_slots(settings: Settings) -> list[AIProvider]:
-    """Build configured B.AI route slots under one stable provider family key."""
+    """Build only B.AI route slots that are selected by provider order."""
     if not settings.bai_api_key:
         return []
 
+    text_enabled = "bai" in settings.text_provider_order_list
+    vision_enabled = "bai" in settings.vision_provider_order_list
+
     slots: list[AIProvider] = []
-    if settings.bai_text_model:
+    if text_enabled and settings.bai_text_model:
         slots.append(make_bai_provider(settings, name="bai"))
-    if settings.vision_enabled and settings.bai_vision_model:
+    if vision_enabled and settings.vision_enabled and settings.bai_vision_model:
         slots.append(make_bai_provider(settings, name="bai", vision=True))
     return slots
