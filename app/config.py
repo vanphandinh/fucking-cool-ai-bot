@@ -49,7 +49,11 @@ class Settings(BaseSettings):
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
     bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
-    text_provider_order: str = "bai"
+    aurora_base_url: str = "http://aurora:8080/v1"
+    aurora_api_key: str = ""
+    aurora_model: str = "auto"
+    aurora_request_timeout_sec: float = Field(default=90.0, gt=0, allow_inf_nan=False)
+    text_provider_order: str = "bai,aurora"
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
