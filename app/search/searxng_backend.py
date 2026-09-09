@@ -24,13 +24,11 @@ async def _request(query: str, settings: Settings, params: dict[str, str]) -> di
     url = (settings.searxng_url or "").rstrip("/")
     if not url:
         raise RuntimeError("SEARXNG_URL chưa được cấu hình")
-    runtime = get_search_runtime(settings)
-    client = runtime.get_http_client()
+    client = get_search_runtime(settings).get_http_client()
     resp = await client.get(
         f"{url}/search",
         params={"q": query, "format": "json", **params},
         headers={"User-Agent": _UA, "Accept": "application/json"},
-        timeout=float(settings.searxng_timeout_sec),
     )
     resp.raise_for_status()
     data = resp.json()
