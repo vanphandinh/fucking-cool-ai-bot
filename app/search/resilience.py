@@ -1,0 +1,187 @@
+"""Small in-process resilience primitives for web and image search."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
+from enum import Enum
+from typing import Awaitable, Callable, TypeVar
+
+
+class CircuitState(str, Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class FailureKind(str, Enum):
+    TIMEOUT = "timeout"
+    CONNECTION = "connection"
+    RATE_LIMIT = "rate_limit"
+    SERVER_ERROR = "server_error"
+    INVALID_RESPONSE = "invalid_response"
+
+
+@dataclass(frozen=True)
+class BackendKey:
+    namespace: int
+    backend: str
+    kind: str
+
+
+@dataclass
+class _CircuitEntry:
+    state: CircuitState = CircuitState.CLOSED
+    consecutive_failures: int = 0
+    cooldown_until: float = 0.0
+    probe_in_flight: bool = False
+    last_failure_reason: str = ""
+
+
+class CircuitBreaker:
+    def __init__(
+        self,
+        *,
+        failure_threshold: int,
+        cooldown_sec: float,
+        rate_limit_cooldown_sec: float,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.failure_threshold = failure_threshold
+        self.cooldown_sec = cooldown_sec
+        self.rate_limit_cooldown_sec = rate_limit_cooldown_sec
+        self._clock = clock
+        self._entries: dict[BackendKey, _CircuitEntry] = {}
+
+    def _entry(self, key: BackendKey) -> _CircuitEntry:
+        return self._entries.setdefault(key, _CircuitEntry())
+
+    def state(self, key: BackendKey) -> CircuitState:
+        return self._entry(key).state
+
+    def allow_request(self, key: BackendKey) -> bool:
+        entry = self._entry(key)
+        if entry.state is CircuitState.CLOSED:
+            return True
+        if entry.state is CircuitState.OPEN:
+            if self._clock() < entry.cooldown_until:
+                return False
+            entry.state = CircuitState.HALF_OPEN
+            entry.probe_in_flight = True
+            return True
+        if entry.probe_in_flight:
+            return False
+        entry.probe_in_flight = True
+        return True
+
+    def record_success(self, key: BackendKey) -> None:
+        entry = self._entry(key)
+        entry.state = CircuitState.CLOSED
+        entry.consecutive_failures = 0
+        entry.cooldown_until = 0.0
+        entry.probe_in_flight = False
+        entry.last_failure_reason = ""
+
+    def record_failure(self, key: BackendKey, kind: FailureKind, reason: str = "") -> None:
+        entry = self._entry(key)
+        entry.probe_in_flight = False
+        entry.last_failure_reason = reason[:200]
+        entry.consecutive_failures += 1
+
+        should_open = kind is FailureKind.RATE_LIMIT
+        should_open = should_open or entry.state is CircuitState.HALF_OPEN
+        should_open = should_open or entry.consecutive_failures >= self.failure_threshold
+        if not should_open:
+            return
+
+        cooldown = self.rate_limit_cooldown_sec if kind is FailureKind.RATE_LIMIT else self.cooldown_sec
+        entry.state = CircuitState.OPEN
+        entry.cooldown_until = self._clock() + cooldown
+
+
+@dataclass
+class _CacheEntry:
+    value: list[dict]
+    fresh_until: float
+    stale_until: float
+
+
+class SearchCache:
+    def __init__(
+        self,
+        *,
+        max_entries: int,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.max_entries = max_entries
+        self._clock = clock
+        self._entries: OrderedDict[str, _CacheEntry] = OrderedDict()
+
+    def set(
+        self,
+        key: str,
+        value: list[dict],
+        *,
+        fresh_ttl_sec: float,
+        stale_ttl_sec: float,
+    ) -> None:
+        if not value:
+            return
+        now = self._clock()
+        self._entries[key] = _CacheEntry(
+            value=[dict(item) for item in value],
+            fresh_until=now + fresh_ttl_sec,
+            stale_until=now + stale_ttl_sec,
+        )
+        self._entries.move_to_end(key)
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+
+    def get_fresh(self, key: str) -> list[dict] | None:
+        entry = self._entries.get(key)
+        if entry is None or self._clock() >= entry.fresh_until:
+            return None
+        self._entries.move_to_end(key)
+        return [dict(item) for item in entry.value]
+
+    def get_stale(self, key: str) -> list[dict] | None:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if self._clock() >= entry.stale_until:
+            self._entries.pop(key, None)
+            return None
+        self._entries.move_to_end(key)
+        return [dict(item) for item in entry.value]
+
+
+T = TypeVar("T")
+
+
+class SingleFlight:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    async def run(self, key: str, factory: Callable[[], Awaitable[T]]) -> T:
+        async with self._lock:
+            task = self._tasks.get(key)
+            if task is None:
+                task = asyncio.create_task(factory())
+                self._tasks[key] = task
+                task.add_done_callback(lambda done, k=key: self._schedule_cleanup(k, done))
+        return await asyncio.shield(task)
+
+    def _schedule_cleanup(self, key: str, task: asyncio.Task) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._cleanup(key, task))
+
+    async def _cleanup(self, key: str, task: asyncio.Task) -> None:
+        async with self._lock:
+            if self._tasks.get(key) is task:
+                self._tasks.pop(key, None)
