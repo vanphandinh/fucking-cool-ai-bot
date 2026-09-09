@@ -1,4 +1,4 @@
-"""Lớp AI provider — OpenAI-compatible, tool-calling, fallback."""
+"""Shared AI provider primitives and OpenAI-compatible transport."""
 
 from __future__ import annotations
 
@@ -63,7 +63,14 @@ class ProviderError(Exception):
 
 
 class AllProvidersFailed(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        fallbacks: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.fallbacks = fallbacks
 
 
 class NoCapableProvider(Exception):

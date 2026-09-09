@@ -4,7 +4,7 @@ import asyncio
 import unittest
 
 from app.ai.base import ChatResponse, ToolCall
-from app.ai.router import AIProviderRouter
+from app.ai.router import AIProviderRouter, CompletionResult
 
 
 class _BatchProvider:
@@ -58,7 +58,7 @@ class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             execute,
         )
 
-        self.assertEqual(result, ("done", "batch"))
+        self.assertEqual(result, CompletionResult("done", "batch", ()))
         self.assertEqual(max_active, 2)
         self.assertEqual(completion_order, ["b", "c", "a"])
         self.assertFalse(

@@ -12,6 +12,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import ChatMemberUpdated, LinkPreviewOptions, Message
 
 from ..ai.base import AllProvidersFailed, NoCapableProvider
+from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..core.context import ChatMemory
 from ..core.formatting import clean_question, format_sources
@@ -32,15 +33,77 @@ from .media import (
 logger = logging.getLogger(__name__)
 
 _HELP_TEXT = (
-    "🤖 Mình là trợ lý AI của group (AI miễn phí + tìm kiếm web/ảnh + đọc ảnh).\n\n"
+    "🤖 Mình là trợ lý AI của group (AI + tìm kiếm web/ảnh + đọc ảnh).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi.\n"
     "- Có thể yêu cầu tìm/xem hình ảnh từ Internet.\n"
-    "- Gửi JPEG/PNG/WebP kèm caption có @{bot}.\n"
+    "- Gửi ảnh JPEG/PNG/WebP kèm caption có @{bot}.\n"
     "- Reply ảnh rồi tag @{bot}, hoặc dùng /ask <câu hỏi>.\n"
     "- Lệnh: /ask, /help, /status (admin).\n\n"
     "Giới hạn {limit} câu/phút/người để tránh spam."
 )
+_ALL_PROVIDERS_FAILED_TEXT = (
+    "❌ Các AI provider hiện đang lỗi/quá tải hoặc tạm thời không khả dụng. "
+    "Bạn thử lại sau vài phút nhé."
+)
+_NO_CAPABLE_PROVIDER_TEXT = (
+    "Không có AI provider nào đang cấu hình hỗ trợ loại input này."
+)
+
+
+def _provider_status_lines(
+    provider_router: AIProviderRouter,
+    stats: Stats,
+) -> list[str]:
+    text_names = ", ".join(provider_router.configured_provider_names(False)) or "disabled"
+    vision_names = ", ".join(provider_router.configured_provider_names(True)) or "disabled"
+    text_order = ", ".join(provider_router.provider_order(False)) or "disabled"
+    vision_order = ", ".join(provider_router.provider_order(True)) or "disabled"
+    distribution = (
+        ", ".join(f"{key}: {value}" for key, value in stats.by_provider.items())
+        or "chưa có"
+    )
+    cooling: list[str] = []
+    for provider in provider_router.providers:
+        health = provider.health
+        if health.available():
+            continue
+        route = provider.capabilities.route
+        state = "disabled" if health.disabled else f"{health.cooldown_seconds()}s"
+        cooling.append(f"{provider.name}/{route}={state}")
+    return [
+        f"Text providers: {text_names}",
+        f"Vision providers: {vision_names}",
+        f"Text order: {text_order}",
+        f"Vision order: {vision_order}",
+        f"Provider hiện tại: {stats.last_provider or 'chưa có'}",
+        f"Phân bổ: {distribution}",
+        f"Fallbacks: {stats.fallback_count}",
+        f"Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
+    ]
+
+
+def _effective_vision_limit(
+    settings: Settings,
+    provider_router: AIProviderRouter,
+) -> int:
+    provider_limit = provider_router.max_supported_images()
+    if provider_limit <= 0:
+        return 0
+    return min(settings.max_images_per_request, provider_limit)
+
+
+def _vision_limit_message(
+    settings: Settings,
+    provider_router: AIProviderRouter,
+) -> str:
+    effective_limit = _effective_vision_limit(settings, provider_router)
+    if effective_limit <= 0:
+        return _NO_CAPABLE_PROVIDER_TEXT
+    return (
+        "Các AI provider vision hiện đang cấu hình hỗ trợ tối đa "
+        f"{effective_limit} ảnh mỗi yêu cầu. Bạn gửi ít ảnh hơn nhé."
+    )
 
 
 def _conversation_key(chat_id: int, message_thread_id: int | None) -> int | tuple[int, int]:
@@ -92,37 +155,16 @@ def build_message_router(
         if uid is None or uid not in settings.admin_ids_list:
             return
         allowed_text = settings.allowed_group_ids_list or "TRỐNG"
-        cooling = []
-        provider_router = getattr(orchestrator, "router", None)
-        for provider in getattr(provider_router, "providers", []):
-            health = getattr(provider, "health", None)
-            if health is not None and not health.available():
-                state = "disabled" if health.disabled else f"{health.cooldown_seconds()}s"
-                cooling.append(f"{provider.name}={state}")
-        distribution = (
-            ", ".join(f"{k}: {v}" for k, v in stats.by_provider.items())
-            or "chưa có"
-        )
-        vision_names = ", ".join(settings.configured_vision_provider_names) or "disabled"
         lines = [
             "📊 Trạng thái bot",
             f"- Chat hiện tại: {message.chat.id} (cho phép: {allowed_text})",
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web/ảnh: {stats.searches}",
-            f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
-            f"- Phân bổ: {distribution}",
-            f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
-            (
-                "- Text providers: "
-                + (", ".join(settings.configured_provider_names) or "CHƯA CÓ KEY")
-            ),
-            f"- Vision providers: {vision_names}",
-            f"- Vision enabled: {'yes' if settings.configured_vision_provider_names else 'no'}",
-            f"- Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
-            f"- Search backend (web + ảnh): {settings.search_backend}",
         ]
+        lines.extend(f"- {line}" for line in _provider_status_lines(orchestrator.router, stats))
+        lines.append(f"- Search backend (web + ảnh): {settings.search_backend}")
         await message.reply("\n".join(lines))
 
     @router.message(Command("ask", ignore_case=True))
@@ -323,8 +365,19 @@ async def _handle_question(
                 except ImageTooLarge:
                     await message.reply("Ảnh quá lớn để phân tích.")
                     return
-                except MediaValidationError:
-                    await message.reply("Không tải/đọc được ảnh này. Bạn thử gửi lại nhé.")
+                except MediaValidationError as exc:
+                    if "Quá nhiều ảnh" in str(exc):
+                        await message.reply(
+                            _vision_limit_message(settings, orchestrator.router)
+                        )
+                    else:
+                        await message.reply("Không tải/đọc được ảnh này. Bạn thử gửi lại nhé.")
+                    return
+
+                if images and len(images) > _effective_vision_limit(
+                    settings, orchestrator.router
+                ):
+                    await message.reply(_vision_limit_message(settings, orchestrator.router))
                     return
 
                 request = UserRequest(text=question, quoted_text=quoted, images=images)
@@ -343,16 +396,13 @@ async def _handle_question(
                         )
                 except NoCapableProvider as exc:
                     stats.record_error(str(exc))
-                    await message.reply("Hiện chưa có model đọc ảnh được cấu hình.")
+                    await message.reply(_NO_CAPABLE_PROVIDER_TEXT)
                     return
                 except AllProvidersFailed as exc:
-                    stats.record_error(str(exc), fallback=True)
-                    logger.error("Tất cả AI provider thất bại: %s", exc)
-                    await message.reply(
-                        "❌ Xin lỗi, hiện tại mình không thể trả lời "
-                        "(các nguồn AI đều đang lỗi/quá tải). "
-                        "Bạn thử lại sau vài phút nhé."
-                    )
+                    stats.record_fallbacks(exc.fallbacks)
+                    stats.record_error(str(exc))
+                    logger.error("AI providers không thể hoàn tất request: %s", exc)
+                    await message.reply(_ALL_PROVIDERS_FAILED_TEXT)
                     return
                 except Exception as exc:  # noqa: BLE001
                     stats.record_error(str(exc))
@@ -363,6 +413,7 @@ async def _handle_question(
                     typing_task.cancel()
                     await asyncio.gather(typing_task, return_exceptions=True)
 
+                stats.record_fallbacks(answer.fallbacks)
                 if not answer.text:
                     await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
                     return
@@ -372,7 +423,6 @@ async def _handle_question(
                     return
 
                 stats.record_answer(answer.provider)
-                stats.record_fallback(getattr(answer, "fallbacks", 0))
                 if answer.searched:
                     stats.record_search()
                 memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question

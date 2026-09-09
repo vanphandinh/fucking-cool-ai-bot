@@ -1,37 +1,37 @@
-"""Capability-aware AI router with shared tool budget and health-aware fallback."""
+"""Capability-aware AI routing with shared tool budget and portable state."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
-from .bai import make_bai_provider
 from .base import (
     AllProvidersFailed,
     ChatResponse,
     NoCapableProvider,
-    OpenAICompatProvider,
     ProviderError,
     ToolCall,
 )
 from .capabilities import ProviderCapabilities
-from .cloudflare import make_cloudflare_provider
-from .gemini import make_gemini_provider
-from .groq import make_groq_provider
-from .openrouter import make_openrouter_provider
+from .provider import AIProvider
+from .registry import build_registered_providers
 from .synthesis import build_fresh_synthesis_messages
 
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
 _MAX_PARALLEL_TOOL_CALLS = 2
-_PROVIDER_MESSAGE_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
-_GEMINI_DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+
+
+@dataclass(frozen=True)
+class CompletionResult:
+    content: str
+    provider: str
+    fallbacks: tuple[str, ...] = ()
 
 
 @dataclass
@@ -56,6 +56,14 @@ class _ToolBudget:
 
     def close(self) -> None:
         self.closed = True
+
+
+@dataclass
+class _RequestState:
+    base_messages: list[dict]
+    portable_messages: list[dict]
+    tool_outputs: list[str]
+    budget: _ToolBudget
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -104,37 +112,57 @@ async def _execute_tool_batch(
 
 
 class AIProviderRouter:
-    def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
+    def __init__(
+        self,
+        providers: list[AIProvider],
+        max_tool_rounds: int = 4,
+        *,
+        text_provider_order: tuple[str, ...] | None = None,
+        vision_provider_order: tuple[str, ...] | None = None,
+    ) -> None:
         self.providers = providers
-        self.max_tool_rounds = max_tool_rounds
-        self._last_fallbacks: ContextVar[int] = ContextVar(
-            f"ai_router_last_fallbacks_{id(self)}",
-            default=0,
+        default_order = tuple(dict.fromkeys(provider.name for provider in providers))
+        self.text_provider_order = (
+            default_order if text_provider_order is None else text_provider_order
         )
+        self.vision_provider_order = (
+            default_order if vision_provider_order is None else vision_provider_order
+        )
+        self.max_tool_rounds = max_tool_rounds
 
-    @property
-    def last_fallbacks(self) -> int:
-        """Fallback count for the current async request context."""
-        return self._last_fallbacks.get()
-
-    @last_fallbacks.setter
-    def last_fallbacks(self, value: int) -> None:
-        self._last_fallbacks.set(value)
+    def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
+        if requires_vision:
+            return self.vision_provider_order
+        return self.text_provider_order
 
     def capable_providers(
         self,
         *,
         requires_vision: bool,
         image_count: int = 0,
-    ) -> list[OpenAICompatProvider]:
-        out: list[OpenAICompatProvider] = []
-        for provider in self.providers:
-            if _capabilities(provider).accepts(
-                requires_vision=requires_vision,
-                image_count=image_count,
-            ):
-                out.append(provider)
+    ) -> list[AIProvider]:
+        out: list[AIProvider] = []
+        for provider_name in self.provider_order(requires_vision):
+            for provider in self.providers:
+                if provider.name != provider_name:
+                    continue
+                if _capabilities(provider).accepts(
+                    requires_vision=requires_vision,
+                    image_count=image_count,
+                ):
+                    out.append(provider)
         return out
+
+    def configured_provider_names(self, requires_vision: bool) -> tuple[str, ...]:
+        providers = self.capable_providers(
+            requires_vision=requires_vision,
+            image_count=1 if requires_vision else 0,
+        )
+        return tuple(dict.fromkeys(provider.name for provider in providers))
+
+    def max_supported_images(self) -> int:
+        providers = self.capable_providers(requires_vision=True, image_count=1)
+        return max((_capabilities(provider).max_images for provider in providers), default=0)
 
     async def complete(
         self,
@@ -144,109 +172,122 @@ class AIProviderRouter:
         *,
         requires_vision: bool = False,
         image_count: int = 0,
-    ) -> tuple[str, str]:
+    ) -> CompletionResult:
         candidates = self.capable_providers(
             requires_vision=requires_vision,
             image_count=image_count,
         )
         if not candidates:
-            raise NoCapableProvider("Không có provider phù hợp capability của request")
+            raise NoCapableProvider(
+                "Không có AI provider nào phù hợp capability của request"
+            )
 
+        state = _RequestState(
+            base_messages=deepcopy(messages),
+            portable_messages=deepcopy(messages),
+            tool_outputs=[],
+            budget=_ToolBudget(),
+        )
+        attempted: list[str] = []
+        fallbacks: list[str] = []
         last_error: ProviderError | None = None
-        budget = _ToolBudget()
-        attempted = 0
-        self.last_fallbacks = 0
-        synthesis_base_messages = _portable_messages(messages)
-        tool_outputs: list[str] = []
 
         for provider in candidates:
             if not _available(provider):
                 continue
             if attempted:
-                self.last_fallbacks += 1
-            attempted += 1
-            already_plain = False
-            if budget.exhausted(self.max_tool_rounds):
-                provider_messages = _messages_for_provider(
-                    build_fresh_synthesis_messages(
-                        synthesis_base_messages,
-                        tool_outputs,
-                    ),
+                fallbacks.append(provider.name)
+            attempted.append(provider.name)
+            try:
+                text = await self._attempt_provider(
                     provider,
+                    tools,
+                    tool_executor,
+                    state,
                 )
-            else:
-                provider_messages = _messages_for_provider(messages, provider)
-            for pass_no in (0, 1):
-                local_msgs = deepcopy(provider_messages)
-                use_tools = (
-                    tools
-                    if (
-                        provider.supports_tools
-                        and pass_no == 0
-                        and not budget.exhausted(self.max_tool_rounds)
-                    )
-                    else None
-                )
-                if use_tools is None and already_plain:
-                    break
-                if use_tools is None:
-                    already_plain = True
-                try:
-                    text = await self._complete_with_provider(
-                        provider,
-                        local_msgs,
-                        use_tools,
-                        tool_executor,
-                        budget,
-                        synthesis_base_messages,
-                        tool_outputs,
-                    )
-                    _record_success(provider)
-                    return text, provider.name
-                except ProviderError as exc:
-                    last_error = exc
-                    _record_error(provider, exc)
-                    logger.warning("Provider %s lỗi: %s", provider.name, exc)
-                    if len(local_msgs) > len(provider_messages):
-                        provider_messages = local_msgs
-                    if exc.unsupported_tools and provider.supports_tools:
-                        provider.supports_tools = False
-                        continue
-                    if exc.retry_without_tools:
-                        continue
-                    break
-                except Exception as exc:  # noqa: BLE001
-                    last_error = ProviderError(f"{provider.name}: {exc}")
-                    _record_error(provider, last_error)
-                    logger.warning("Provider %s lỗi không lường trước: %s", provider.name, exc)
-                    if len(local_msgs) > len(provider_messages):
-                        provider_messages = local_msgs
-                    break
-            messages = _portable_messages(provider_messages)
+            except ProviderError as exc:
+                last_error = exc
+                _record_error(provider, exc)
+                logger.warning("AI provider %s lỗi: %s", provider.name, exc)
+                continue
+            _record_success(provider)
+            return CompletionResult(text, provider.name, tuple(fallbacks))
 
-        if attempted == 0:
-            raise AllProvidersFailed("Các provider phù hợp đang cooldown hoặc unavailable")
-        raise AllProvidersFailed(str(last_error) if last_error else "Tất cả provider đều lỗi")
+        message = str(last_error) if last_error else "Không có AI provider khả dụng"
+        raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
+
+    async def _attempt_provider(
+        self,
+        provider: AIProvider,
+        tools: list[dict] | None,
+        tool_executor: ToolExecutor,
+        state: _RequestState,
+    ) -> str:
+        if state.budget.exhausted(self.max_tool_rounds):
+            provider_messages = build_fresh_synthesis_messages(
+                state.base_messages,
+                state.tool_outputs,
+            )
+        else:
+            provider_messages = deepcopy(state.portable_messages)
+
+        already_plain = False
+        last_error: ProviderError | None = None
+
+        for pass_no in (0, 1):
+            local_msgs = deepcopy(provider_messages)
+            use_tools = (
+                tools
+                if (
+                    provider.supports_tools
+                    and pass_no == 0
+                    and not state.budget.exhausted(self.max_tool_rounds)
+                )
+                else None
+            )
+            if use_tools is None and already_plain:
+                break
+            if use_tools is None:
+                already_plain = True
+            try:
+                return await self._complete_with_provider(
+                    provider,
+                    local_msgs,
+                    use_tools,
+                    tool_executor,
+                    state,
+                )
+            except ProviderError as exc:
+                last_error = exc
+                if len(local_msgs) > len(provider_messages):
+                    provider_messages = local_msgs
+                if exc.unsupported_tools and provider.supports_tools:
+                    provider.supports_tools = False
+                    continue
+                if exc.retry_without_tools:
+                    continue
+                raise
+
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(
+            f"{provider.name}: không thể hoàn tất provider-local recovery"
+        )
 
     async def _complete_with_provider(
         self,
-        provider: OpenAICompatProvider,
+        provider: AIProvider,
         messages: list[dict],
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
-        budget: _ToolBudget,
-        synthesis_base_messages: list[dict],
-        tool_outputs: list[str],
+        state: _RequestState,
     ) -> str:
         active_tools = tools
         while True:
-            if active_tools and budget.exhausted(self.max_tool_rounds):
-                messages[:] = _messages_for_provider(
-                    build_fresh_synthesis_messages(
-                        synthesis_base_messages,
-                        tool_outputs,
-                    ),
-                    provider,
+            if active_tools and state.budget.exhausted(self.max_tool_rounds):
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
 
@@ -263,107 +304,77 @@ class AIProviderRouter:
                 )
 
             requested_calls = len(resp.tool_calls)
-            if not budget.can_execute(requested_calls, self.max_tool_rounds):
-                budget.close()
-                messages[:] = _messages_for_provider(
-                    build_fresh_synthesis_messages(
-                        synthesis_base_messages,
-                        tool_outputs,
-                    ),
-                    provider,
+            if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
+                state.budget.close()
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
                 continue
 
-            budget.rounds += 1
-            budget.calls += requested_calls
-            messages.append(_assistant_tool_message(resp))
+            state.budget.rounds += 1
+            state.budget.calls += requested_calls
+            messages.append(
+                _assistant_tool_message(resp, include_provider_metadata=True)
+            )
+            state.portable_messages.append(
+                _assistant_tool_message(resp, include_provider_metadata=False)
+            )
+
             outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
                 normalized_output = str(output)[:6000]
-                tool_outputs.append(normalized_output)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": normalized_output,
-                    }
-                )
+                state.tool_outputs.append(normalized_output)
+                tool_message = {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": normalized_output,
+                }
+                messages.append(deepcopy(tool_message))
+                state.portable_messages.append(tool_message)
 
-            if budget.exhausted(self.max_tool_rounds):
-                messages[:] = _messages_for_provider(
-                    build_fresh_synthesis_messages(
-                        synthesis_base_messages,
-                        tool_outputs,
-                    ),
-                    provider,
+            if state.budget.exhausted(self.max_tool_rounds):
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
                 )
                 active_tools = None
 
 
-def _tool_call_message(tc: ToolCall) -> dict:
+def _tool_call_message(
+    tc: ToolCall,
+    *,
+    include_provider_metadata: bool = True,
+) -> dict:
     out = {
         "id": tc.id,
         "type": "function",
         "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
     }
-    if tc.extra_content is not None:
+    if include_provider_metadata and tc.extra_content is not None:
         out["extra_content"] = deepcopy(tc.extra_content)
     return out
 
 
-def _assistant_tool_message(resp: ChatResponse) -> dict:
+def _assistant_tool_message(
+    resp: ChatResponse,
+    *,
+    include_provider_metadata: bool = True,
+) -> dict:
     out = {
         "role": "assistant",
         "content": resp.content or "",
-        "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
+        "tool_calls": [
+            _tool_call_message(
+                tc,
+                include_provider_metadata=include_provider_metadata,
+            )
+            for tc in resp.tool_calls
+        ],
     }
-    out.update(deepcopy(resp.assistant_metadata))
-    return out
-
-
-def _messages_for_provider(messages: list[dict], provider: OpenAICompatProvider) -> list[dict]:
-    """Prepare portable history for a specific fallback target.
-
-    Gemini 3 validates a thought signature on historical function calls. Calls
-    produced by another provider have no Gemini signature, so use Google's
-    documented dummy signature only for those imported calls. Native Gemini
-    tool turns keep the real signature captured in ``extra_content``.
-    """
-    out = _portable_messages(messages)
-    if not provider.name.startswith("gemini"):
-        return out
-    for message in out:
-        tool_calls = message.get("tool_calls")
-        if not isinstance(tool_calls, list):
-            continue
-        for tool_call in tool_calls:
-            if not isinstance(tool_call, dict):
-                continue
-            extra_content = tool_call.setdefault("extra_content", {})
-            if not isinstance(extra_content, dict):
-                extra_content = {}
-                tool_call["extra_content"] = extra_content
-            google = extra_content.setdefault("google", {})
-            if not isinstance(google, dict):
-                google = {}
-                extra_content["google"] = google
-            google.setdefault("thought_signature", _GEMINI_DUMMY_THOUGHT_SIGNATURE)
-    return out
-
-
-def _portable_messages(messages: list[dict]) -> list[dict]:
-    """Strip provider-specific metadata before cross-provider fallback."""
-    out = deepcopy(messages)
-    for message in out:
-        for field_name in _PROVIDER_MESSAGE_FIELDS:
-            message.pop(field_name, None)
-        tool_calls = message.get("tool_calls")
-        if not isinstance(tool_calls, list):
-            continue
-        for tool_call in tool_calls:
-            if isinstance(tool_call, dict):
-                tool_call.pop("extra_content", None)
+    if include_provider_metadata:
+        out.update(deepcopy(resp.assistant_metadata))
     return out
 
 
@@ -374,83 +385,13 @@ def _json_dumps(data: dict) -> str:
 
 
 def build_provider_router(settings: Settings) -> AIProviderRouter:
-    providers: list[OpenAICompatProvider] = []
-
-    text: dict[str, OpenAICompatProvider] = {}
-    if settings.gemini_api_key and settings.gemini_model:
-        text["gemini"] = make_gemini_provider(settings)
-    if settings.groq_api_key and settings.groq_model:
-        text["groq"] = make_groq_provider(settings)
-    if settings.openrouter_api_key and settings.openrouter_model:
-        text["openrouter"] = make_openrouter_provider(settings)
-    if (
-        "bai" in settings.text_provider_order_list
-        and settings.bai_api_key
-        and settings.bai_text_model
-    ):
-        text["bai"] = make_bai_provider(settings)
-    if (
-        settings.cloudflare_account_id
-        and settings.cloudflare_api_token
-        and settings.cloudflare_text_model
-    ):
-        text["cloudflare"] = make_cloudflare_provider(
-            settings,
-            name="cloudflare_text",
-            model=settings.cloudflare_text_model,
-            vision=False,
-        )
-    for slot_name in settings.text_provider_order_list:
-        provider = text.get(slot_name)
-        if provider is not None:
-            providers.append(provider)
-
-    if settings.vision_enabled:
-        vision: dict[str, OpenAICompatProvider] = {}
-        if settings.gemini_api_key and settings.gemini_vision_model:
-            vision["gemini"] = make_gemini_provider(
-                settings,
-                name="gemini_vision",
-                model=settings.gemini_vision_model,
-                vision=True,
-            )
-        if settings.groq_api_key:
-            models = settings.groq_vision_models_list
-            if len(models) >= 1:
-                vision["groq_qwen38"] = make_groq_provider(
-                    settings,
-                    name="groq_qwen38",
-                    model=models[0],
-                    vision=True,
-                    max_images=3,
-                )
-            if len(models) >= 2:
-                vision["groq_qwen36"] = make_groq_provider(
-                    settings,
-                    name="groq_qwen36",
-                    model=models[1],
-                    vision=True,
-                    max_images=3,
-                )
-        if (
-            "bai" in settings.vision_provider_order_list
-            and settings.bai_api_key
-            and settings.bai_vision_model
-        ):
-            vision["bai"] = make_bai_provider(
-                settings,
-                name="bai_vision",
-                vision=True,
-            )
-        if (
-            settings.cloudflare_account_id
-            and settings.cloudflare_api_token
-            and settings.cloudflare_vision_model
-        ):
-            vision["cloudflare"] = make_cloudflare_provider(settings)
-        for slot_name in settings.vision_provider_order_list:
-            provider = vision.get(slot_name)
-            if provider is not None:
-                providers.append(provider)
-
-    return AIProviderRouter(providers, max_tool_rounds=settings.max_tool_rounds)
+    text_order = tuple(settings.text_provider_order_list)
+    vision_order = tuple(settings.vision_provider_order_list)
+    registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
+    providers = build_registered_providers(settings, registered_names)
+    return AIProviderRouter(
+        providers,
+        max_tool_rounds=settings.max_tool_rounds,
+        text_provider_order=text_order,
+        vision_provider_order=vision_order,
+    )

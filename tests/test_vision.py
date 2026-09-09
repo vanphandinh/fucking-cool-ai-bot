@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ from app.ai.base import OpenAICompatProvider, ProviderError
 from app.ai.capabilities import ProviderCapabilities
 from app.ai.health import ProviderHealth
 from app.ai.multimodal import build_user_content
-from app.ai.router import AIProviderRouter
+from app.ai.router import AIProviderRouter, build_provider_router
 from app.bot.media import ImageTooLarge, TelegramMediaLoader
 from app.config import Settings
 from app.core.request import ImageAttachment, UserRequest
@@ -77,22 +78,32 @@ class CapabilityTests(unittest.TestCase):
         self.assertFalse(cap.accepts(requires_vision=True, image_count=1))
 
     def test_vision_slot_enforces_image_limit(self) -> None:
-        cap = ProviderCapabilities(route="vision", supports_vision=True, max_images=3)
-        self.assertTrue(cap.accepts(requires_vision=True, image_count=3))
-        self.assertFalse(cap.accepts(requires_vision=True, image_count=4))
+        cap = ProviderCapabilities(route="vision", supports_vision=True, max_images=1)
+        self.assertTrue(cap.accepts(requires_vision=True, image_count=1))
+        self.assertFalse(cap.accepts(requires_vision=True, image_count=2))
         self.assertFalse(cap.accepts(requires_vision=False, image_count=0))
 
     def test_router_separates_text_and_vision_slots(self) -> None:
         class P:
-            def __init__(self, route: str, vision: bool, max_images: int) -> None:
+            def __init__(
+                self,
+                name: str,
+                route: str,
+                vision: bool,
+                max_images: int,
+            ) -> None:
+                self.name = name
                 self.capabilities = ProviderCapabilities(route, vision, max_images)
 
-        text = P("text", False, 0)
-        vision = P("vision", True, 3)
+        text = P("test", "text", False, 0)
+        vision = P("test", "vision", True, 1)
         router = AIProviderRouter([text, vision])  # type: ignore[list-item]
         self.assertEqual(router.capable_providers(requires_vision=False), [text])
-        self.assertEqual(router.capable_providers(requires_vision=True, image_count=1), [vision])
-        self.assertEqual(router.capable_providers(requires_vision=True, image_count=4), [])
+        self.assertEqual(
+            router.capable_providers(requires_vision=True, image_count=1),
+            [vision],
+        )
+        self.assertEqual(router.capable_providers(requires_vision=True, image_count=2), [])
 
 
 class HealthTests(unittest.TestCase):
@@ -118,30 +129,43 @@ class HealthTests(unittest.TestCase):
 
 class VisionConfigTests(unittest.TestCase):
     def test_defaults_and_disable_switch(self) -> None:
-        settings = Settings(gemini_api_key="x")
-        self.assertEqual(settings.max_images_per_request, 3)
-        self.assertIn("gemini", settings.configured_vision_provider_names)
-        disabled = Settings(gemini_api_key="x", vision_enabled=False)
-        self.assertEqual(disabled.configured_vision_provider_names, [])
+        router = build_provider_router(Settings(_env_file=None, bai_api_key="x"))
+        try:
+            self.assertEqual(router.configured_provider_names(True), ("bai",))
+            self.assertEqual(router.max_supported_images(), 1)
+        finally:
+            asyncio.run(_close_router(router))
 
-    def test_reported_vision_providers_match_effective_order(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            gemini_api_key="g",
-            groq_api_key="q",
-            vision_provider_order="groq_qwen36,gemini",
+        disabled = build_provider_router(
+            Settings(_env_file=None, bai_api_key="x", vision_enabled=False)
         )
-        self.assertEqual(
-            settings.configured_vision_provider_names,
-            ["groq_qwen36", "gemini"],
-        )
+        try:
+            self.assertEqual(disabled.configured_provider_names(True), ())
+            self.assertEqual(disabled.max_supported_images(), 0)
+        finally:
+            asyncio.run(_close_router(disabled))
 
-        excluded = Settings(
-            _env_file=None,
-            gemini_api_key="g",
-            vision_provider_order="cloudflare",
-        )
-        self.assertEqual(excluded.configured_vision_provider_names, [])
+    def test_missing_bai_key_has_no_vision_provider(self) -> None:
+        router = build_provider_router(Settings(_env_file=None))
+        self.assertEqual(router.configured_provider_names(True), ())
+        self.assertEqual(router.max_supported_images(), 0)
+
+    def test_current_bai_vision_route_rejects_two_images(self) -> None:
+        router = build_provider_router(Settings(_env_file=None, bai_api_key="x"))
+        try:
+            self.assertEqual(
+                [p.name for p in router.capable_providers(
+                    requires_vision=True,
+                    image_count=1,
+                )],
+                ["bai"],
+            )
+            self.assertEqual(
+                router.capable_providers(requires_vision=True, image_count=2),
+                [],
+            )
+        finally:
+            asyncio.run(_close_router(router))
 
 
 class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
@@ -151,11 +175,7 @@ class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
         def respond(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 400,
-                json={
-                    "error": {
-                        "message": f"invalid image data:image/png;base64,{secret}"
-                    }
-                },
+                json={"error": {"message": f"invalid image data:image/png;base64,{secret}"}},
             )
 
         provider = OpenAICompatProvider("vision", "https://example.org/v1", "fake", "fake")
@@ -194,6 +214,11 @@ class TelegramMediaSafetyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ImageTooLarge):
             await loader._from_message(message, "current")
         self.assertEqual(completed_writes, [1])
+
+
+async def _close_router(router) -> None:
+    for provider in router.providers:
+        await provider.aclose()
 
 
 if __name__ == "__main__":

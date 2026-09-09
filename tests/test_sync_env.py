@@ -61,6 +61,49 @@ class SyncEnvTests(unittest.TestCase):
                 ),
             )
 
+    def test_bai_only_sync_preserves_bai_and_removes_external_ai_provider_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "BAI_API_KEY=\n"
+                "BAI_TEXT_MODEL=qwen3.8-flash\n"
+                "BAI_VISION_MODEL=qwen3.8-flash\n"
+                "SEARCH_BACKEND=auto\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "BAI_API_KEY=real-bai-secret\n"
+                "BAI_TEXT_MODEL=qwen3.8-flash\n"
+                "GEMINI_API_KEY=old-gemini\n"
+                "GROQ_API_KEY=old-groq\n"
+                "OPENROUTER_API_KEY=old-openrouter\n"
+                "CLOUDFLARE_ACCOUNT_ID=old-account\n"
+                "CLOUDFLARE_API_TOKEN=old-token\n"
+                "TEXT_PROVIDER_ORDER=bai,gemini,groq,cloudflare,openrouter\n"
+                "VISION_PROVIDER_ORDER=bai,gemini\n"
+                "SEARCH_BACKEND=searxng\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("BAI_API_KEY=real-bai-secret", rendered)
+            self.assertIn("BAI_TEXT_MODEL=qwen3.8-flash", rendered)
+            self.assertIn("BAI_VISION_MODEL=qwen3.8-flash", rendered)
+            self.assertIn("SEARCH_BACKEND=searxng", rendered)
+            for removed in (
+                "GEMINI_API_KEY",
+                "GROQ_API_KEY",
+                "OPENROUTER_API_KEY",
+                "CLOUDFLARE_ACCOUNT_ID",
+                "CLOUDFLARE_API_TOKEN",
+                "TEXT_PROVIDER_ORDER",
+                "VISION_PROVIDER_ORDER",
+            ):
+                self.assertNotIn(removed, rendered)
+
     def test_duplicate_key_in_example_fails_without_touching_env(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

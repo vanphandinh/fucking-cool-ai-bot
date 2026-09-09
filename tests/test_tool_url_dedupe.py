@@ -4,14 +4,13 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from app.ai.router import CompletionResult
 from app.config import Settings
 from app.core.orchestrator import Orchestrator
 from app.search.url_service import UrlReadResult
 
 
 class _EquivalentUrlRouter:
-    last_fallbacks = 0
-
     async def complete(self, messages, tools, tool_executor, **kwargs):
         first = await tool_executor(
             "fetch_url",
@@ -22,12 +21,10 @@ class _EquivalentUrlRouter:
             {"url": "https://EXAMPLE.org:443/article/", "mode": "auto"},
         )
         self.outputs = [first, second]
-        return "done", "fake"
+        return CompletionResult("done", "fake", ())
 
 
 class _ConcurrentEquivalentUrlRouter:
-    last_fallbacks = 0
-
     async def complete(self, messages, tools, tool_executor, **kwargs):
         self.outputs = await asyncio.gather(
             tool_executor(
@@ -39,7 +36,7 @@ class _ConcurrentEquivalentUrlRouter:
                 {"url": "https://EXAMPLE.org:443/article/", "mode": "auto"},
             ),
         )
-        return "done", "fake"
+        return CompletionResult("done", "fake", ())
 
 
 class ToolUrlDedupeTests(unittest.IsolatedAsyncioTestCase):
