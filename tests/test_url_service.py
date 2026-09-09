@@ -22,6 +22,7 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             Settings(
                 _env_file=None,
+                crawl4ai_api_token="secret",
                 crawl4ai_timeout_sec=60,
                 question_timeout_sec=30,
             )
