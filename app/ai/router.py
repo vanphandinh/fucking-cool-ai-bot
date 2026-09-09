@@ -37,6 +37,24 @@ _GEMINI_DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
 class _ToolBudget:
     calls: int = 0
     rounds: int = 0
+    closed: bool = False
+
+    def exhausted(self, max_rounds: int) -> bool:
+        return (
+            self.closed
+            or self.rounds >= max_rounds
+            or self.calls >= _MAX_TOOL_CALLS_TOTAL
+        )
+
+    def can_execute(self, requested_calls: int, max_rounds: int) -> bool:
+        return (
+            not self.closed
+            and self.rounds < max_rounds
+            and self.calls + requested_calls <= _MAX_TOOL_CALLS_TOTAL
+        )
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -148,7 +166,15 @@ class AIProviderRouter:
             provider_messages = _messages_for_provider(messages, provider)
             for pass_no in (0, 1):
                 local_msgs = deepcopy(provider_messages)
-                use_tools = tools if (provider.supports_tools and pass_no == 0) else None
+                use_tools = (
+                    tools
+                    if (
+                        provider.supports_tools
+                        and pass_no == 0
+                        and not budget.exhausted(self.max_tool_rounds)
+                    )
+                    else None
+                )
                 if use_tools is None and already_plain:
                     break
                 if use_tools is None:
@@ -192,39 +218,40 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         budget: _ToolBudget,
     ) -> str:
-        for _round in range(self.max_tool_rounds + 1):
-            resp = await provider.chat(messages, tools)
+        active_tools = tools
+        while True:
+            if active_tools and budget.exhausted(self.max_tool_rounds):
+                active_tools = None
+
+            resp = await provider.chat(messages, active_tools)
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
                 if not text:
                     raise ProviderError(f"{provider.name}: model trả về nội dung rỗng")
                 return text
-            if not tools:
+            if not active_tools:
                 raise ProviderError(
                     f"{provider.name}: model gọi tool khi tools đã tắt",
                     transient=False,
                 )
-            if budget.rounds >= self.max_tool_rounds:
-                raise ProviderError(
-                    f"{provider.name}: model gọi tool quá {self.max_tool_rounds} vòng",
-                    retry_without_tools=True,
-                    transient=False,
-                )
-            if budget.calls + len(resp.tool_calls) > _MAX_TOOL_CALLS_TOTAL:
-                raise ProviderError(
-                    f"{provider.name}: model yêu cầu quá {_MAX_TOOL_CALLS_TOTAL} tool call",
-                    retry_without_tools=True,
-                    transient=False,
-                )
+
+            requested_calls = len(resp.tool_calls)
+            if not budget.can_execute(requested_calls, self.max_tool_rounds):
+                budget.close()
+                active_tools = None
+                continue
+
             budget.rounds += 1
-            budget.calls += len(resp.tool_calls)
+            budget.calls += requested_calls
             messages.append(_assistant_tool_message(resp))
             outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": str(output)[:6000]}
                 )
-        raise ProviderError(f"{provider.name}: vòng lặp tool kết thúc bất thường")
+
+            if budget.exhausted(self.max_tool_rounds):
+                active_tools = None
 
 
 def _tool_call_message(tc: ToolCall) -> dict:
