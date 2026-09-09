@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Awaitable, Callable
@@ -68,7 +69,19 @@ class AIProviderRouter:
     def __init__(self, providers: list[OpenAICompatProvider], max_tool_rounds: int = 4) -> None:
         self.providers = providers
         self.max_tool_rounds = max_tool_rounds
-        self.last_fallbacks = 0
+        self._last_fallbacks: ContextVar[int] = ContextVar(
+            f"ai_router_last_fallbacks_{id(self)}",
+            default=0,
+        )
+
+    @property
+    def last_fallbacks(self) -> int:
+        """Fallback count for the current async request context."""
+        return self._last_fallbacks.get()
+
+    @last_fallbacks.setter
+    def last_fallbacks(self, value: int) -> None:
+        self._last_fallbacks.set(value)
 
     def capable_providers(
         self,
