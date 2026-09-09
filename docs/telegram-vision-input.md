@@ -1,16 +1,31 @@
 # Telegram vision input
 
-Vision runtime hiện là **B.AI-only**. Text request và image request vẫn là hai capability route riêng.
+Vision routing dùng cùng generic provider framework với text. **Current production registration là B.AI**, nhưng image handling không hard-code kiến trúc theo B.AI: router chọn configured vision providers theo `VISION_PROVIDER_ORDER`, `ProviderCapabilities`, health state và image count.
 
 ## Input được hỗ trợ
 
-`TelegramMediaLoader` có thể nhìn media trên message hiện tại và message được reply, nhưng production config hiện khóa:
+`TelegramMediaLoader` có thể nhìn media trên message hiện tại và message được reply.
+
+Application limit hiện tại:
 
 ```env
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-Đây là giới hạn phù hợp với B.AI vision capability hiện tại (`max_images=1`). Vì vậy một request chỉ được gửi tối đa một ảnh vào model.
+Current B.AI vision slot cũng advertise:
+
+```text
+supports_vision=True
+max_images=1
+```
+
+Effective image limit là:
+
+```text
+min(MAX_IMAGES_PER_REQUEST, max capability của configured vision providers)
+```
+
+Với production registry hiện tại, effective limit là một ảnh/request.
 
 Media hợp lệ:
 
@@ -23,18 +38,20 @@ Image MIME khác bị từ chối. Plain image không có trigger text/caption k
 
 ## Multi-image behavior
 
-Không còn provider vision khác để fallback.
+Request vượt application limit bị loader chặn trước model call. Nếu request vượt capability của các configured vision candidates, router không chuyển nó sang text model và không giả định một provider khác support được input.
 
-Request có hơn một ảnh:
+Current production flow:
 
 ```text
 Telegram media
-  -> loader thấy vượt MAX_IMAGES_PER_REQUEST=1
-  -> reject trước model call
-  -> UX: B.AI hiện chỉ hỗ trợ 1 ảnh mỗi yêu cầu
+  -> MAX_IMAGES_PER_REQUEST=1
+  -> generic capability-aware vision routing
+  -> bai / route=vision / max_images=1
 ```
 
-Không gửi hai ảnh sang B.AI, không chuyển sang B.AI text model và không tăng limit chỉ để giữ behavior của kiến trúc multi-provider cũ.
+UX khi vượt limit được sinh từ effective capability, không phải chuỗi B.AI-specific hard-code trong handler.
+
+Sau này nếu thêm provider vision có `max_images=4`, router vẫn chỉ nhận tối đa một ảnh nếu `MAX_IMAGES_PER_REQUEST=1`. Muốn dùng 4 ảnh cần cả application limit và provider capability đều cho phép.
 
 ## Memory / byte safety
 
@@ -50,7 +67,7 @@ Telegram bytes
  -> UserRequest.images
  -> build_user_content()
  -> data:image/<mime>;base64,...
- -> B.AI request
+ -> selected vision provider request
 ```
 
 `ChatMemory` không lưu raw bytes/base64; sau answer chỉ lưu marker text `[kèm N ảnh] ...`.
@@ -59,36 +76,57 @@ Provider error excerpt redact image data URL trước log/status.
 
 ## Capability routing
 
-Text:
+Generic route selection:
 
 ```text
-bai / BAI_TEXT_MODEL
+VISION_PROVIDER_ORDER
+ -> registered family slots
+ -> route=vision?
+ -> supports_vision?
+ -> max_images >= request image_count?
+ -> healthy?
+ -> ordered attempt/fallback
 ```
 
-Vision:
+Current config:
 
-```text
-bai_vision / BAI_VISION_MODEL / max_images=1
+```env
+VISION_ENABLED=1
+VISION_PROVIDER_ORDER=bai
+BAI_VISION_MODEL=qwen3.8-flash
+MAX_IMAGES_PER_REQUEST=1
 ```
+
+Current B.AI family slots dùng cùng stable key `bai`; text/vision được phân biệt bằng `ProviderCapabilities.route`, không bằng UI name riêng.
 
 `VISION_ENABLED=0` tắt vision nhưng không tắt text.
 
-Thiếu B.AI key/vision model khi vision bật sẽ không tạo valid vision slot và user nhận B.AI-specific configuration error.
+Nếu không có configured/capable vision provider, user nhận generic `NoCapableProvider` UX. Image request không fallback sang text-only slot.
 
-## Tools trong vision request
+## Tools và provider fallback trong vision request
 
-Vision completion vẫn có cùng tools như text:
+Vision completion có cùng generic tools như text:
 
 - `web_search(query)`;
 - `image_search(query)`;
 - `fetch_url(url, mode?)`.
 
-Tool budget, fresh synthesis và B.AI health behavior dùng chung router implementation với text.
+Tool budget là request-wide:
+
+- hard cap 8 tool calls;
+- tối đa 2 tool calls chạy song song;
+- `MAX_TOOL_ROUNDS` discovery rounds.
+
+Provider transition không reset budget. Provider-specific continuation metadata chỉ replay trong cùng provider. Nếu budget đã đóng, một later vision provider chỉ nhận generic Fresh Synthesis context với tools disabled.
+
+Current registry chỉ có B.AI, nên chưa có second vision provider để fallback trong production. Framework đã giữ sẵn ordered fallback semantics cho provider mới.
 
 ## Verification
 
 ```bash
 python -m unittest tests.test_vision -v
+python -m unittest tests.test_provider_registry -v
+python -m unittest tests.test_provider_portability -v
 python -m unittest tests.test_bai_provider -v
 python -m unittest tests.test_fresh_synthesis_routing -v
 python -m unittest discover -s tests -p 'test_*.py' -v
@@ -102,4 +140,5 @@ Production smoke nên gồm:
 3. reply một ảnh;
 4. image + web search;
 5. image + direct URL;
-6. request hai ảnh để xác nhận bị chặn trước model call.
+6. request vượt effective image limit để xác nhận bị chặn trước model call;
+7. `/status` để xác nhận configured vision providers/order/cooldown.
