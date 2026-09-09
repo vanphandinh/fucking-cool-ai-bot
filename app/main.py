@@ -41,44 +41,53 @@ async def _amain(settings: Settings) -> int:
     if not settings.bot_token:
         logger.error("Thiếu BOT_TOKEN trong .env — bot không thể chạy.")
         return 1
-    if not settings.configured_provider_names:
-        logger.error(
-            "Thiếu BAI_API_KEY hoặc BAI_TEXT_MODEL — bot không có AI backend text."
-        )
-        return 1
-
-    if settings.vision_enabled and not settings.configured_vision_provider_names:
-        logger.warning(
-            "Vision đang bật nhưng B.AI vision chưa được cấu hình hợp lệ; "
-            "text bot vẫn hoạt động."
-        )
-
-    if not settings.allowed_group_ids_list and not settings.learn_group_id_mode:
-        logger.warning(
-            "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> "
-            "bot sẽ không trả lời ở bất kỳ đâu."
-        )
-    if settings.search_backend == "searxng" and not settings.searxng_url.strip():
-        logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
-    if settings.crawl4ai_enabled and not settings.crawl4ai_url.strip():
-        logger.warning(
-            "CRAWL4AI_ENABLED=1 nhưng CRAWL4AI_URL đang trống; dùng generic reader."
-        )
-    if settings.crawl4ai_enabled and not settings.crawl4ai_api_token.strip():
-        logger.warning(
-            "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
-        )
-
-    try:
-        bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
-    except TokenValidationError as exc:
-        logger.error("BOT_TOKEN không đúng định dạng: %s", exc)
-        return 1
 
     provider_router = None
+    bot = None
     dp = None
     try:
-        provider_router = build_provider_router(settings)
+        try:
+            provider_router = build_provider_router(settings)
+        except ValueError as exc:
+            logger.error("Cấu hình AI provider không hợp lệ: %s", exc)
+            return 1
+
+        text_names = provider_router.configured_provider_names(False)
+        vision_names = provider_router.configured_provider_names(True)
+        if not text_names:
+            logger.error(
+                "Không có AI provider text nào được cấu hình hợp lệ theo "
+                "TEXT_PROVIDER_ORDER."
+            )
+            return 1
+        if settings.vision_enabled and not vision_names:
+            logger.warning(
+                "Vision đang bật nhưng không có AI provider vision nào được cấu hình hợp lệ; "
+                "text bot vẫn hoạt động."
+            )
+
+        if not settings.allowed_group_ids_list and not settings.learn_group_id_mode:
+            logger.warning(
+                "ALLOWED_GROUP_IDS đang TRỐNG và LEARN_GROUP_ID_MODE=0 -> "
+                "bot sẽ không trả lời ở bất kỳ đâu."
+            )
+        if settings.search_backend == "searxng" and not settings.searxng_url.strip():
+            logger.warning("SEARCH_BACKEND=searxng nhưng SEARXNG_URL đang TRỐNG.")
+        if settings.crawl4ai_enabled and not settings.crawl4ai_url.strip():
+            logger.warning(
+                "CRAWL4AI_ENABLED=1 nhưng CRAWL4AI_URL đang trống; dùng generic reader."
+            )
+        if settings.crawl4ai_enabled and not settings.crawl4ai_api_token.strip():
+            logger.warning(
+                "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
+            )
+
+        try:
+            bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
+        except TokenValidationError as exc:
+            logger.error("BOT_TOKEN không đúng định dạng: %s", exc)
+            return 1
+
         stats = Stats()
         memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
         limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
@@ -97,10 +106,13 @@ async def _amain(settings: Settings) -> int:
             return 1
 
         logger.info(
-            "B.AI text: %s | B.AI vision: %s | Search: %s | Allowed groups: %s | Admin: %s | "
+            "Text providers: %s | Vision providers: %s | Text order: %s | "
+            "Vision order: %s | Search: %s | Allowed groups: %s | Admin: %s | "
             "Context turns: %s | Learn-mode: %s",
-            ", ".join(settings.configured_provider_names) or "disabled",
-            ", ".join(settings.configured_vision_provider_names) or "disabled",
+            ", ".join(text_names) or "disabled",
+            ", ".join(vision_names) or "disabled",
+            ", ".join(provider_router.provider_order(False)) or "disabled",
+            ", ".join(provider_router.provider_order(True)) or "disabled",
             settings.search_backend,
             settings.allowed_group_ids_list or "-",
             settings.admin_ids_list or "-",
@@ -126,17 +138,16 @@ async def _amain(settings: Settings) -> int:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-        try:
+        if bot is not None:
             await bot.session.close()
+        try:
+            await close_crawl4ai_client()
         finally:
             try:
-                await close_crawl4ai_client()
+                await close_search_runtimes()
             finally:
-                try:
-                    await close_search_runtimes()
-                finally:
-                    if provider_router is not None:
-                        await _close_providers(provider_router)
+                if provider_router is not None:
+                    await _close_providers(provider_router)
 
 
 def main() -> None:
