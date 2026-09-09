@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
+from .bai import make_bai_provider
 from .base import (
     AllProvidersFailed,
     ChatResponse,
@@ -245,6 +246,12 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     if settings.openrouter_api_key and settings.openrouter_model:
         text["openrouter"] = make_openrouter_provider(settings)
     if (
+        "bai" in settings.text_provider_order_list
+        and settings.bai_api_key
+        and settings.bai_text_model
+    ):
+        text["bai"] = make_bai_provider(settings)
+    if (
         settings.cloudflare_account_id
         and settings.cloudflare_api_token
         and settings.cloudflare_text_model
@@ -287,6 +294,16 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
                     vision=True,
                     max_images=3,
                 )
+        if (
+            "bai" in settings.vision_provider_order_list
+            and settings.bai_api_key
+            and settings.bai_vision_model
+        ):
+            vision["bai"] = make_bai_provider(
+                settings,
+                name="bai_vision",
+                vision=True,
+            )
         if (
             settings.cloudflare_account_id
             and settings.cloudflare_api_token

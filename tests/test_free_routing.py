@@ -17,17 +17,19 @@ class FreeFirstDefaultsTests(unittest.TestCase):
     def test_defaults_prefer_free_tier_models_and_conserve_quota(self) -> None:
         settings = Settings(_env_file=None)
 
+        self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
+        self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
         self.assertEqual(settings.groq_model, "openai/gpt-oss-120b")
         self.assertEqual(settings.cloudflare_text_model, "@cf/zai-org/glm-4.7-flash")
         self.assertEqual(settings.openrouter_model, "openrouter/free")
         self.assertEqual(settings.gemini_model, "gemini-3.8-flash")
         self.assertEqual(
             settings.text_provider_order,
-            "groq,cloudflare,openrouter,gemini",
+            "bai,gemini,groq,cloudflare,openrouter",
         )
         self.assertEqual(
             settings.vision_provider_order,
-            "groq_qwen38,cloudflare,groq_qwen36,gemini",
+            "bai,gemini,groq_qwen38,cloudflare,groq_qwen36",
         )
         self.assertEqual(settings.max_context_turns, 6)
         self.assertEqual(settings.max_tool_rounds, 2)
@@ -57,9 +59,10 @@ class FreeFirstDefaultsTests(unittest.TestCase):
 
 
 class FreeFirstRouterTests(unittest.TestCase):
-    def test_text_router_uses_configured_free_first_order_and_models(self) -> None:
+    def test_text_router_uses_default_priority_order_and_models(self) -> None:
         settings = Settings(
             _env_file=None,
+            bai_api_key="b",
             gemini_api_key="g",
             groq_api_key="q",
             openrouter_api_key="o",
@@ -72,23 +75,25 @@ class FreeFirstRouterTests(unittest.TestCase):
             text = router.capable_providers(requires_vision=False)
             self.assertEqual(
                 [provider.name for provider in text],
-                ["groq", "cloudflare_text", "openrouter", "gemini"],
+                ["bai", "gemini", "groq", "cloudflare_text", "openrouter"],
             )
             self.assertEqual(
                 [provider.model for provider in text],
                 [
+                    "qwen3.8-flash",
+                    "gemini-3.8-flash",
                     "openai/gpt-oss-120b",
                     "@cf/zai-org/glm-4.7-flash",
                     "openrouter/free",
-                    "gemini-3.8-flash",
                 ],
             )
         finally:
             asyncio.run(_close_router(router))
 
-    def test_vision_router_prefers_provider_diversity_before_second_groq_slot(self) -> None:
+    def test_vision_router_uses_default_priority_order(self) -> None:
         settings = Settings(
             _env_file=None,
+            bai_api_key="b",
             gemini_api_key="g",
             groq_api_key="q",
             cloudflare_account_id="account",
@@ -99,7 +104,7 @@ class FreeFirstRouterTests(unittest.TestCase):
             vision = router.capable_providers(requires_vision=True, image_count=1)
             self.assertEqual(
                 [provider.name for provider in vision],
-                ["groq_qwen38", "cloudflare", "groq_qwen36", "gemini_vision"],
+                ["bai_vision", "gemini_vision", "groq_qwen38", "cloudflare", "groq_qwen36"],
             )
         finally:
             asyncio.run(_close_router(router))
@@ -372,10 +377,10 @@ class ProviderMetadataTests(unittest.IsolatedAsyncioTestCase):
         await first.aclose()
         await second.aclose()
         first._client = httpx.AsyncClient(
-            base_url="https://first.example/v1/", transport=httpx.MockTransport(first_respond)
+            base_url="https://first.example/v1", transport=httpx.MockTransport(first_respond)
         )
         second._client = httpx.AsyncClient(
-            base_url="https://second.example/v1/", transport=httpx.MockTransport(second_respond)
+            base_url="https://second.example/v1", transport=httpx.MockTransport(second_respond)
         )
         router = AIProviderRouter([first, second], max_tool_rounds=2)
 
