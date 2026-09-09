@@ -87,6 +87,7 @@ TOOLS: list[dict] = [
 class Answer:
     text: str
     provider: str
+    fallbacks: tuple[str, ...] = ()
     searched: bool = False
     sources: list[dict] = field(default_factory=list)
     images: list[dict] = field(default_factory=list)
@@ -237,7 +238,7 @@ class Orchestrator:
             return f"Tool '{name}' không tồn tại."
 
         try:
-            text, provider = await self.router.complete(
+            result = await self.router.complete(
                 messages,
                 TOOLS,
                 tool_executor,
@@ -251,8 +252,9 @@ class Orchestrator:
             raise AllProvidersFailed(str(exc)) from exc
 
         return Answer(
-            text=text,
-            provider=provider,
+            text=result.content,
+            provider=result.provider,
+            fallbacks=result.fallbacks,
             searched=searched,
             sources=_dedupe_sources(sources),
             images=_dedupe_images(image_results, self.settings.image_search_max_results),
