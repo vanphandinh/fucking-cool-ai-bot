@@ -39,19 +39,19 @@ async def search_images(
         except Exception as exc:  # noqa: BLE001
             raise _image_search_error(backend, exc) from exc
 
-    # auto: prefer self-hosted SearXNG when configured, then degrade to DDGS.
-    if settings.searxng_url.strip():
-        try:
-            results = await search_searxng_images(query, settings, effective_limit)
-            if results:
-                return results
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("SearXNG image search lỗi, fallback DDGS: %s", exc)
+    from .router import RoutedSearchError, route_auto
 
     try:
-        return await search_ddgs_images(query, settings, effective_limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("DDGS image search lỗi: %s", exc)
+        return await route_auto(
+            query,
+            settings,
+            effective_limit,
+            kind="image",
+            result_url_key="image_url",
+            searx_call=search_searxng_images,
+            ddgs_call=search_ddgs_images,
+        )
+    except RoutedSearchError as exc:
         raise ImageSearchError(
             "Không tìm kiếm được hình ảnh từ các backend miễn phí hiện tại."
         ) from exc
