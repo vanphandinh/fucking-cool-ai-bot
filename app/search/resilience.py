@@ -86,17 +86,21 @@ class CircuitBreaker:
 
     def record_failure(self, key: BackendKey, kind: FailureKind, reason: str = "") -> None:
         entry = self._entry(key)
+        was_half_open = entry.state is CircuitState.HALF_OPEN
         entry.probe_in_flight = False
         entry.last_failure_reason = reason[:200]
         entry.consecutive_failures += 1
 
         should_open = kind is FailureKind.RATE_LIMIT
-        should_open = should_open or entry.state is CircuitState.HALF_OPEN
+        should_open = should_open or was_half_open
         should_open = should_open or entry.consecutive_failures >= self.failure_threshold
         if not should_open:
             return
 
-        cooldown = self.rate_limit_cooldown_sec if kind is FailureKind.RATE_LIMIT else self.cooldown_sec
+        if kind is FailureKind.RATE_LIMIT:
+            cooldown = self.rate_limit_cooldown_sec
+        else:
+            cooldown = self.cooldown_sec
         entry.state = CircuitState.OPEN
         entry.cooldown_until = self._clock() + cooldown
 
@@ -171,17 +175,9 @@ class SingleFlight:
             if task is None:
                 task = asyncio.create_task(factory())
                 self._tasks[key] = task
-                task.add_done_callback(lambda done, k=key: self._schedule_cleanup(k, done))
+                task.add_done_callback(lambda done, k=key: self._discard(k, done))
         return await asyncio.shield(task)
 
-    def _schedule_cleanup(self, key: str, task: asyncio.Task) -> None:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        loop.create_task(self._cleanup(key, task))
-
-    async def _cleanup(self, key: str, task: asyncio.Task) -> None:
-        async with self._lock:
-            if self._tasks.get(key) is task:
-                self._tasks.pop(key, None)
+    def _discard(self, key: str, task: asyncio.Task) -> None:
+        if self._tasks.get(key) is task:
+            self._tasks.pop(key, None)
