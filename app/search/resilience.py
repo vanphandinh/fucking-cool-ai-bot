@@ -188,11 +188,9 @@ class SingleFlight:
         finally:
             async with self._lock:
                 current = self._flights.get(key)
-                if current is not flight:
-                    return
-                flight.waiters -= 1
-                if flight.waiters > 0:
-                    return
-                self._flights.pop(key, None)
-                if not flight.task.done():
-                    flight.task.cancel()
+                if current is flight:
+                    flight.waiters -= 1
+                    if flight.waiters == 0:
+                        self._flights.pop(key, None)
+                        if not flight.task.done():
+                            flight.task.cancel()
