@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ProviderHealth:
+    auth_failure_cooldown_sec: float | None = None
     cooldown_until: float = 0.0
     disabled: bool = False
     consecutive_transient_failures: int = 0
@@ -33,7 +34,11 @@ class ProviderHealth:
         self.last_error = (message or "")[:300]
         now = time.monotonic()
         if status_code in (401, 403):
-            self.disabled = True
+            if self.auth_failure_cooldown_sec is None:
+                self.disabled = True
+            else:
+                delay = retry_after if retry_after is not None else self.auth_failure_cooldown_sec
+                self.cooldown_until = now + max(0.0, delay)
             return
         if status_code == 429:
             self.cooldown_until = now + max(0.0, retry_after if retry_after is not None else 60.0)
