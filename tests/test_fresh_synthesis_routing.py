@@ -119,7 +119,16 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "illegal_synthesis", 1)
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"role": "assistant", "content": "HYPE synthesis from collected evidence"}}]},
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "HYPE synthesis from collected evidence",
+                            }
+                        }
+                    ]
+                },
                 request=request,
             )
 
@@ -192,7 +201,16 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("x" * 6000, appended)
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"role": "assistant", "content": "compact fallback answer"}}]},
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "compact fallback answer",
+                            }
+                        }
+                    ]
+                },
                 request=request,
             )
 
