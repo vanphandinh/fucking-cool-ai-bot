@@ -2,12 +2,16 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-AI runtime hiện là **B.AI-only**: không còn Gemini, Groq, OpenRouter hay Cloudflare Workers AI trong source/runtime. Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input và Telegram-native HTML formatting.
+**Current configured AI provider: B.AI.** B.AI là provider duy nhất đang được register trong production hiện tại; Gemini, Groq, OpenRouter và Cloudflare Workers AI đã bị xóa khỏi source/runtime.
+
+**Architecture: generic capability-aware, health-aware, ordered multi-provider framework.** Core router, orchestrator, startup, metrics và Telegram handlers không coi B.AI là provider đặc biệt, nên có thể thêm provider khác sau này mà không viết lại state machine chính.
+
+Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input và Telegram-native HTML formatting.
 
 ## Tài liệu đang duy trì
 
-- [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, tool calling, health, synthesis và probe.
-- [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, giới hạn 1 ảnh/request và memory safety.
+- [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, adapter behavior, tool calling, health và synthesis.
+- [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md).
 - [Search resilience](docs/SEARCH_RESILIENCE.md).
 - [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md).
@@ -19,35 +23,42 @@ AI runtime hiện là **B.AI-only**: không còn Gemini, Groq, OpenRouter hay Cl
 
 ---
 
-## 1. Kiến trúc hiện tại
+## 1. Kiến trúc AI hiện tại
 
 ```text
-Telegram group / forum topic
+Telegram request
    │
-   ├─ allowlist / trigger / rate-limit / per-conversation lock
-   ├─ TelegramMediaLoader ──► UserRequest(text, quoted_text, optional image)
    ▼
-Orchestrator
+Orchestrator + tools/search/url readers
    │
-   ├─ text  ───────────────► B.AI text slot
-   ├─ image ───────────────► B.AI vision slot (max 1 image)
+   ▼
+AIProviderRouter
    │
-   └─ tools
-       ├─ web_search ─────► SearXNG / DDGS
-       ├─ image_search ───► SearXNG / DDGS
-       └─ fetch_url
-            ├─ X/Twitter resolver khi phù hợp
-            ├─ Crawl4AI khi được cấu hình
-            └─ generic SSRF-safe reader
+   ├─ TEXT_PROVIDER_ORDER
+   ├─ VISION_PROVIDER_ORDER
+   ├─ capability filtering
+   ├─ health/cooldown filtering
+   └─ ordered provider attempts
+          │
+          └─ current production registry: B.AI
+               ├─ text slot
+               └─ vision slot (max_images=1)
 ```
 
-B.AI dùng endpoint OpenAI-compatible:
+Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. `OpenAICompatProvider` chỉ là transport/parser reusable cho API kiểu OpenAI Chat Completions. B.AI hiện dùng implementation đó qua:
 
 ```text
 POST https://api.b.ai/v1/chat/completions
 ```
 
-Không có cross-provider fallback. Nếu B.AI lỗi/cooldown/unavailable, request kết thúc với thông báo B.AI-specific thay vì chuyển sang AI provider khác.
+Current production orders:
+
+```env
+TEXT_PROVIDER_ORDER=bai
+VISION_PROVIDER_ORDER=bai
+```
+
+Framework hỗ trợ ordered fallback. Vì registry production hiện chỉ có `bai`, một B.AI outage hiện vẫn kết thúc request sau local recovery; không có provider thứ hai để thử. Khi provider mới được register và thêm vào order, router có thể chuyển sang provider đó theo cùng generic state machine.
 
 ---
 
@@ -60,7 +71,7 @@ BAI_TEXT_MODEL=qwen3.8-flash
 BAI_VISION_MODEL=qwen3.8-flash
 ```
 
-Integration cho phép chọn thủ công các model promotion đã được validate khi support được thêm:
+Allowlist B.AI hiện tại:
 
 - `qwen3.8-flash`
 - `mimo-v2.5`
@@ -69,27 +80,41 @@ Integration cho phép chọn thủ công các model promotion đã được vali
 
 Không có automatic model rotation. Việc B.AI promotion/zero-credit có thể thay đổi upstream; repo không coi promotion là entitlement vĩnh viễn.
 
-B.AI vision hiện được khóa `max_images=1`. Bot không tự gửi request nhiều ảnh sang text model và không fallback sang provider vision khác.
+B.AI vision hiện advertise `max_images=1`. Đây là capability của adapter, không phải giới hạn kiến trúc của router.
 
 ---
 
-## 3. Tool discovery và Fresh Qwen Synthesis
+## 3. Ordered fallback, tool state và Fresh Synthesis
 
-Model có ba tool:
+Router chọn candidate theo route order, capability và health:
 
-- `web_search(query)`
-- `image_search(query)`
-- `fetch_url(url, mode?)`
+```text
+configured order
+ -> capable slot?
+ -> healthy?
+ -> attempt provider
+ -> provider-local failure?
+ -> next capable healthy provider
+```
 
-Tool budget dùng chung trong một completion:
+Chỉ `ProviderError` là provider-local failure hợp lệ để outer router fallback. Lỗi lập trình/runtime bất ngờ thoát khỏi provider contract không bị che bằng việc thử provider tiếp theo.
+
+Tool budget là **request-wide**, không reset khi đổi provider:
 
 - `MAX_TOOL_ROUNDS` — default `2`;
-- hard cap nội bộ: tối đa `8` tool calls;
+- hard cap nội bộ: tối đa `8` tool calls/request;
 - tối đa `2` tool calls chạy song song.
 
-Khi discovery budget hết, router không replay toàn bộ structured tool trajectory cho synthesis. Nó tạo **fresh synthesis context** từ original request + bounded plain-text evidence, tắt tools và gửi lại cho cùng B.AI model. Với B.AI, synthesis no-tool gửi `tool_choice=none`.
+Router tách hai state:
 
-Nếu model vẫn phát tool call trong synthesis-only turn, tool đó không được thực thi và request kết thúc; không có external-provider fallback và không có fifth retry vô hạn.
+- provider-local continuation state — có thể chứa metadata riêng của provider;
+- portable state — chỉ chứa canonical messages, generic tool calls/results và normalized evidence.
+
+Ví dụ `reasoning_content` của B.AI `mimo-v2.5` có thể replay trong cùng provider, nhưng không được leak sang provider khác.
+
+Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original request + bounded untrusted plain-text evidence, tắt tools và bỏ structured provider-local trajectory. Nếu provider hiện tại fail ở synthesis stage và còn provider sau, provider sau nhận cùng generic Fresh Synthesis context với tools vẫn tắt. Với B.AI, no-tool request còn đặt `tool_choice=none`.
+
+Tool call phát sinh sau khi tools đã tắt không bao giờ được execute.
 
 ---
 
@@ -99,7 +124,7 @@ Yêu cầu:
 
 - Docker + Docker Compose plugin;
 - Telegram bot token;
-- B.AI API key;
+- credential của ít nhất một text provider trong configured order; hiện tại là B.AI API key;
 - Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
 
 ```bash
@@ -109,11 +134,13 @@ cp .env.example .env
 nano .env
 ```
 
-Cấu hình tối thiểu:
+Cấu hình tối thiểu hiện tại:
 
 ```env
 BOT_TOKEN=...
 BAI_API_KEY=...
+TEXT_PROVIDER_ORDER=bai
+VISION_PROVIDER_ORDER=bai
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
@@ -133,9 +160,11 @@ docker compose logs -f bot
 BAI_API_KEY=
 BAI_TEXT_MODEL=qwen3.8-flash
 BAI_REQUEST_TIMEOUT_SEC=30.0
+TEXT_PROVIDER_ORDER=bai
 
 VISION_ENABLED=1
 BAI_VISION_MODEL=qwen3.8-flash
+VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
@@ -143,29 +172,57 @@ MAX_TOTAL_IMAGE_BYTES=12582912
 
 `VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động.
 
-Request có hơn một ảnh sẽ bị chặn trước model call với UX rõ rằng B.AI hiện chỉ hỗ trợ một ảnh mỗi request trong bot này.
+Effective image limit là giới hạn nhỏ hơn giữa application limit và capability của các configured vision providers. Với production hiện tại, B.AI advertise `max_images=1`, nên effective limit là một ảnh.
 
 ---
 
-## 6. Nâng cấp deployment cũ
+## 6. Thêm AI provider mới
 
-Không copy đè `.env` bằng `.env.example`. Sau `git pull`, chạy:
+Một provider thông thường nên được add mà **không sửa** router state machine, orchestrator, stats, startup hoặc Telegram handlers:
+
+1. Implement `AIProvider` trực tiếp, hoặc reuse `OpenAICompatProvider` nếu upstream dùng OpenAI-compatible Chat Completions.
+2. Thêm provider-specific settings/credentials với namespace riêng.
+3. Tạo provider-family factory trả về các configured route slots.
+4. Register factory trong `PROVIDER_FACTORIES`.
+5. Khai báo `ProviderCapabilities` cho từng slot và thêm provider key vào `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` phù hợp.
+6. Pass provider registry, ordered routing/fallback, portability và provider-specific regression tests.
+
+Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks phải nằm trong adapter, không đưa vào core router.
+
+---
+
+## 7. Nâng cấp deployment cũ
+
+Không copy đè `.env` bằng `.env.example`. Sau `git pull`, backup rồi sync:
 
 ```bash
+cp .env .env.bak
 python scripts/sync_env.py
 ```
 
 Script giữ value của key còn tồn tại và xóa key không còn trong `.env.example`.
 
-Khi nâng cấp sang B.AI-only, script sẽ giữ `BAI_API_KEY`/B.AI settings hiện có và loại các biến AI provider cũ như Gemini/Groq/OpenRouter/Cloudflare Workers AI cùng provider-order variables. Search, Telegram và Crawl4AI settings vẫn được giữ nếu key còn tồn tại.
+Migration hiện tại:
+
+- giữ B.AI settings hiện có;
+- giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng vẫn là generic routing config;
+- xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
+- giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
+
+Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` **giữ nguyên intent đó** thay vì silently sửa. Startup sẽ reject unknown provider rõ ràng. Trước khi restart production, sửa order về các provider đang register; hiện tại:
+
+```env
+TEXT_PROVIDER_ORDER=bai
+VISION_PROVIDER_ORDER=bai
+```
 
 Chi tiết: [docs/ENV_SYNC.md](docs/ENV_SYNC.md).
 
 ---
 
-## 7. Search / URL reading
+## 8. Search / URL reading
 
-Search không phụ thuộc AI provider list.
+Search không phụ thuộc provider registry.
 
 ```env
 SEARCH_BACKEND=auto
@@ -191,7 +248,7 @@ Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về
 
 ---
 
-## 8. Telegram usage
+## 9. Telegram usage và observability
 
 | Flow | Ví dụ / hành vi |
 |---|---|
@@ -200,33 +257,25 @@ Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về
 | Tìm ảnh | `@FuckingCoolAIbot tìm cho tôi ảnh capybara` |
 | Đọc URL | gửi URL + yêu cầu đọc/tóm tắt |
 | X/Twitter | gửi status URL + câu hỏi |
-| Một ảnh | JPEG/PNG/WebP + caption trigger |
+| Ảnh | JPEG/PNG/WebP + caption trigger, trong effective capability limit |
 | Reply ảnh | reply ảnh rồi tag bot hoặc `/ask` |
 | `/help` | hướng dẫn ngắn |
 | `/status` | admin-only status |
 
-Plain image không có text/caption trigger sẽ không tự gọi bot.
+Plain image không có text/caption trigger sẽ không tự gọi bot. Forum topic được cô lập history/lock bằng `(chat_id, message_thread_id)`.
 
-Forum topic được cô lập history/lock bằng `(chat_id, message_thread_id)`.
-
----
-
-## 9. B.AI health / failure behavior
-
-B.AI text và vision slot có health state riêng trong RAM:
+Provider health state là per-slot:
 
 - `401/403` → disable slot đến process restart;
 - `429` → cooldown, ưu tiên numeric `Retry-After`;
-- network/`5xx` transient → cooldown theo health policy hiện có;
+- network/`5xx` transient → cooldown theo health policy;
 - success → reset transient state.
 
-`/status` hiển thị provider distribution, last provider, last error và cooldown/unavailable state. Cross-provider fallback counter đã bị loại vì runtime không còn provider fallback.
+`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Trong B.AI-only production bình thường, fallback count thường là `0` vì chưa có provider thứ hai.
 
 ---
 
 ## 10. Verification
-
-Offline/full checks:
 
 ```bash
 python tests/run_tests.py
@@ -236,7 +285,7 @@ python -m pip check
 python -m compileall -q app tests scripts
 cp .env.example .env
 docker compose config --quiet
-docker build --tag fcai-bai-only-test .
+docker build --tag fcai-bai-generic-provider-test .
 ```
 
 GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXNG YAML và build production image.
@@ -247,6 +296,7 @@ Manual production smoke sau deploy nên gồm:
 2. query cần web search;
 3. direct URL;
 4. một ảnh;
-5. thử hai ảnh để xác nhận bị chặn đúng UX;
+5. request vượt effective image limit;
 6. `/status`;
-7. B.AI failure path để xác nhận không có external AI request.
+7. B.AI failure path hiện tại;
+8. nếu sau này có provider thứ hai, một controlled provider-local failure để xác nhận ordered fallback và metadata isolation.
