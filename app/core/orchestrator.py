@@ -12,7 +12,7 @@ from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import image_service, service as search_service, url_service
 from .request import UserRequest
-from .source_policy import select_diverse_sources
+from .source_policy import canonicalize_source_url, select_diverse_sources
 
 logger = logging.getLogger(__name__)
 _VN_TZ = timezone(timedelta(hours=7))
@@ -202,7 +202,8 @@ class Orchestrator:
             if name == "fetch_url":
                 url = str(args.get("url") or "").strip()
                 mode = str(args.get("mode") or "auto").strip().lower()
-                key = (url, mode)
+                cache_url = canonicalize_source_url(url) or url
+                key = (cache_url, mode)
                 if key in url_cache:
                     return url_cache[key]
                 result = await url_service.read_url(url, self.settings, mode)
