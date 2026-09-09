@@ -51,8 +51,6 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(payload)
             if len(requests) == 1:
                 return _tool_response(request, "call_first")
-            if len(requests) == 2:
-                return _tool_response(request, "call_over_budget")
 
             history_has_result = any(
                 message.get("role") == "tool" and message.get("content") == "fetched content"
@@ -65,7 +63,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ):
                 return httpx.Response(
                     400,
-                    json={"error": {"message": "plain recovery contract violated"}},
+                    json={"error": {"message": "synthesis contract violated"}},
                     request=request,
                 )
             return httpx.Response(
@@ -101,9 +99,56 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, ("recovered from tool result", "bai"))
         self.assertEqual(executed, ["fetch_url"])
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), 2)
         self.assertEqual(requests[-1].get("tool_choice"), "none")
         self.assertNotIn("tools", requests[-1])
+
+    async def test_round_budget_switches_next_bai_turn_to_synthesis_only(self) -> None:
+        requests: list[dict] = []
+        executed: list[str] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if len(requests) <= 3:
+                return _tool_response(request, f"call_{len(requests)}")
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"role": "assistant", "content": "synthesized"}}
+                    ]
+                },
+                request=request,
+            )
+
+        provider = _make_bai()
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://api.b.ai/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+        router = AIProviderRouter([provider], max_tool_rounds=3)
+
+        async def execute(name: str, _args: dict) -> str:
+            executed.append(name)
+            return "fetched content"
+
+        try:
+            result = await router.complete(
+                [{"role": "user", "content": "research HYPE price analysis"}],
+                [_fetch_url_tool()],
+                execute,
+            )
+        finally:
+            await provider.aclose()
+
+        self.assertEqual(result, ("synthesized", "bai"))
+        self.assertEqual(executed, ["fetch_url", "fetch_url", "fetch_url"])
+        self.assertEqual(len(requests), 4)
+        self.assertTrue(all("tools" in payload for payload in requests[:3]))
+        self.assertNotIn("tools", requests[3])
+        self.assertEqual(requests[3].get("tool_choice"), "none")
 
     async def test_local_tool_policy_failures_do_not_cool_down_bai_vision(self) -> None:
         bai_requests: list[dict] = []
