@@ -148,6 +148,7 @@ class OpenAICompatProvider:
         self.supports_tools = True
         self.capabilities = capabilities or ProviderCapabilities()
         self.health = ProviderHealth()
+        self.force_tool_choice_none_when_no_tools = False
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
@@ -159,6 +160,8 @@ class OpenAICompatProvider:
         payload: dict = {"model": self.model, "messages": messages}
         if tools and self.supports_tools:
             payload["tools"] = tools
+        elif self.force_tool_choice_none_when_no_tools:
+            payload["tool_choice"] = "none"
         try:
             resp = await self._client.post("chat/completions", json=payload)
         except httpx.HTTPError as exc:
