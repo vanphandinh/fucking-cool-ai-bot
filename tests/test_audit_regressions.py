@@ -6,6 +6,7 @@ External I/O is replaced at the transport/provider boundary.
 
 import asyncio
 import gzip
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -23,6 +24,15 @@ from app.search import reader
 
 
 TOOLS = [{"type": "function", "function": {"name": "web_search"}}]
+
+
+def _startup_router(provider):
+    return SimpleNamespace(
+        providers=[provider],
+        configured_provider_names=lambda requires_vision: (
+            () if requires_vision else (provider.name,)
+        ),
+    )
 
 
 class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
@@ -64,12 +74,12 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
         try:
             router = AIProviderRouter([provider])
             for _ in range(2):
-                text, _ = await router.complete(
+                result = await router.complete(
                     [{"role": "user", "content": "question"}],
                     TOOLS,
                     AsyncMock(),
                 )
-                self.assertEqual(text, "answer")
+                self.assertEqual(result.content, "answer")
             self.assertEqual(sent_tools, [True, False, True])
             self.assertTrue(provider.supports_tools)
         finally:
@@ -182,8 +192,6 @@ class ReaderSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_releases_chat_and_does_not_remember_unsent_answer(self):
-        from types import SimpleNamespace
-
         from app.bot.handlers import _ChatLocks, _handle_question
         from app.core.context import ChatMemory
         from app.core.orchestrator import Answer
@@ -220,8 +228,6 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("quá thời gian", message.reply.call_args.args[0])
 
     async def test_timeout_includes_waiting_for_chat_lock(self):
-        from types import SimpleNamespace
-
         from app.bot.handlers import _ChatLocks, _handle_question
         from app.core.context import ChatMemory
         from app.core.orchestrator import Answer
@@ -276,8 +282,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         bot_cls.assert_not_called()
 
     async def test_restart_preserves_pending_telegram_updates(self):
-        from types import SimpleNamespace
-
         from app import main
 
         bot = SimpleNamespace(
@@ -293,7 +297,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 main,
                 "build_provider_router",
-                return_value=SimpleNamespace(providers=[provider]),
+                return_value=_startup_router(provider),
             ),
             patch.object(main.Dispatcher, "start_polling", new=AsyncMock()),
         ):
@@ -306,8 +310,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         provider.aclose.assert_awaited_once()
 
     async def test_unexpected_startup_failure_closes_all_clients(self):
-        from types import SimpleNamespace
-
         from app import main
 
         bot = SimpleNamespace(
@@ -320,7 +322,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 main,
                 "build_provider_router",
-                return_value=SimpleNamespace(providers=[provider]),
+                return_value=_startup_router(provider),
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "startup failed"):
@@ -335,8 +337,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         provider.aclose.assert_awaited_once()
 
     async def test_shutdown_finishes_active_handlers_before_closing_providers(self):
-        from types import SimpleNamespace
-
         from app import main
 
         events = []
@@ -371,7 +371,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 main,
                 "build_provider_router",
-                return_value=SimpleNamespace(providers=[provider]),
+                return_value=_startup_router(provider),
             ),
             patch.object(main.Dispatcher, "start_polling", new=polling),
         ):
