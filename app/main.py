@@ -42,21 +42,12 @@ async def _amain(settings: Settings) -> int:
         logger.error("Thiếu BOT_TOKEN trong .env — bot không thể chạy.")
         return 1
     if not settings.configured_provider_names:
-        logger.error(
-            "Chưa cấu hình API key text nào "
-            "(BAI_API_KEY / GROQ_API_KEY / CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
-            "OPENROUTER_API_KEY / GEMINI_API_KEY)."
-        )
+        logger.error("Thiếu BAI_API_KEY hoặc BAI_TEXT_MODEL — bot không có AI backend text.")
         return 1
 
-    if settings.cloudflare_api_token and not settings.cloudflare_account_id:
-        logger.warning(
-            "Có CLOUDFLARE_API_TOKEN nhưng thiếu CLOUDFLARE_ACCOUNT_ID — "
-            "bỏ qua Cloudflare text/vision."
-        )
     if settings.vision_enabled and not settings.configured_vision_provider_names:
         logger.warning(
-            "Vision đang bật nhưng chưa có vision provider hợp lệ; "
+            "Vision đang bật nhưng B.AI vision chưa được cấu hình hợp lệ; "
             "text bot vẫn hoạt động."
         )
 
@@ -102,9 +93,9 @@ async def _amain(settings: Settings) -> int:
             return 1
 
         logger.info(
-            "Text providers: %s | Vision: %s | Search: %s | Allowed groups: %s | Admin: %s | "
+            "B.AI text: %s | B.AI vision: %s | Search: %s | Allowed groups: %s | Admin: %s | "
             "Context turns: %s | Learn-mode: %s",
-            ", ".join(settings.configured_provider_names) or "-",
+            ", ".join(settings.configured_provider_names) or "disabled",
             ", ".join(settings.configured_vision_provider_names) or "disabled",
             settings.search_backend,
             settings.allowed_group_ids_list or "-",

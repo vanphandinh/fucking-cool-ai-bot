@@ -90,7 +90,6 @@ class Answer:
     searched: bool = False
     sources: list[dict] = field(default_factory=list)
     images: list[dict] = field(default_factory=list)
-    fallbacks: int = 0
 
 
 class Orchestrator:
@@ -211,6 +210,7 @@ class Orchestrator:
 
                 task = url_inflight.get(key)
                 if task is None:
+
                     async def fetch() -> str:
                         nonlocal searched
                         result = await url_service.read_url(url, self.settings, mode)
@@ -256,7 +256,6 @@ class Orchestrator:
             searched=searched,
             sources=_dedupe_sources(sources),
             images=_dedupe_images(image_results, self.settings.image_search_max_results),
-            fallbacks=self.router.last_fallbacks,
         )
 
 

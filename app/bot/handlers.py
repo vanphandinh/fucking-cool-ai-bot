@@ -32,11 +32,11 @@ from .media import (
 logger = logging.getLogger(__name__)
 
 _HELP_TEXT = (
-    "🤖 Mình là trợ lý AI của group (AI miễn phí + tìm kiếm web/ảnh + đọc ảnh).\n\n"
+    "🤖 Mình là trợ lý AI của group (B.AI + tìm kiếm web/ảnh + đọc ảnh).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi.\n"
     "- Có thể yêu cầu tìm/xem hình ảnh từ Internet.\n"
-    "- Gửi JPEG/PNG/WebP kèm caption có @{bot}.\n"
+    "- Gửi 1 ảnh JPEG/PNG/WebP kèm caption có @{bot}.\n"
     "- Reply ảnh rồi tag @{bot}, hoặc dùng /ask <câu hỏi>.\n"
     "- Lệnh: /ask, /help, /status (admin).\n\n"
     "Giới hạn {limit} câu/phút/người để tránh spam."
@@ -112,13 +112,12 @@ def build_message_router(
             f"- Số lần tìm web/ảnh: {stats.searches}",
             f"- Provider hiện tại: {stats.last_provider or 'chưa có'}",
             f"- Phân bổ: {distribution}",
-            f"- Fallback đã dùng: {stats.fallback_count}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
             (
-                "- Text providers: "
+                "- B.AI text: "
                 + (", ".join(settings.configured_provider_names) or "CHƯA CÓ KEY")
             ),
-            f"- Vision providers: {vision_names}",
+            f"- B.AI vision: {vision_names}",
             f"- Vision enabled: {'yes' if settings.configured_vision_provider_names else 'no'}",
             f"- Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
             f"- Search backend (web + ảnh): {settings.search_backend}",
@@ -323,8 +322,13 @@ async def _handle_question(
                 except ImageTooLarge:
                     await message.reply("Ảnh quá lớn để phân tích.")
                     return
-                except MediaValidationError:
-                    await message.reply("Không tải/đọc được ảnh này. Bạn thử gửi lại nhé.")
+                except MediaValidationError as exc:
+                    if "Quá nhiều ảnh" in str(exc) and settings.configured_vision_provider_names:
+                        await message.reply(
+                            "Hiện B.AI chỉ hỗ trợ 1 ảnh mỗi yêu cầu. Bạn gửi từng ảnh nhé."
+                        )
+                    else:
+                        await message.reply("Không tải/đọc được ảnh này. Bạn thử gửi lại nhé.")
                     return
 
                 request = UserRequest(text=question, quoted_text=quoted, images=images)
@@ -343,14 +347,13 @@ async def _handle_question(
                         )
                 except NoCapableProvider as exc:
                     stats.record_error(str(exc))
-                    await message.reply("Hiện chưa có model đọc ảnh được cấu hình.")
+                    await message.reply("B.AI vision hiện chưa được cấu hình hoặc không hỗ trợ yêu cầu này.")
                     return
                 except AllProvidersFailed as exc:
-                    stats.record_error(str(exc), fallback=True)
-                    logger.error("Tất cả AI provider thất bại: %s", exc)
+                    stats.record_error(str(exc))
+                    logger.error("B.AI không thể hoàn tất request: %s", exc)
                     await message.reply(
-                        "❌ Xin lỗi, hiện tại mình không thể trả lời "
-                        "(các nguồn AI đều đang lỗi/quá tải). "
+                        "❌ B.AI hiện đang lỗi/quá tải hoặc tạm thời không khả dụng. "
                         "Bạn thử lại sau vài phút nhé."
                     )
                     return
@@ -372,7 +375,6 @@ async def _handle_question(
                     return
 
                 stats.record_answer(answer.provider)
-                stats.record_fallback(getattr(answer, "fallbacks", 0))
                 if answer.searched:
                     stats.record_search()
                 memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question
