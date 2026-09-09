@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
@@ -12,6 +12,17 @@ from app.search.crawl4ai_client import (
     close_crawl4ai_client,
     read_page,
 )
+
+
+class _AsyncResponseContext:
+    def __init__(self, response: httpx.Response):
+        self.response = response
+
+    async def __aenter__(self) -> httpx.Response:
+        return self.response
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
 
 
 class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
@@ -63,6 +74,29 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["urls"], ["https://example.org/article"])
         self.assertEqual(payload["browser_config"], {})
         self.assertEqual(payload["crawler_config"], {})
+
+    async def test_oversized_response_is_rejected_before_json_use(self):
+        huge_markdown = "x" * (4 * 1024 * 1024 + 1)
+        response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
+            json={
+                "success": True,
+                "results": [{"success": True, "markdown": huge_markdown}],
+            },
+        )
+        client = MagicMock()
+        client.stream.return_value = _AsyncResponseContext(response)
+        client.post = AsyncMock(return_value=response)
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
+            result = await read_page("https://example.org", self.settings())
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "response_too_large")
+        client.stream.assert_called_once()
+        client.post.assert_not_awaited()
 
     async def test_raw_markdown_fallback(self):
         response = httpx.Response(
