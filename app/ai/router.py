@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
 _PROVIDER_MESSAGE_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
+_GEMINI_DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
 
 
 @dataclass
@@ -126,7 +127,7 @@ class AIProviderRouter:
                 self.last_fallbacks += 1
             attempted += 1
             already_plain = False
-            provider_messages = deepcopy(messages)
+            provider_messages = _messages_for_provider(messages, provider)
             for pass_no in (0, 1):
                 local_msgs = deepcopy(provider_messages)
                 use_tools = tools if (provider.supports_tools and pass_no == 0) else None
@@ -224,6 +225,36 @@ def _assistant_tool_message(resp: ChatResponse) -> dict:
         "tool_calls": [_tool_call_message(tc) for tc in resp.tool_calls],
     }
     out.update(deepcopy(resp.assistant_metadata))
+    return out
+
+
+def _messages_for_provider(messages: list[dict], provider: OpenAICompatProvider) -> list[dict]:
+    """Prepare portable history for a specific fallback target.
+
+    Gemini 3 validates a thought signature on historical function calls. Calls
+    produced by another provider have no Gemini signature, so use Google's
+    documented dummy signature only for those imported calls. Native Gemini
+    tool turns keep the real signature captured in ``extra_content``.
+    """
+    out = _portable_messages(messages)
+    if not provider.name.startswith("gemini"):
+        return out
+    for message in out:
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                continue
+            extra_content = tool_call.setdefault("extra_content", {})
+            if not isinstance(extra_content, dict):
+                extra_content = {}
+                tool_call["extra_content"] = extra_content
+            google = extra_content.setdefault("google", {})
+            if not isinstance(google, dict):
+                google = {}
+                extra_content["google"] = google
+            google.setdefault("thought_signature", _GEMINI_DUMMY_THOUGHT_SIGNATURE)
     return out
 
 
