@@ -10,7 +10,7 @@ import httpx
 
 from app.ai.bai import make_bai_provider
 from app.ai.base import AllProvidersFailed
-from app.ai.router import AIProviderRouter
+from app.ai.router import AIProviderRouter, CompletionResult
 
 
 class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -83,7 +83,10 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, ("recovered from tool result", "bai"))
+        self.assertEqual(
+            result,
+            CompletionResult("recovered from tool result", "bai", ()),
+        )
         self.assertEqual(executed, ["fetch_url"])
         self.assertEqual(len(requests), 2)
 
@@ -115,7 +118,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, ("synthesized", "bai"))
+        self.assertEqual(result, CompletionResult("synthesized", "bai", ()))
         self.assertEqual(executed, ["fetch_url"] * 3)
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
@@ -138,7 +141,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             return "fetched content"
 
         try:
-            with self.assertRaises(AllProvidersFailed):
+            with self.assertRaises(AllProvidersFailed) as ctx:
                 await router.complete(
                     [{"role": "user", "content": "inspect and research"}],
                     [_fetch_url_tool()],
@@ -149,6 +152,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
+        self.assertEqual(ctx.exception.fallbacks, ())
         self.assertEqual(len(requests), 2)
         self.assertIn("tools", requests[0])
         self.assertNotIn("tools", requests[1])
@@ -174,7 +178,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             return "fetched content"
 
         try:
-            with self.assertRaises(AllProvidersFailed):
+            with self.assertRaises(AllProvidersFailed) as ctx:
                 await router.complete(
                     [{"role": "user", "content": "summarize HYPE price analysis"}],
                     [_fetch_url_tool()],
@@ -183,6 +187,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
+        self.assertEqual(ctx.exception.fallbacks, ())
         self.assertEqual(executed, ["fetch_url"] * 3)
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
@@ -219,7 +224,10 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, ("eight-call synthesis", "bai"))
+        self.assertEqual(
+            result,
+            CompletionResult("eight-call synthesis", "bai", ()),
+        )
         self.assertEqual(executed, ["fetch_url"] * 8)
         self.assertEqual(len(requests), 2)
         self.assertNotIn("tools", requests[1])
@@ -252,7 +260,10 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, ("synthesized without overflow", "bai"))
+        self.assertEqual(
+            result,
+            CompletionResult("synthesized without overflow", "bai", ()),
+        )
         self.assertEqual(executed, [])
         self.assertEqual(len(requests), 2)
 
@@ -280,7 +291,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, ("plain only", "bai"))
+        self.assertEqual(result, CompletionResult("plain only", "bai", ()))
         self.assertEqual(len(requests), 1)
         self.assertNotIn("tools", requests[0])
         self.assertEqual(requests[0].get("tool_choice"), "none")
