@@ -13,7 +13,7 @@ class _BatchProvider:
 
     def __init__(self) -> None:
         self.calls = 0
-        self.replayed_tool_results: list[str] = []
+        self.synthesis_messages: list[dict] = []
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
         self.calls += 1
@@ -25,16 +25,14 @@ class _BatchProvider:
                     ToolCall("call_c", "fetch_url", {"url": "c"}),
                 ]
             )
-        self.replayed_tool_results = [
-            str(message.get("content") or "")
-            for message in messages
-            if message.get("role") == "tool"
-        ]
+        self.synthesis_messages = messages
         return ChatResponse(content="done")
 
 
 class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_tool_batch_runs_two_at_a_time_and_replays_in_model_order(self) -> None:
+    async def test_tool_batch_runs_two_at_a_time_and_preserves_model_order_in_fresh_evidence(
+        self,
+    ) -> None:
         provider = _BatchProvider()
         router = AIProviderRouter([provider], max_tool_rounds=1)
         active = 0
@@ -63,10 +61,15 @@ class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ("done", "batch"))
         self.assertEqual(max_active, 2)
         self.assertEqual(completion_order, ["b", "c", "a"])
-        self.assertEqual(
-            provider.replayed_tool_results,
-            ["result-a", "result-b", "result-c"],
+        self.assertFalse(
+            any(message.get("role") == "tool" for message in provider.synthesis_messages)
         )
+        self.assertFalse(
+            any(message.get("tool_calls") for message in provider.synthesis_messages)
+        )
+        evidence = str(provider.synthesis_messages[-1].get("content") or "")
+        positions = [evidence.index(f"result-{label}") for label in ("a", "b", "c")]
+        self.assertEqual(positions, sorted(positions))
 
 
 if __name__ == "__main__":
