@@ -28,8 +28,13 @@ class UnifiedSearchConfigTests(unittest.TestCase):
 
 
 class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_auto_prefers_searxng_and_does_not_call_ddgs_when_results_exist(self) -> None:
-        searx = AsyncMock(return_value=[{"title": "x", "url": "https://x", "snippet": ""}])
+    async def test_auto_prefers_searxng_and_does_not_call_ddgs_when_results_are_enough(self) -> None:
+        searx = AsyncMock(
+            return_value=[
+                {"title": "x1", "url": "https://x/1", "snippet": ""},
+                {"title": "x2", "url": "https://x/2", "snippet": ""},
+            ]
+        )
         ddgs = AsyncMock(return_value=[])
         settings = Settings(_env_file=None, search_backend="auto", searxng_url="http://searxng:8080")
         with (
@@ -37,7 +42,7 @@ class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
             results = await service.search("x", settings)
-        self.assertEqual(results[0]["title"], "x")
+        self.assertEqual(results[0]["title"], "x1")
         searx.assert_awaited_once()
         ddgs.assert_not_awaited()
 
