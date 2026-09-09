@@ -15,10 +15,10 @@ def _http_url(value: object) -> str:
     return url if url.startswith(("http://", "https://")) else ""
 
 
-def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
+def _ddgs_search_sync(query: str, limit: int, timeout_sec: float = 15.0) -> list[dict]:
     from ddgs import DDGS
 
-    with DDGS(timeout=15) as ddgs:
+    with DDGS(timeout=timeout_sec) as ddgs:
         raw = list(ddgs.text(query, max_results=limit, region="vn-vi"))
     results: list[dict] = []
     for item in raw or []:
@@ -34,10 +34,10 @@ def _ddgs_search_sync(query: str, limit: int) -> list[dict]:
     return results
 
 
-def _ddgs_image_search_sync(query: str, limit: int) -> list[dict]:
+def _ddgs_image_search_sync(query: str, limit: int, timeout_sec: float = 15.0) -> list[dict]:
     from ddgs import DDGS
 
-    with DDGS(timeout=15) as ddgs:
+    with DDGS(timeout=timeout_sec) as ddgs:
         raw = list(
             ddgs.images(
                 query,
@@ -70,16 +70,16 @@ def _ddgs_image_search_sync(query: str, limit: int) -> list[dict]:
 
 
 async def search_ddgs(query: str, settings: Settings, limit: int) -> list[dict]:
-    timeout = max(5.0, float(settings.request_timeout_sec))
+    timeout = float(settings.ddgs_timeout_sec)
     return await asyncio.wait_for(
-        asyncio.to_thread(_ddgs_search_sync, query, limit),
+        asyncio.to_thread(_ddgs_search_sync, query, limit, timeout),
         timeout=timeout,
     )
 
 
 async def search_ddgs_images(query: str, settings: Settings, limit: int) -> list[dict]:
-    timeout = max(5.0, float(settings.request_timeout_sec))
+    timeout = float(settings.ddgs_timeout_sec)
     return await asyncio.wait_for(
-        asyncio.to_thread(_ddgs_image_search_sync, query, limit),
+        asyncio.to_thread(_ddgs_image_search_sync, query, limit, timeout),
         timeout=timeout,
     )

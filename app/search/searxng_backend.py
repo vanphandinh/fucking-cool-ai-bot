@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
 from ..config import Settings
+from . import runtime as search_runtime
+
+# Giữ seam mock cũ `searxng_backend.httpx.AsyncClient` trong khi ownership của
+# shared client nằm ở runtime. Cả hai tham chiếu cùng một module object.
+httpx = search_runtime.httpx
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +28,14 @@ async def _request(query: str, settings: Settings, params: dict[str, str]) -> di
     url = (settings.searxng_url or "").rstrip("/")
     if not url:
         raise RuntimeError("SEARXNG_URL chưa được cấu hình")
-    timeout = max(5.0, min(float(settings.request_timeout_sec), 30.0))
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(
-            f"{url}/search",
-            params={"q": query, "format": "json", **params},
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    client = search_runtime.get_search_runtime(settings).get_http_client()
+    resp = await client.get(
+        f"{url}/search",
+        params={"q": query, "format": "json", **params},
+        headers={"User-Agent": _UA, "Accept": "application/json"},
+    )
+    resp.raise_for_status()
+    data = resp.json()
     if not isinstance(data, dict):
         raise RuntimeError("SearXNG trả JSON không phải object")
     if unresponsive := data.get("unresponsive_engines"):

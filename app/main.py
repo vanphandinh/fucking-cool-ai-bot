@@ -18,6 +18,7 @@ from .core.context import ChatMemory
 from .core.orchestrator import Orchestrator
 from .core.rate_limiter import RateLimiter
 from .core.stats import Stats
+from .search.runtime import close_search_runtimes
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ async def _amain(settings: Settings) -> int:
     if not settings.configured_provider_names:
         logger.error(
             "Chưa cấu hình API key text nào "
-            "(GROQ_API_KEY / CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
+            "(BAI_API_KEY / GROQ_API_KEY / CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN / "
             "OPENROUTER_API_KEY / GEMINI_API_KEY)."
         )
         return 1
@@ -126,8 +127,11 @@ async def _amain(settings: Settings) -> int:
         try:
             await bot.session.close()
         finally:
-            if provider_router is not None:
-                await _close_providers(provider_router)
+            try:
+                await close_search_runtimes()
+            finally:
+                if provider_router is not None:
+                    await _close_providers(provider_router)
 
 
 def main() -> None:

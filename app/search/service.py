@@ -16,12 +16,7 @@ class SearchError(Exception):
 
 
 async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> list[dict]:
-    """Tìm kiếm web, trả list dict {title, url, snippet}.
-
-    Với SEARCH_BACKEND=auto: ưu tiên SearXNG khi có URL, fallback DDGS khi lỗi
-    hoặc không có kết quả usable. Ném SearchError khi backend được chọn hoặc mọi
-    backend auto đều lỗi.
-    """
+    """Tìm kiếm web, trả list dict {title, url, snippet}."""
     backend = settings.search_backend.strip().lower()
 
     if backend == "searxng":
@@ -40,23 +35,21 @@ async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> li
         except Exception as exc:  # noqa: BLE001
             raise _search_error(backend, exc) from exc
 
-    # auto: free/self-hosted-first. Prefer SearXNG only when configured.
-    if settings.searxng_url.strip():
-        from .searxng_backend import search_searxng
-
-        try:
-            results = await search_searxng(query, settings, limit)
-            if results:
-                return results
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("SearXNG web search lỗi, fallback DDGS: %s", exc)
-
     from .ddgs_backend import search_ddgs
+    from .router import RoutedSearchError, route_auto
+    from .searxng_backend import search_searxng
 
     try:
-        return await search_ddgs(query, settings, limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("DDGS web search lỗi: %s", exc)
+        return await route_auto(
+            query,
+            settings,
+            limit,
+            kind="web",
+            result_url_key="url",
+            searx_call=search_searxng,
+            ddgs_call=search_ddgs,
+        )
+    except RoutedSearchError as exc:
         raise SearchError(
             "Không tìm kiếm được web từ các backend miễn phí hiện tại. "
             "Trả lời dựa trên kiến thức và nói rõ là không có dữ liệu mới."
