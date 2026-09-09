@@ -9,6 +9,21 @@ from app.search.x_reader import XReadResult
 
 
 class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_crawl4ai_defaults(self):
+        settings = Settings(_env_file=None)
+        self.assertTrue(settings.crawl4ai_enabled)
+        self.assertEqual(settings.crawl4ai_url, "http://crawl4ai:11235")
+        self.assertEqual(settings.crawl4ai_timeout_sec, 25.0)
+        self.assertEqual(settings.crawl4ai_max_chars, 12000)
+
+    def test_crawl4ai_timeout_must_be_below_question_timeout(self):
+        with self.assertRaises(ValueError):
+            Settings(
+                _env_file=None,
+                crawl4ai_timeout_sec=60,
+                question_timeout_sec=30,
+            )
+
     async def test_x_status_prefers_specialized_reader(self):
         specialized = AsyncMock(
             return_value=XReadResult(
