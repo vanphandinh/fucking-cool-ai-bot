@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     # Unified free/self-hosted-first search policy for both text and image search.
     search_backend: str = "auto"
     searxng_url: str = ""
+    searxng_timeout_sec: float = Field(default=7.0, gt=0, allow_inf_nan=False)
+    ddgs_timeout_sec: float = Field(default=8.0, gt=0, allow_inf_nan=False)
+    search_total_timeout_sec: float = Field(default=15.0, gt=0, allow_inf_nan=False)
+    search_circuit_failure_threshold: int = Field(default=3, ge=1, le=10)
+    search_circuit_cooldown_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    search_rate_limit_cooldown_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    search_cache_max_entries: int = Field(default=256, ge=1, le=4096)
+    search_web_cache_ttl_sec: float = Field(default=60.0, ge=0, allow_inf_nan=False)
+    search_image_cache_ttl_sec: float = Field(default=120.0, ge=0, allow_inf_nan=False)
+    search_stale_cache_ttl_sec: float = Field(default=900.0, ge=0, allow_inf_nan=False)
     image_search_max_results: int = Field(default=4, ge=1, le=8)
     x_fetch_enabled: bool = True
 
@@ -107,6 +117,17 @@ class Settings(BaseSettings):
             allowed = " | ".join(_LOG_LEVELS)
             raise ValueError(f"LOG_LEVEL không hợp lệ: {value!r} (cho phép: {allowed})")
         return level
+
+    @model_validator(mode="after")
+    def _check_search_timeout_budget(self) -> "Settings":
+        total = self.search_total_timeout_sec
+        if self.searxng_timeout_sec > total:
+            raise ValueError("SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
+        if self.ddgs_timeout_sec > total:
+            raise ValueError("DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
+        if total > self.question_timeout_sec:
+            raise ValueError("SEARCH_TOTAL_TIMEOUT_SEC không được lớn hơn QUESTION_TIMEOUT_SEC")
+        return self
 
     @property
     def allowed_group_ids_list(self) -> list[int]:
