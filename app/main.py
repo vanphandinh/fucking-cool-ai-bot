@@ -11,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
 from aiogram.utils.token import TokenValidationError
 
+from .ai.capabilities import ProviderCapabilities
 from .ai.router import build_provider_router
 from .bot.handlers import build_lifecycle_router, build_message_router
 from .config import Settings, get_settings
@@ -30,6 +31,30 @@ async def _close_providers(provider_router) -> None:
             await provider.aclose()
         except Exception:  # noqa: BLE001
             logger.debug("Đóng provider %s lỗi (bỏ qua)", provider.name)
+
+
+def _configured_provider_names(
+    provider_router,
+    *,
+    requires_vision: bool,
+) -> tuple[str, ...]:
+    reporter = getattr(provider_router, "configured_provider_names", None)
+    if callable(reporter):
+        return tuple(reporter(requires_vision))
+
+    names: list[str] = []
+    for provider in getattr(provider_router, "providers", ()):
+        capabilities = getattr(provider, "capabilities", None)
+        if isinstance(capabilities, ProviderCapabilities):
+            if not capabilities.accepts(
+                requires_vision=requires_vision,
+                image_count=1 if requires_vision else 0,
+            ):
+                continue
+        name = str(getattr(provider, "name", "")).strip()
+        if name:
+            names.append(name)
+    return tuple(dict.fromkeys(names))
 
 
 async def _amain(settings: Settings) -> int:
@@ -52,8 +77,14 @@ async def _amain(settings: Settings) -> int:
             logger.error("Cấu hình AI provider không hợp lệ: %s", exc)
             return 1
 
-        text_names = provider_router.configured_provider_names(False)
-        vision_names = provider_router.configured_provider_names(True)
+        text_names = _configured_provider_names(
+            provider_router,
+            requires_vision=False,
+        )
+        vision_names = _configured_provider_names(
+            provider_router,
+            requires_vision=True,
+        )
         if not text_names:
             logger.error(
                 "Không có AI provider text nào được cấu hình hợp lệ theo "
@@ -111,8 +142,8 @@ async def _amain(settings: Settings) -> int:
             "Context turns: %s | Learn-mode: %s",
             ", ".join(text_names) or "disabled",
             ", ".join(vision_names) or "disabled",
-            ", ".join(provider_router.provider_order(False)) or "disabled",
-            ", ".join(provider_router.provider_order(True)) or "disabled",
+            ", ".join(settings.text_provider_order_list) or "disabled",
+            ", ".join(settings.vision_provider_order_list) or "disabled",
             settings.search_backend,
             settings.allowed_group_ids_list or "-",
             settings.admin_ids_list or "-",
