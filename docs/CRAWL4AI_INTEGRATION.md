@@ -20,6 +20,7 @@ The production path uses `POST /crawl`. Do not switch production to `/md?f=fit`,
 - `CRAWL4AI_HOOKS_ENABLED=false`;
 - no OpenAI/Gemini/Groq/B.AI/Cloudflare/OpenRouter credentials are passed to Crawl4AI;
 - the private-service HTTP client uses `trust_env=False`;
+- Crawl4AI response bodies are streamed and capped at 4 MiB before JSON parsing;
 - `asyncio.CancelledError` propagates without generic fallback;
 - each `fetch_url` tries Crawl4AI at most once and the generic reader at most once.
 
@@ -44,7 +45,7 @@ CRAWL4AI_IMAGE=unclecode/crawl4ai:0.9.3
 CRAWL4AI_SHM_SIZE=512m
 ```
 
-If `CRAWL4AI_ENABLED=1` but URL or token is blank, the bot logs a warning and keeps using the generic reader instead of failing startup.
+If `CRAWL4AI_ENABLED=1` but URL or token is blank, the bot logs a warning and keeps using the generic reader instead of failing startup. The `CRAWL4AI_TIMEOUT_SEC < QUESTION_TIMEOUT_SEC` budget check is enforced when Crawl4AI is actually active (enabled with non-empty URL and token), so disabled/unconfigured deployments keep their existing timeout behavior.
 
 ## Deploy
 
@@ -74,9 +75,10 @@ For an ordinary public page:
 1. bot performs SSRF/public-URL validation;
 2. X/Twitter specialized handling runs first for X status URLs;
 3. canonical ordinary URL is sent once to `POST /crawl` with a fixed server-authored payload;
-4. successful content preference is `fit_markdown`, then `raw_markdown`, then normalized `cleaned_html`;
-5. timeout, network error, 401/403, 429, 5xx, malformed JSON, failed result, or empty content causes exactly one fallback to the existing generic reader;
-6. cancellation does not launch fallback work.
+4. response bytes are read with a 4 MiB cap before JSON parsing;
+5. successful content preference is `fit_markdown`, then `raw_markdown`, then normalized `cleaned_html`;
+6. timeout, network error, 401/403, 429, 5xx, oversized response, malformed JSON, failed result, or empty content causes exactly one fallback to the existing generic reader;
+7. cancellation does not launch fallback work.
 
 The bot does not forward arbitrary browser config, hooks, JavaScript, provider settings, output paths, callback URLs, or model credentials.
 
@@ -114,11 +116,11 @@ Verify the same `CRAWL4AI_API_TOKEN` is present in the bot environment and Crawl
 
 ### Timeouts / high fallback rate
 
-Inspect container CPU/RAM, `CRAWL4AI_TIMEOUT_SEC`, target-site behavior, and representative fetch latency. Do not increase the timeout beyond `QUESTION_TIMEOUT_SEC`; configuration rejects impossible timeout budgets.
+Inspect container CPU/RAM, `CRAWL4AI_TIMEOUT_SEC`, target-site behavior, and representative fetch latency. Do not increase the timeout beyond `QUESTION_TIMEOUT_SEC` while Crawl4AI is active; configuration rejects impossible active timeout budgets.
 
 ### High memory usage
 
-Measure on the target VPS before increasing `CRAWL4AI_SHM_SIZE`. The initial default is `512m`; it is an operational knob, not a guarantee of memory consumption.
+Measure on the target VPS before increasing `CRAWL4AI_SHM_SIZE`. The initial default is `512m`; it is an operational knob, not a guarantee of memory consumption. Bot-side Crawl4AI HTTP responses larger than 4 MiB are rejected and fall back to the generic reader.
 
 ## Failure injection before promotion
 
@@ -128,6 +130,7 @@ Verify all of these while the bot stays functional:
 Crawl4AI stopped          -> generic reader succeeds
 wrong token               -> 401/403 -> generic reader succeeds
 Crawl4AI timeout          -> generic reader succeeds
+oversized response        -> generic reader succeeds
 CRAWL4AI_ENABLED=0        -> Crawl4AI is never called
 private/localhost URL     -> blocked before both readers
 X status URL              -> specialized X reader remains first
@@ -135,6 +138,10 @@ bot cancellation          -> no generic fallback is launched
 ```
 
 Confirm representative logs contain only coarse reasons and never contain the bearer token or full upstream payload.
+
+## Verification gates
+
+CI runs the Crawl4AI-specific tests before the full regression suite, then checks Ruff, dependency compatibility, compile, Compose config, dependency audit, SearXNG YAML, and the production Docker build. Live Crawl4AI smoke remains an opt-in deployment check because CI intentionally has no production bearer token or private service dependency.
 
 ## Promotion metrics
 
