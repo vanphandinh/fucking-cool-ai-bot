@@ -37,15 +37,24 @@ _GEMINI_DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
 class _ToolBudget:
     calls: int = 0
     rounds: int = 0
+    closed: bool = False
 
     def exhausted(self, max_rounds: int) -> bool:
-        return self.rounds >= max_rounds or self.calls >= _MAX_TOOL_CALLS_TOTAL
+        return (
+            self.closed
+            or self.rounds >= max_rounds
+            or self.calls >= _MAX_TOOL_CALLS_TOTAL
+        )
 
     def can_execute(self, requested_calls: int, max_rounds: int) -> bool:
         return (
-            self.rounds < max_rounds
+            not self.closed
+            and self.rounds < max_rounds
             and self.calls + requested_calls <= _MAX_TOOL_CALLS_TOTAL
         )
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -228,6 +237,7 @@ class AIProviderRouter:
 
             requested_calls = len(resp.tool_calls)
             if not budget.can_execute(requested_calls, self.max_tool_rounds):
+                budget.close()
                 active_tools = None
                 continue
 
@@ -290,7 +300,7 @@ def _messages_for_provider(messages: list[dict], provider: OpenAICompatProvider)
             google = extra_content.setdefault("google", {})
             if not isinstance(google, dict):
                 google = {}
-                extra_content["google"] = google
+                extra_content["google"] = extra_content
             google.setdefault("thought_signature", _GEMINI_DUMMY_THOUGHT_SIGNATURE)
     return out
 
