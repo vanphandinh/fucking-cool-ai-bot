@@ -149,12 +149,15 @@ class OpenAICompatProvider:
         timeout: float = 60.0,
         extra_headers: dict[str, str] | None = None,
         capabilities: ProviderCapabilities | None = None,
+        auth_failure_cooldown_sec: float | None = None,
     ) -> None:
         self.name = name
         self.model = model
         self.supports_tools = True
         self.capabilities = capabilities or ProviderCapabilities()
-        self.health = ProviderHealth()
+        self.health = ProviderHealth(
+            auth_failure_cooldown_sec=auth_failure_cooldown_sec,
+        )
         self.force_tool_choice_none_when_no_tools = False
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
