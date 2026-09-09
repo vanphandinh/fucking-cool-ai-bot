@@ -83,14 +83,23 @@ def _provider_status_lines(
     ]
 
 
+def _effective_vision_limit(
+    settings: Settings,
+    provider_router: AIProviderRouter,
+) -> int:
+    provider_limit = provider_router.max_supported_images()
+    if provider_limit <= 0:
+        return 0
+    return min(settings.max_images_per_request, provider_limit)
+
+
 def _vision_limit_message(
     settings: Settings,
     provider_router: AIProviderRouter,
 ) -> str:
-    provider_limit = provider_router.max_supported_images()
-    if provider_limit <= 0:
+    effective_limit = _effective_vision_limit(settings, provider_router)
+    if effective_limit <= 0:
         return _NO_CAPABLE_PROVIDER_TEXT
-    effective_limit = min(settings.max_images_per_request, provider_limit)
     return (
         "Các AI provider vision hiện đang cấu hình hỗ trợ tối đa "
         f"{effective_limit} ảnh mỗi yêu cầu. Bạn gửi ít ảnh hơn nhé."
@@ -363,6 +372,12 @@ async def _handle_question(
                         )
                     else:
                         await message.reply("Không tải/đọc được ảnh này. Bạn thử gửi lại nhé.")
+                    return
+
+                if images and len(images) > _effective_vision_limit(
+                    settings, orchestrator.router
+                ):
+                    await message.reply(_vision_limit_message(settings, orchestrator.router))
                     return
 
                 request = UserRequest(text=question, quoted_text=quoted, images=images)
