@@ -11,6 +11,7 @@ import unittest
 import httpx
 
 import app.ai.bai as bai
+from app.ai.router import build_provider_router
 from app.config import Settings
 
 
@@ -108,6 +109,29 @@ class BaiOnlyConfigTests(unittest.TestCase):
         self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
         self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
         self.assertEqual(settings.max_images_per_request, 1)
+
+
+class BaiOnlyRouterTests(unittest.TestCase):
+    def test_router_builds_only_bai_text_slot(self) -> None:
+        settings = Settings(_env_file=None, bai_api_key="b", vision_enabled=False)
+        router = build_provider_router(settings)
+        try:
+            providers = router.capable_providers(requires_vision=False)
+            self.assertEqual([p.name for p in providers], ["bai"])
+            self.assertEqual([p.model for p in providers], ["qwen3.8-flash"])
+        finally:
+            asyncio.run(_close_router(router))
+
+    def test_router_builds_only_bai_vision_slot_for_one_image(self) -> None:
+        settings = Settings(_env_file=None, bai_api_key="b")
+        router = build_provider_router(settings)
+        try:
+            one = router.capable_providers(requires_vision=True, image_count=1)
+            two = router.capable_providers(requires_vision=True, image_count=2)
+            self.assertEqual([p.name for p in one], ["bai_vision"])
+            self.assertEqual(two, [])
+        finally:
+            asyncio.run(_close_router(router))
 
 
 class BaiWireContractTests(unittest.IsolatedAsyncioTestCase):
@@ -209,6 +233,11 @@ def _search_tool() -> dict:
             "parameters": {"type": "object", "properties": {}},
         },
     }
+
+
+async def _close_router(router) -> None:
+    for provider in router.providers:
+        await provider.aclose()
 
 
 if __name__ == "__main__":

@@ -24,22 +24,6 @@ def parse_csv_ints(raw: str | None) -> list[int]:
     return out
 
 
-def parse_csv(raw: str | None) -> list[str]:
-    return [part.strip() for part in (raw or "").split(",") if part.strip()]
-
-
-def parse_unique_csv(raw: str | None) -> list[str]:
-    """Parse a CSV order while preserving the first occurrence of each slot."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for part in parse_csv(raw):
-        if part in seen:
-            continue
-        seen.add(part)
-        out.append(part)
-    return out
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -49,29 +33,15 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Text pool — free-tier-first defaults.
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
-    groq_api_key: str = ""
-    groq_model: str = "openai/gpt-oss-120b"
-    openrouter_api_key: str = ""
-    openrouter_model: str = "openrouter/free"
+    # Sole AI backend: B.AI.
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
     bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
-    cloudflare_account_id: str = ""
-    cloudflare_api_token: str = ""
-    cloudflare_text_model: str = "@cf/zai-org/glm-4.7-flash"
-    text_provider_order: str = "bai,gemini,groq,cloudflare,openrouter"
 
-    # Vision pool.
+    # Vision input. B.AI is intentionally capped at one image/request.
     vision_enabled: bool = True
-    gemini_vision_model: str = "gemini-3.8-flash"
-    groq_vision_models: str = "qwen/qwen3.8-27b,qwen/qwen3.6-27b"
-    cloudflare_vision_model: str = "@cf/google/gemma-4-26b-a4b-it"
     bai_vision_model: str = "qwen3.8-flash"
-    vision_provider_order: str = "bai,gemini,groq_qwen38,cloudflare,groq_qwen36"
-    max_images_per_request: int = Field(default=3, ge=1)
+    max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
 
@@ -154,58 +124,18 @@ class Settings(BaseSettings):
         return self.bot_username.lower().lstrip("@")
 
     @property
-    def text_provider_order_list(self) -> list[str]:
-        return parse_unique_csv(self.text_provider_order)
-
-    @property
-    def groq_vision_models_list(self) -> list[str]:
-        return parse_csv(self.groq_vision_models)
-
-    @property
-    def vision_provider_order_list(self) -> list[str]:
-        return parse_unique_csv(self.vision_provider_order)
-
-    @property
     def configured_provider_names(self) -> list[str]:
-        available: set[str] = set()
-        if self.gemini_api_key and self.gemini_model:
-            available.add("gemini")
-        if self.groq_api_key and self.groq_model:
-            available.add("groq")
-        if self.openrouter_api_key and self.openrouter_model:
-            available.add("openrouter")
         if self.bai_api_key and self.bai_text_model:
-            available.add("bai")
-        if (
-            self.cloudflare_account_id
-            and self.cloudflare_api_token
-            and self.cloudflare_text_model
-        ):
-            available.add("cloudflare")
-        return [name for name in self.text_provider_order_list if name in available]
+            return ["bai"]
+        return []
 
     @property
     def configured_vision_provider_names(self) -> list[str]:
         if not self.vision_enabled:
             return []
-        available: set[str] = set()
-        if self.gemini_api_key and self.gemini_vision_model:
-            available.add("gemini")
-        if self.groq_api_key:
-            models = self.groq_vision_models_list
-            if len(models) >= 1:
-                available.add("groq_qwen38")
-            if len(models) >= 2:
-                available.add("groq_qwen36")
         if self.bai_api_key and self.bai_vision_model:
-            available.add("bai")
-        if (
-            self.cloudflare_account_id
-            and self.cloudflare_api_token
-            and self.cloudflare_vision_model
-        ):
-            available.add("cloudflare")
-        return [name for name in self.vision_provider_order_list if name in available]
+            return ["bai"]
+        return []
 
 
 @lru_cache
