@@ -77,6 +77,22 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.ok)
                 self.assertEqual(result.backend, "generic_reader")
 
+    async def test_unexpected_crawl4ai_error_falls_back_generic_exactly_once(self):
+        crawl = AsyncMock(side_effect=RuntimeError("unexpected client failure"))
+        generic = AsyncMock(return_value="generic text")
+        settings = Settings(_env_file=None, crawl4ai_api_token="secret")
+        with (
+            patch("app.search.url_service.crawl4ai_client.read_page", new=crawl),
+            patch("app.search.url_service.reader.read_page", new=generic),
+        ):
+            result = await read_url("https://example.org", settings)
+        crawl.assert_awaited_once_with("https://example.org", settings)
+        generic.assert_awaited_once_with(
+            "https://example.org", timeout=settings.request_timeout_sec
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.backend, "generic_reader")
+
     async def test_crawl4ai_feature_or_config_bypass_uses_generic(self):
         cases = (
             Settings(_env_file=None, crawl4ai_enabled=False),
