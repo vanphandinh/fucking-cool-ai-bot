@@ -9,6 +9,7 @@ import tempfile
 _ASSIGNMENT_RE = re.compile(
     r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$"
 )
+_PRIVATE_ENV_MODE = 0o600
 
 
 def _split_assignment(line: str, source: str) -> tuple[str, str]:
@@ -31,6 +32,11 @@ def _parse_values(text: str) -> dict[str, str]:
     return values
 
 
+def _owner_only_mode(mode: int) -> int:
+    """Drop execute/group/other bits while preserving stricter owner permissions."""
+    return stat.S_IMODE(mode) & _PRIVATE_ENV_MODE
+
+
 def _atomic_write(path: Path, content: str, mode: int) -> None:
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(temp_name)
@@ -50,7 +56,8 @@ def _sync() -> None:
     example_path = Path(".env.example")
     env_path = Path(".env")
     example = example_path.read_text(encoding="utf-8")
-    current = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    env_exists = env_path.exists()
+    current = env_path.read_text(encoding="utf-8") if env_exists else ""
     current_values = _parse_values(current)
 
     output: list[str] = []
@@ -73,11 +80,17 @@ def _sync() -> None:
         output.append(f"{lhs}={value}{newline}")
 
     rendered = "".join(output)
-    if env_path.exists() and rendered == current:
-        return
+    if env_exists:
+        current_mode = stat.S_IMODE(env_path.stat().st_mode)
+        private_mode = _owner_only_mode(current_mode)
+        if rendered == current:
+            if private_mode != current_mode:
+                os.chmod(env_path, private_mode)
+            return
+    else:
+        private_mode = _PRIVATE_ENV_MODE
 
-    source_mode = env_path.stat().st_mode if env_path.exists() else example_path.stat().st_mode
-    _atomic_write(env_path, rendered, stat.S_IMODE(source_mode))
+    _atomic_write(env_path, rendered, private_mode)
 
 
 def main() -> int:
