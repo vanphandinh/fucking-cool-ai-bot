@@ -13,8 +13,12 @@ Script coi `.env.example` là source of truth cho danh sách key, thứ tự, co
 - key đã bị xóa khỏi `.env.example`: xóa khỏi `.env`;
 - `.env` chưa tồn tại: tạo mới từ `.env.example`;
 - duplicate key / assignment lỗi: fail-fast, không ghi đè file;
-- output không đổi: không rewrite;
-- có thay đổi: atomic replace và giữ file mode.
+- output không đổi: không rewrite nội dung;
+- có thay đổi: atomic replace;
+- file `.env` mới được tạo với mode `0600`;
+- file `.env` đã tồn tại được loại bỏ execute/group/other permission bits, kể cả khi nội dung không đổi; owner permissions chặt hơn `0600` vẫn được giữ nguyên.
+
+Permission hardening là một phần của sync vì `.env` có thể chứa Telegram token, provider API key và các secret runtime khác. Script không copy permission `0644` của `.env.example` sang secret file production.
 
 ## Migration sang B.AI-only deployment trên generic provider framework
 
@@ -90,10 +94,13 @@ cp .env .env.bak
 python scripts/sync_env.py
 ```
 
+Repo ignore `.env`, `.env.bak` và `.env.*.bak`; Docker build context cũng loại các backup này. Dù vậy, backup vẫn chứa secret production nên không copy/upload/chia sẻ file này ra ngoài máy vận hành.
+
 Sau đó kiểm tra ít nhất:
 
 ```bash
 grep -E '^(BAI_|TEXT_PROVIDER_ORDER|VISION_PROVIDER_ORDER|SEARCH_BACKEND)' .env
+stat -c '%a %n' .env
 ```
 
 Xác nhận:
@@ -101,8 +108,9 @@ Xác nhận:
 - B.AI secret/model values vẫn đúng;
 - `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` chỉ chứa provider đã register;
 - Telegram/search/Crawl4AI values quan trọng vẫn còn;
-- credential variables của provider đã xóa không còn.
+- credential variables của provider đã xóa không còn;
+- `.env` không có group/other/execute permission bits (normal new-file mode là `600`).
 
 Sau đó mới rebuild/restart service.
 
-Không commit `.env` hoặc `.env.bak`; chúng có thể chứa token/secret production.
+Không commit `.env` hoặc file backup `.env*.bak`; chúng có thể chứa token/secret production.
