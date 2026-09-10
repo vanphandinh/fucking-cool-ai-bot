@@ -117,7 +117,10 @@ async def _attempt(
         results = await asyncio.wait_for(call(query, settings, limit), timeout=timeout)
         if not isinstance(results, list):
             raise RuntimeError(f"backend {name} returned non-list results")
-    except Exception as exc:  # cancellation propagates by design
+    except asyncio.CancelledError:
+        runtime.breaker.record_cancelled(key)
+        raise
+    except Exception as exc:
         kind_failure = _classify_failure(exc)
         runtime.breaker.record_failure(key, kind_failure, str(exc))
         return True, [], exc
