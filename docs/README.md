@@ -1,8 +1,8 @@
 # Documentation index
 
-Tài liệu trong repo được chia thành hai nhóm: **canonical/current guides** dùng để vận hành code hiện tại và **historical records** dùng để giữ bối cảnh thiết kế/audit tại một thời điểm cụ thể.
+Tài liệu trong repo được chia thành hai nhóm: **canonical/current guides** dùng để vận hành code hiện tại và **historical/maintenance records** dùng để giữ bối cảnh thiết kế, incident và audit tại một thời điểm cụ thể.
 
-Last full documentation sync: **2026-09-10**.
+Last full documentation sync: **2026-09-10** — xem [`sync-check-2026-09-10.md`](sync-check-2026-09-10.md).
 
 ## Canonical / current guides
 
@@ -18,11 +18,12 @@ Các tài liệu dưới đây phải được giữ đồng bộ với source/r
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — đồng bộ `.env` theo `.env.example` và secret-file permissions.
 
-## Historical records
+## Historical / maintenance records
 
-Các file này là snapshot theo thời điểm và **không nên được rewrite chỉ để phản ánh runtime mới**:
+Các file này là snapshot/record theo thời điểm và **không nên được rewrite chỉ để phản ánh runtime mới**:
 
-- [`AUDIT_2026-09-10.md`](AUDIT_2026-09-10.md) — audit hardening report ngày 2026-09-10.
+- [`sync-check-2026-09-10.md`](sync-check-2026-09-10.md) — documentation sync + second-pass audit record.
+- [`AUDIT_2026-09-10.md`](AUDIT_2026-09-10.md) — runtime hardening audit ngày 2026-09-10.
 - [`SEARXNG_DDG_INCIDENT_2026-09-08.md`](SEARXNG_DDG_INCIDENT_2026-09-08.md) — incident record.
 - [`superpowers/plans/`](superpowers/plans/) — implementation plans lịch sử.
 - [`superpowers/specs/`](superpowers/specs/) — design specs lịch sử.
@@ -36,7 +37,7 @@ Khi tài liệu và implementation không khớp, dùng thứ tự ưu tiên sau
 1. source code + tests hiện tại;
 2. `.env.example`, `docker-compose.yml`, `searxng/settings.example.yml` và CI workflow;
 3. canonical/current guides ở trên;
-4. audit/incident/plan/spec lịch sử.
+4. audit/incident/plan/spec/sync records lịch sử.
 
 ## Current runtime snapshot
 
@@ -44,8 +45,9 @@ Khi tài liệu và implementation không khớp, dùng thứ tự ưu tiên sau
 - `TEXT_PROVIDER_ORDER=bai` và `VISION_PROVIDER_ORDER=bai` là production defaults hiện tại.
 - B.AI vision slot hiện advertise `max_images=1`.
 - `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy.
-- Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend cho ordinary URL.
+- Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
 - `sync_env.py` giữ value của key còn tồn tại, đồng bộ key/comment/order theo `.env.example`, và bảo đảm `.env` không còn group/other/execute permissions; file mới dùng mode `0600`.
+- `.env.bak` / `.env.*.bak` được ignore khỏi Git và Docker build context nhưng vẫn phải được xử lý như secret production.
 - Caller cancellation không được tính thành backend failure. Nếu cancellation xảy ra trong HALF_OPEN search probe, probe slot được release để request sau còn có thể probe lại.
 
 ## Documentation sync checklist
