@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
-from app.search.resilience import SingleFlight
+from app.search import router
+from app.search.resilience import BackendKey, FailureKind, SingleFlight
 from app.search.runtime import (
     close_search_runtimes,
     get_search_runtime,
@@ -58,6 +59,45 @@ class SingleFlightCancellationTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         self.assertEqual(await second, ["ok"])
         self.assertEqual(calls, 1)
+
+
+class CircuitBreakerCancellationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        reset_search_runtimes()
+
+    async def asyncTearDown(self) -> None:
+        await close_search_runtimes()
+
+    async def test_cancelled_half_open_probe_releases_probe_slot(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            search_circuit_failure_threshold=1,
+        )
+        runtime = get_search_runtime(settings)
+        key = BackendKey(namespace=id(settings), backend="searxng", kind="web")
+        runtime.breaker.record_failure(key, FailureKind.TIMEOUT, "seed open circuit")
+        runtime.breaker._entries[key].cooldown_until = 0.0
+
+        async def cancelled_call(_query: str, _settings: Settings, _limit: int) -> list[dict]:
+            raise asyncio.CancelledError()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await router._attempt(
+                name="searxng",
+                kind="web",
+                query="cancel-half-open",
+                settings=settings,
+                limit=8,
+                deadline=asyncio.get_running_loop().time() + settings.search_total_timeout_sec,
+                configured_timeout=settings.searxng_timeout_sec,
+                call=cancelled_call,
+                attempted=set(),
+            )
+
+        self.assertTrue(
+            runtime.breaker.allow_request(key),
+            "a cancelled half-open probe must not permanently occupy the probe slot",
+        )
 
 
 class SearchRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
