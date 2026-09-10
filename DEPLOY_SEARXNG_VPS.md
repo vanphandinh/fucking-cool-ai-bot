@@ -2,12 +2,13 @@
 
 Instance trong repo này là **PRIVATE**: bot gọi JSON API qua Docker network và không publish cổng ra host/Internet. Không cần reverse proxy, domain hay Valkey cho mode này; `server.limiter` và `server.public_instance` được tắt rõ ràng.
 
-> Direct X/Twitter status URL là luồng riêng. `fetch_url` ưu tiên FxTwitter v2 → X oEmbed → generic reader; không dùng lỗi direct-X làm lý do tăng `MAX_TOOL_ROUNDS` hay chỉnh engine SearXNG.
+> Direct X/Twitter status URL là luồng riêng. `fetch_url` ưu tiên FxTwitter v2 → X oEmbed → optional Crawl4AI → generic reader; không dùng lỗi direct-X làm lý do tăng `MAX_TOOL_ROUNDS` hay chỉnh engine SearXNG.
 
 Xem thêm:
 
 - [Search resilience](docs/SEARCH_RESILIENCE.md)
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md)
+- [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md)
 - [SearXNG DuckDuckGo incident 2026-09-08](docs/SEARXNG_DDG_INCIDENT_2026-09-08.md)
 - [Đồng bộ `.env`](docs/ENV_SYNC.md)
 
@@ -45,14 +46,15 @@ fcai-bot
 - `app/search/resilience.py` — circuit breaker, cache, singleflight.
 - `app/search/runtime.py` — shared HTTP client và lifecycle.
 
-`.env` và `searxng/settings.yml` chứa secret/production config và đã được ignore trong Git. Không commit hai file này.
+`.env`, các backup `.env*.bak` và `searxng/settings.yml` chứa secret/production config và được ignore trong Git. Docker build context cũng loại env secret/backup files. Không commit/copy chúng vào artifact công khai.
 
 ---
 
 ## 3. Cài mới
 
+`sync_env.py` có thể tự tạo `.env` từ `.env.example` với mode `0600`:
+
 ```bash
-cp -i .env.example .env
 python scripts/sync_env.py
 
 cp -i searxng/settings.example.yml searxng/settings.yml
@@ -63,6 +65,8 @@ nano .env
 docker compose --profile searxng config --quiet
 docker compose --profile searxng up -d --build
 ```
+
+Nếu đã tạo `.env` bằng cách khác, vẫn chạy `python scripts/sync_env.py` để đồng bộ key/comment/order và siết permission về owner-only.
 
 Khuyến nghị production baseline:
 
@@ -90,14 +94,15 @@ GRANIAN_BACKPRESSURE=2
 
 ## 4. Upgrade deployment đã chạy
 
-Sau `git pull`, đồng bộ `.env` bằng script thay vì copy đè:
+Sau `git pull`, backup rồi đồng bộ `.env` bằng script thay vì copy đè:
 
 ```bash
 git pull
+cp .env .env.bak
 python scripts/sync_env.py
 ```
 
-Script giữ value/secret hiện tại, thêm key mới, bỏ key đã bị loại khỏi `.env.example` và đồng bộ comment/order.
+Script giữ value/secret hiện tại, thêm key mới, bỏ key đã bị loại khỏi `.env.example`, đồng bộ comment/order và siết `.env` về owner-only permissions. `.env.bak` được ignore nhưng vẫn chứa secret production; không upload/chia sẻ file này.
 
 `searxng/settings.yml` là file thật ngoài Git nên **không tự cập nhật** khi `settings.example.yml` đổi. Nếu example có thay đổi cần áp dụng:
 
@@ -207,7 +212,9 @@ Invariants:
 - 429 mở circuit ngay với cooldown dài hơn;
 - fresh/stale cache chỉ lưu successful non-empty result;
 - singleflight coalesce concurrent identical search;
-- khi waiter cuối cùng bị cancel, upstream task còn chạy bị cancel;
+- khi waiter cuối cùng bị cancel/rời flight, upstream task còn chạy bị cancel;
+- caller cancellation không được tính thành backend failure;
+- nếu HALF_OPEN probe bị caller cancel, probe slot được release và request sau có thể probe lại;
 - shared SearXNG `httpx.AsyncClient` được reuse và đóng deterministic khi shutdown.
 
 Chi tiết: [docs/SEARCH_RESILIENCE.md](docs/SEARCH_RESILIENCE.md).
@@ -279,7 +286,7 @@ print("preview:", r.text[:300].replace("\n", " "))
 PY
 ```
 
-Nếu public status còn đọc được, normal success thường là `fxtwitter_status` hoặc `x_oembed`; generic reader là fallback cuối.
+Nếu public status còn đọc được, normal success thường là `fxtwitter_status` hoặc `x_oembed`. Nếu specialized sources fail, runtime tiếp tục sang `crawl4ai` khi Crawl4AI active, rồi `generic_reader` nếu cần. Đây vẫn là URL-reading fallback, không liên quan SearXNG search.
 
 ---
 
@@ -301,7 +308,7 @@ Nếu public status còn đọc được, normal success thường là `fxtwitte
 
 ## 11. Update policy
 
-SearXNG là rolling release. Repo cho phép override image qua `SEARXNG_IMAGE`; production nên promote tag/digest đã test thay vì phụ thuộc mutable latest dài hạn.
+SearXNG là rolling release. Compose fallback mặc định hiện là `ghcr.io/searxng/searxng:latest`, nhưng repo cho phép override qua `SEARXNG_IMAGE`; production ổn định nên promote tag/digest đã test thay vì phụ thuộc mutable `latest` dài hạn.
 
 Quy trình:
 
@@ -309,7 +316,7 @@ Quy trình:
 2. validate `docker compose config` và YAML;
 3. smoke-test JSON general + images;
 4. chạy regression suite của bot;
-5. candidate pass thì promote exact tag/digest;
+5. candidate pass thì set/promote exact tag hoặc digest qua `SEARXNG_IMAGE`;
 6. candidate fail thì giữ image production hiện tại.
 
 Security fix hoặc engine fix liên quan production được ưu tiên test sớm.
@@ -324,9 +331,11 @@ Security fix hoặc engine fix liên quan production được ưu tiên test s�
 - [ ] Không override enable `duckduckgo web`.
 - [ ] `searxng/limiter.toml` mount read-only.
 - [ ] Không có host port mapping tới 8080.
-- [ ] `.env` đã sync bằng `python scripts/sync_env.py` sau upgrade.
+- [ ] `.env` đã sync bằng `python scripts/sync_env.py` sau upgrade và không có group/other/execute bits.
+- [ ] Backup `.env*.bak` không được commit/upload.
 - [ ] `SEARCH_BACKEND=auto` và `SEARXNG_URL=http://searxng:8080` nếu dùng recommended mode.
 - [ ] Search timeout/circuit/cache settings có giá trị hợp lệ.
+- [ ] Production `SEARXNG_IMAGE` dùng tag/digest đã test nếu cần reproducible deploy.
 - [ ] Container đã recreate sau khi sửa env/mount/image.
 - [ ] `/healthz` trả `OK`.
 - [ ] JSON general + images có usable results.

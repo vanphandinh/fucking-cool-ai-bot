@@ -30,6 +30,7 @@ SearchError
 - Kết quả partial đã có không bị vứt nếu fallback tiếp theo lỗi.
 - Error/timeout/empty response không được cache.
 - `CancelledError` được propagate, không bị biến thành backend failure.
+- Nếu caller bị cancel trong lúc giữ HALF_OPEN probe slot, slot được release mà không increment failure count hoặc mở lại circuit; request sau vẫn có thể làm probe.
 
 ## Search discovery vs URL reading
 
@@ -64,7 +65,7 @@ Crawl4AI dùng budget riêng cho URL reading:
 CRAWL4AI_TIMEOUT_SEC=25.0
 ```
 
-Giá trị này phải dương và nhỏ hơn `QUESTION_TIMEOUT_SEC`.
+Giá trị này phải dương và nhỏ hơn `QUESTION_TIMEOUT_SEC` khi Crawl4AI thực sự active (`CRAWL4AI_ENABLED=1` cùng URL/token không rỗng).
 
 ## Circuit breaker
 
@@ -85,7 +86,9 @@ CLOSED --repeated failure--> OPEN --cooldown--> HALF_OPEN
                        failure -> OPEN
 ```
 
-Chỉ một request được làm HALF_OPEN probe. Web và image có circuit riêng; DDGS và SearXNG cũng có circuit riêng.
+Chỉ một request được giữ HALF_OPEN probe slot tại một thời điểm. Web và image có circuit riêng; DDGS và SearXNG cũng có circuit riêng.
+
+Cancellation là neutral đối với backend health: `_attempt()` gọi `record_cancelled()` rồi re-raise `CancelledError`. Nếu request bị cancel trong HALF_OPEN, `probe_in_flight` được release nhưng state vẫn HALF_OPEN, vì caller cancellation không chứng minh backend healthy hoặc unhealthy. Request kế tiếp có thể lấy lại probe slot.
 
 Rate limit/429 mở circuit ngay với cooldown dài hơn. Riêng 429 của một engine bên trong SearXNG không làm application circuit của toàn SearXNG mở nếu SearXNG vẫn trả usable results.
 
@@ -104,7 +107,9 @@ SEARCH_IMAGE_CACHE_TTL_SEC=120.0
 SEARCH_STALE_CACHE_TTL_SEC=900.0
 ```
 
-Fresh cache trả ngay, không gọi upstream. Stale cache chỉ dùng khi mọi backend khả dụng đều thất bại/skipped. Singleflight coalesce các request đồng thời có cùng `(kind, limit, normalized_query)` thành một pipeline upstream.
+Fresh cache trả ngay, không gọi upstream. Stale cache chỉ dùng khi không có backend nào trả thành công trong pipeline hiện tại; nếu một backend trả thành công nhưng kết quả rỗng, router trả `[]` thay vì thay thế bằng stale data. Singleflight coalesce các request đồng thời có cùng `(kind, limit, normalized_query)` thành một pipeline upstream.
+
+Khi waiter cuối cùng rời một flight mà upstream task chưa xong, singleflight cancel upstream task để không để công việc mồ côi chạy tiếp.
 
 ## SearXNG engine policy
 
@@ -132,8 +137,10 @@ SearXNG là rolling release và engine scraper thay đổi thường xuyên. Pro
 2. validate config/YAML;
 3. smoke test JSON web + image;
 4. chạy regression suite;
-5. candidate pass thì promote exact build/tag đã test;
+5. candidate pass thì promote exact build/tag đã test qua `SEARXNG_IMAGE`;
 6. candidate fail thì giữ build production hiện tại.
+
+Compose có fallback `${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:latest}` cho setup ban đầu; production ổn định nên set `SEARXNG_IMAGE` về tag/digest đã test thay vì dựa lâu dài vào mutable `latest`.
 
 Security fix hoặc fix liên quan engine đang lỗi được ưu tiên test ngay.
 
@@ -145,6 +152,7 @@ Sau mỗi deploy, thực hiện failure injection:
 - DDGS down -> SearXNG không bị ảnh hưởng;
 - cả hai down -> stale cache hoặc SearchError;
 - circuit OPEN -> cooldown -> HALF_OPEN -> CLOSED khi probe thành công;
+- HALF_OPEN probe bị caller cancel -> slot được release, state không bị ghi thành backend failure, request sau probe lại được;
 - Google CSE timeout và Brave 429 không làm crash toàn search;
 - burst concurrent query xác nhận singleflight và không leak task/client;
 - Crawl4AI down/wrong token/timeout -> generic reader một lần;

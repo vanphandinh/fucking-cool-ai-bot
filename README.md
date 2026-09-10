@@ -10,6 +10,7 @@ Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, 
 
 ## Tài liệu đang duy trì
 
+- [Documentation index](docs/README.md) — canonical/current guides, historical records và source-of-truth order.
 - [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, adapter behavior, tool calling, health và synthesis.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md).
@@ -130,9 +131,11 @@ Yêu cầu:
 ```bash
 git clone https://github.com/vanphandinh/fucking-cool-ai-bot.git
 cd fucking-cool-ai-bot
-cp .env.example .env
+python scripts/sync_env.py
 nano .env
 ```
+
+`sync_env.py` tự tạo `.env` từ `.env.example` nếu chưa có và dùng mode `0600` cho file mới.
 
 Cấu hình tối thiểu hiện tại:
 
@@ -200,7 +203,7 @@ cp .env .env.bak
 python scripts/sync_env.py
 ```
 
-Script giữ value của key còn tồn tại và xóa key không còn trong `.env.example`.
+Script giữ value của key còn tồn tại, xóa key không còn trong `.env.example`, và bảo đảm `.env` không có execute/group/other permission bits. File mới dùng mode `0600`; permission-only repair không rewrite nội dung. `.env.bak` và `.env.*.bak` được ignore khỏi Git/build context nhưng vẫn chứa secret production nên không được upload/chia sẻ.
 
 Migration hiện tại:
 
@@ -244,7 +247,7 @@ CRAWL4AI_TIMEOUT_SEC=25.0
 CRAWL4AI_MAX_CHARS=12000
 ```
 
-Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về generic reader thay vì làm bot fail startup.
+Direct URL pipeline hiện là X-specific resolution trước, sau đó Crawl4AI nếu active, rồi generic reader. Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về generic reader thay vì làm bot fail startup.
 
 ---
 
@@ -283,7 +286,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
 python -m pip check
 python -m compileall -q app tests scripts
-cp .env.example .env
+python scripts/sync_env.py
 docker compose config --quiet
 docker build --tag fcai-bai-generic-provider-test .
 ```
