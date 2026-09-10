@@ -31,14 +31,15 @@ class AuroraComposeTests(unittest.TestCase):
         self.assertIn('STREAM_MODE: "false"', block)
         self.assertIn('REFUSAL_RETRIES: "3"', block)
 
-    def test_chatgpt_credentials_are_read_only_files_not_env_values(self) -> None:
+    def test_chatgpt_credentials_are_writable_files_not_env_values(self) -> None:
         block = _aurora_block()
         self.assertTrue(block, "Aurora service block is missing")
         env = Path(".env.example").read_text(encoding="utf-8")
         gitignore = Path(".gitignore").read_text(encoding="utf-8")
         self.assertIn("AURORA_CREDENTIAL_FILE", block)
         self.assertIn("AURORA_CREDENTIAL_TARGET", block)
-        self.assertIn("read_only: true", block)
+        self.assertIn("read_only: false", block)
+        self.assertNotIn("read_only: true", block)
         self.assertNotIn("SESSION_TOKEN=", env)
         self.assertNotIn("REFRESH_TOKEN=", env)
         self.assertNotIn("ACCESS_TOKEN=", env)
