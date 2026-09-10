@@ -84,6 +84,11 @@ class CircuitBreaker:
         entry.probe_in_flight = False
         entry.last_failure_reason = ""
 
+    def record_cancelled(self, key: BackendKey) -> None:
+        entry = self._entry(key)
+        if entry.state is CircuitState.HALF_OPEN:
+            entry.probe_in_flight = False
+
     def record_failure(self, key: BackendKey, kind: FailureKind, reason: str = "") -> None:
         entry = self._entry(key)
         was_half_open = entry.state is CircuitState.HALF_OPEN
