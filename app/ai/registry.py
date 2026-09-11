@@ -6,12 +6,14 @@ from collections.abc import Callable, Sequence
 
 from ..config import Settings
 from .bai import build_bai_provider_slots
+from .chainnode import build_chainnode_provider_slots
 from .provider import AIProvider
 
 ProviderFactory = Callable[[Settings], list[AIProvider]]
 
 PROVIDER_FACTORIES: dict[str, ProviderFactory] = {
     "bai": build_bai_provider_slots,
+    "chainnode": build_chainnode_provider_slots,
 }
 
 

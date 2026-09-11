@@ -37,7 +37,11 @@ def parse_unique_csv(raw: str | None) -> list[str]:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     bot_token: str = ""
     bot_username: str = "FuckingCoolAIbot"
@@ -49,6 +53,14 @@ class Settings(BaseSettings):
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
     bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    chainnode_api_key: str = ""
+    chainnode_base_url: str = "https://dn.chainno.de/v1"
+    chainnode_text_model: str = ""
+    chainnode_request_timeout_sec: float = Field(
+        default=30.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
     text_provider_order: str = "bai"
 
     # Vision input. Each provider slot remains the source of truth for its limits.
@@ -66,12 +78,28 @@ class Settings(BaseSettings):
     ddgs_timeout_sec: float = Field(default=8.0, gt=0, allow_inf_nan=False)
     search_total_timeout_sec: float = Field(default=15.0, gt=0, allow_inf_nan=False)
     search_circuit_failure_threshold: int = Field(default=3, ge=1, le=10)
-    search_circuit_cooldown_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
-    search_rate_limit_cooldown_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    search_circuit_cooldown_sec: float = Field(
+        default=30.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
+    search_rate_limit_cooldown_sec: float = Field(
+        default=180.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
     search_cache_max_entries: int = Field(default=256, ge=1, le=4096)
     search_web_cache_ttl_sec: float = Field(default=60.0, ge=0, allow_inf_nan=False)
-    search_image_cache_ttl_sec: float = Field(default=120.0, ge=0, allow_inf_nan=False)
-    search_stale_cache_ttl_sec: float = Field(default=900.0, ge=0, allow_inf_nan=False)
+    search_image_cache_ttl_sec: float = Field(
+        default=120.0,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    search_stale_cache_ttl_sec: float = Field(
+        default=900.0,
+        ge=0,
+        allow_inf_nan=False,
+    )
     image_search_max_results: int = Field(default=4, ge=1, le=8)
     x_fetch_enabled: bool = True
 
@@ -95,7 +123,9 @@ class Settings(BaseSettings):
         backend = (value or "").strip().lower()
         if backend not in _SEARCH_BACKENDS:
             allowed = " | ".join(_SEARCH_BACKENDS)
-            raise ValueError(f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})")
+            raise ValueError(
+                f"SEARCH_BACKEND không hợp lệ: {value!r} (cho phép: {allowed})"
+            )
         return backend
 
     @field_validator("log_level")
@@ -106,16 +136,32 @@ class Settings(BaseSettings):
             level = "WARNING"
         if level not in _LOG_LEVELS:
             allowed = " | ".join(_LOG_LEVELS)
-            raise ValueError(f"LOG_LEVEL không hợp lệ: {value!r} (cho phép: {allowed})")
+            raise ValueError(
+                f"LOG_LEVEL không hợp lệ: {value!r} (cho phép: {allowed})"
+            )
         return level
 
     @model_validator(mode="after")
-    def _check_search_timeout_budget(self) -> "Settings":
+    def _check_provider_and_timeout_config(self) -> "Settings":
+        if (
+            self.chainnode_api_key.strip()
+            and "chainnode" in self.text_provider_order_list
+            and not self.chainnode_text_model.strip()
+        ):
+            raise ValueError(
+                "CHAINNODE_TEXT_MODEL là bắt buộc khi Chainnode được bật "
+                "trong TEXT_PROVIDER_ORDER"
+            )
+
         total = self.search_total_timeout_sec
         if self.searxng_timeout_sec > total:
-            raise ValueError("SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
+            raise ValueError(
+                "SEARXNG_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC"
+            )
         if self.ddgs_timeout_sec > total:
-            raise ValueError("DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC")
+            raise ValueError(
+                "DDGS_TIMEOUT_SEC không được lớn hơn SEARCH_TOTAL_TIMEOUT_SEC"
+            )
         crawl4ai_active = (
             self.crawl4ai_enabled
             and bool(self.crawl4ai_url.strip())

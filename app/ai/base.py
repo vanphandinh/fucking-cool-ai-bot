@@ -18,7 +18,7 @@ _IMAGE_DATA_URL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _TOOL_MARKUP_HINT_RE = re.compile(
-    r"</?(?:tool_call|arg_key|arg_value)>",
+    r"</?(?:tool_call|arg_key|arg_value)>|<\s*/?\s*[|｜]\s*/?dsml[|｜]",
     flags=re.IGNORECASE,
 )
 _TEXT_TOOL_CALL_RE = re.compile(
@@ -106,6 +106,96 @@ def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
     return names
 
 
+def _parse_structured_tool_calls(
+    message: dict,
+    tools: list[dict] | None,
+    *,
+    provider_name: str,
+) -> list[ToolCall]:
+    raw_calls = message.get("tool_calls")
+    if raw_calls is None:
+        return []
+    if not isinstance(raw_calls, list):
+        raise ProviderError(
+            f"{provider_name}: tool_calls phải là array",
+            transient=False,
+        )
+
+    allowed_names = _allowed_tool_names(tools)
+    parsed_calls: list[ToolCall] = []
+    for raw_call in raw_calls:
+        if not isinstance(raw_call, dict):
+            raise ProviderError(
+                f"{provider_name}: structured tool call không phải object",
+                transient=False,
+            )
+        if raw_call.get("type") not in (None, "function"):
+            raise ProviderError(
+                f"{provider_name}: structured tool call có type không hợp lệ",
+                transient=False,
+            )
+
+        call_id = str(raw_call.get("id") or "").strip()
+        if not call_id:
+            raise ProviderError(
+                f"{provider_name}: structured tool call thiếu id",
+                transient=False,
+            )
+
+        function = raw_call.get("function")
+        if not isinstance(function, dict):
+            raise ProviderError(
+                f"{provider_name}: structured tool call thiếu function object",
+                transient=False,
+            )
+        name = str(function.get("name") or "").strip()
+        if not name:
+            raise ProviderError(
+                f"{provider_name}: structured tool call thiếu function name",
+                transient=False,
+            )
+        if name not in allowed_names:
+            raise ProviderError(
+                f"{provider_name}: model gọi tool ngoài active schema: {name}",
+                transient=False,
+            )
+
+        raw_args = function.get("arguments")
+        if isinstance(raw_args, dict):
+            args = raw_args
+        elif isinstance(raw_args, str):
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError as exc:
+                raise ProviderError(
+                    f"{provider_name}: tool arguments không phải JSON hợp lệ",
+                    transient=False,
+                ) from exc
+        else:
+            raise ProviderError(
+                f"{provider_name}: tool arguments phải là JSON object",
+                transient=False,
+            )
+        if not isinstance(args, dict):
+            raise ProviderError(
+                f"{provider_name}: tool arguments phải là JSON object",
+                transient=False,
+            )
+
+        extra_content = raw_call.get("extra_content")
+        if not isinstance(extra_content, dict):
+            extra_content = None
+        parsed_calls.append(
+            ToolCall(
+                id=call_id,
+                name=name,
+                arguments=args,
+                extra_content=extra_content,
+            )
+        )
+    return parsed_calls
+
+
 def _parse_text_tool_call(content: str, tools: list[dict] | None) -> ToolCall | None:
     """Parse the narrow text encoding emitted by some tool-capable providers.
 
@@ -149,6 +239,7 @@ class OpenAICompatProvider:
         timeout: float = 60.0,
         extra_headers: dict[str, str] | None = None,
         capabilities: ProviderCapabilities | None = None,
+        explicit_stream: bool | None = None,
     ) -> None:
         self.name = name
         self.model = model
@@ -156,6 +247,7 @@ class OpenAICompatProvider:
         self.capabilities = capabilities or ProviderCapabilities()
         self.health = ProviderHealth()
         self.force_tool_choice_none_when_no_tools = False
+        self.explicit_stream = explicit_stream
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
@@ -165,6 +257,8 @@ class OpenAICompatProvider:
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
         payload: dict = {"model": self.model, "messages": messages}
+        if self.explicit_stream is not None:
+            payload["stream"] = self.explicit_stream
         if tools and self.supports_tools:
             payload["tools"] = tools
         elif self.force_tool_choice_none_when_no_tools:
@@ -241,37 +335,18 @@ class OpenAICompatProvider:
                 f"{self.name}: message không phải object: {_safe_error_excerpt(msg, 200)}"
             )
         content = _normalize_content(msg.get("content"))
-        tool_calls: list[ToolCall] = []
-        for tc in msg.get("tool_calls") or []:
-            if not isinstance(tc, dict):
-                continue
-            fn = tc.get("function") or {}
-            if not isinstance(fn, dict):
-                fn = {}
-            raw_args = fn.get("arguments")
-            if isinstance(raw_args, dict):
-                args = raw_args
-            else:
-                try:
-                    args = json.loads(raw_args or "{}")
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-            if not isinstance(args, dict):
-                args = {}
-            extra_content = tc.get("extra_content")
-            if not isinstance(extra_content, dict):
-                extra_content = None
-            call_id = str(tc.get("id") or "").strip() or f"call_{uuid.uuid4().hex[:24]}"
-            tool_calls.append(
-                ToolCall(
-                    id=call_id,
-                    name=str(fn.get("name") or ""),
-                    arguments=args,
-                    extra_content=extra_content,
-                )
-            )
+        tool_calls = _parse_structured_tool_calls(
+            msg,
+            tools,
+            provider_name=self.name,
+        )
 
-        if not tool_calls and content and _contains_internal_tool_markup(content):
+        if content and _contains_internal_tool_markup(content):
+            if tool_calls:
+                raise ProviderError(
+                    f"{self.name}: model trả internal tool markup kèm structured tool_calls",
+                    transient=False,
+                )
             parsed = _parse_text_tool_call(content, tools)
             if parsed is None:
                 raise ProviderError(
