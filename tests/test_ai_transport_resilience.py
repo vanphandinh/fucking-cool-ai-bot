@@ -84,6 +84,58 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ConnectTimeout", message)
         self.assertIn("connect_timeout=8s", message)
 
+    async def test_write_timeout_reports_fixed_phase_timeout_and_fails_fast(self) -> None:
+        attempts = 0
+
+        def fail(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            raise httpx.WriteTimeout("", request=request)
+
+        provider = _provider(timeout=60.0)
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.test/v1/",
+            timeout=30.0,
+            transport=httpx.MockTransport(fail),
+        )
+        try:
+            with self.assertRaises(ProviderError) as raised:
+                await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await provider.aclose()
+
+        message = str(raised.exception)
+        self.assertEqual(attempts, 1)
+        self.assertIn("WriteTimeout", message)
+        self.assertIn("write_timeout=20s", message)
+
+    async def test_pool_timeout_reports_fixed_phase_timeout_and_fails_fast(self) -> None:
+        attempts = 0
+
+        def fail(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            raise httpx.PoolTimeout("", request=request)
+
+        provider = _provider(timeout=60.0)
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.test/v1/",
+            timeout=30.0,
+            transport=httpx.MockTransport(fail),
+        )
+        try:
+            with self.assertRaises(ProviderError) as raised:
+                await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await provider.aclose()
+
+        message = str(raised.exception)
+        self.assertEqual(attempts, 1)
+        self.assertIn("PoolTimeout", message)
+        self.assertIn("pool_timeout=5s", message)
+
     async def test_connect_error_retries_once_before_failing_over(self) -> None:
         attempts = 0
 
