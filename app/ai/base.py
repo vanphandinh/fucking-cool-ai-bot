@@ -30,6 +30,9 @@ _TEXT_TOOL_ARG_RE = re.compile(
     flags=re.IGNORECASE | re.DOTALL,
 )
 _ASSISTANT_REPLAY_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
+_AI_CONNECT_TIMEOUT_SEC = 8.0
+_AI_WRITE_TIMEOUT_SEC = 20.0
+_AI_POOL_TIMEOUT_SEC = 5.0
 
 
 def _safe_error_excerpt(value: object, limit: int) -> str:
@@ -43,18 +46,18 @@ def _contains_internal_tool_markup(value: object) -> bool:
     return bool(_TOOL_MARKUP_HINT_RE.search(str(value or "")))
 
 
-def _transport_error_detail(exc: httpx.HTTPError, timeout: float) -> str:
+def _transport_error_detail(exc: httpx.HTTPError, read_timeout: float) -> str:
     """Return useful diagnostics even when HTTPX exception text is empty."""
     detail = str(exc).strip()
     parts = [type(exc).__name__]
     if isinstance(exc, httpx.ReadTimeout):
-        parts.append(f"read_timeout={timeout:g}s")
+        parts.append(f"read_timeout={read_timeout:g}s")
     elif isinstance(exc, httpx.ConnectTimeout):
-        parts.append(f"connect_timeout={timeout:g}s")
+        parts.append(f"connect_timeout={_AI_CONNECT_TIMEOUT_SEC:g}s")
     elif isinstance(exc, httpx.WriteTimeout):
-        parts.append(f"write_timeout={timeout:g}s")
+        parts.append(f"write_timeout={_AI_WRITE_TIMEOUT_SEC:g}s")
     elif isinstance(exc, httpx.PoolTimeout):
-        parts.append(f"pool_timeout={timeout:g}s")
+        parts.append(f"pool_timeout={_AI_POOL_TIMEOUT_SEC:g}s")
     if detail:
         parts.append(detail)
     return ": ".join(parts)
@@ -269,8 +272,14 @@ class OpenAICompatProvider:
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
+        request_timeout = httpx.Timeout(
+            connect=_AI_CONNECT_TIMEOUT_SEC,
+            read=timeout,
+            write=_AI_WRITE_TIMEOUT_SEC,
+            pool=_AI_POOL_TIMEOUT_SEC,
+        )
         self._client = httpx.AsyncClient(
-            base_url=base_url.rstrip("/") + "/", headers=headers, timeout=timeout
+            base_url=base_url.rstrip("/") + "/", headers=headers, timeout=request_timeout
         )
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
