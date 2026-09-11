@@ -30,9 +30,18 @@ The integration reads these environment variables:
 CHAINNODE_API_KEY=
 CHAINNODE_BASE_URL=https://dn.chainno.de/v1
 CHAINNODE_TEXT_MODEL=
-CHAINNODE_REQUEST_TIMEOUT_SEC=30.0
+CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
 TEXT_PROVIDER_ORDER=bai
 ```
+
+`CHAINNODE_REQUEST_TIMEOUT_SEC` controls the Chainnode **read timeout**. The
+shared OpenAI-compatible transport uses `connect=8s`, `write=20s`, and
+`pool=5s`. This lets slow non-streaming model generation wait longer for data
+without spending the same 60 seconds establishing a dead connection.
+
+`scripts/sync_env.py` preserves existing values. If an upgraded deployment
+already has `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0`, change it to `60.0` explicitly
+to adopt the new read timeout.
 
 The API key must come from the environment. Do not commit it, log it, put it in
 GitHub Actions, or pass it on the command line.
