@@ -1,6 +1,6 @@
 # B.AI integration
 
-B.AI là **provider production duy nhất đang được register hiện tại**, nhưng không phải architectural singleton. Runtime dùng generic `AIProvider` contract + registry + ordered routing; B.AI là một provider-family adapter trong framework đó.
+B.AI là **default configured provider** cho text và vision. Runtime registry cũng hỗ trợ optional Chainnode cho text; B.AI không phải architectural singleton. Runtime dùng generic `AIProvider` contract + registry + ordered routing; B.AI là một provider-family adapter trong framework đó.
 
 B.AI dùng OpenAI-compatible Chat Completions:
 
@@ -30,7 +30,7 @@ Không có automatic B.AI model rotation/fallback giữa các model allowlist.
 ```env
 BAI_API_KEY=...
 BAI_TEXT_MODEL=qwen3.8-flash
-BAI_REQUEST_TIMEOUT_SEC=30.0
+BAI_REQUEST_TIMEOUT_SEC=60.0
 TEXT_PROVIDER_ORDER=bai
 
 VISION_ENABLED=1
@@ -39,9 +39,11 @@ VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-`TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` là config generic của framework. Production registry hiện chỉ có `bai`, nên current orders đều mặc định `bai`.
+`BAI_REQUEST_TIMEOUT_SEC` điều khiển read timeout của B.AI. Shared OpenAI-compatible transport tách các phase còn lại thành `connect=8s`, `write=20s`, `pool=5s`. Nếu deployment cũ đang ghi rõ `BAI_REQUEST_TIMEOUT_SEC=30.0`, `scripts/sync_env.py` sẽ giữ nguyên value đó; sửa thành `60.0` để áp dụng default mới.
 
-Startup yêu cầu ít nhất một configured text provider có thể build theo `TEXT_PROVIDER_ORDER`; core startup không hard-code `BAI_API_KEY`. Với registry hiện tại, thiếu B.AI config tự nhiên dẫn đến không có text provider hợp lệ.
+`TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` là config generic của framework. Default orders đều là `bai`. Text registry hiện có `bai` và optional `chainnode`; vision hiện chỉ có B.AI.
+
+Startup yêu cầu ít nhất một configured text provider có thể build theo `TEXT_PROVIDER_ORDER`; core startup không hard-code `BAI_API_KEY`. Với default order `bai`, thiếu B.AI config dẫn đến không có text provider hợp lệ. Deployment có thể dùng Chainnode text nếu cấu hình đầy đủ và đưa `chainnode` vào text order.
 
 ## Provider-family slots
 
@@ -54,7 +56,7 @@ bai / route=vision / supports_vision=True / max_images=1
 
 Route identity nằm trong `ProviderCapabilities`, không encode bằng tên UI kiểu `bai_vision`.
 
-Một text request hiện chọn B.AI text slot. Một image request trong capability limit hiện chọn B.AI vision slot. Nếu sau này registry có provider vision khác, router có thể route/fallback theo `VISION_PROVIDER_ORDER` mà không đổi B.AI adapter.
+Một text request với default order chọn B.AI text slot. Một image request trong capability limit chọn B.AI vision slot. Chainnode chỉ là text provider; nếu sau này registry có provider vision khác, router có thể route/fallback theo `VISION_PROVIDER_ORDER` mà không đổi B.AI adapter.
 
 ## Tool calling
 
@@ -92,7 +94,7 @@ B.AI adapter đặt:
 
 khi request không có tools.
 
-Nếu B.AI vẫn trả tool call sau khi tools đã tắt, tool đó không thực thi và B.AI attempt fail với non-transient `ProviderError`. Nếu sau này còn provider candidate khác, router có thể thử provider đó bằng **cùng closed tool budget** và generic Fresh Synthesis context; current production chưa có provider thứ hai nên request sẽ kết thúc.
+Nếu B.AI vẫn trả tool call sau khi tools đã tắt, tool đó không thực thi và B.AI attempt fail với non-transient `ProviderError`. Với default B.AI-only text order, request kết thúc sau failure đó. Nếu Chainnode hoặc provider text khác được cấu hình sau B.AI trong order, router có thể thử candidate tiếp theo bằng **cùng closed tool budget** và generic Fresh Synthesis context.
 
 ## Health và ordered fallback
 
@@ -110,7 +112,7 @@ Generic router chỉ fallback khi provider adapter phát `ProviderError` sau loc
 
 ## Thêm provider khác bên cạnh B.AI
 
-B.AI adapter không cần sửa. Provider mới nên:
+Chainnode text provider đã là một ví dụ registered optional provider; xem [`CHAINNODE.md`](CHAINNODE.md). Với provider mới khác, B.AI adapter không cần sửa. Provider mới nên:
 
 1. implement `AIProvider` trực tiếp hoặc reuse `OpenAICompatProvider`;
 2. thêm namespaced settings;
@@ -140,4 +142,4 @@ Probe không in Authorization header. Experimental reasoning flags chỉ dùng �
 5. Xác nhận `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` chỉ chứa provider đã register.
 6. Rebuild/restart bot.
 7. Smoke text, web-search, direct URL, one-image vision và `/status`.
-8. Kiểm tra B.AI failure path; với registry hiện tại request phải fail sạch vì chưa có provider thứ hai.
+8. Với default order, kiểm tra B.AI failure path fail sạch; nếu Chainnode được bật cùng B.AI, kiểm tra controlled fallback giữa hai text providers.
