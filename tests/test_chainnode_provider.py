@@ -46,7 +46,7 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         self.assertEqual(settings.chainnode_api_key, "")
         self.assertEqual(settings.chainnode_base_url, "https://dn.chainno.de/v1")
         self.assertEqual(settings.chainnode_text_model, "")
-        self.assertEqual(settings.chainnode_request_timeout_sec, 30.0)
+        self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
         self.assertEqual(settings.text_provider_order_list, ["bai"])
 
     def test_chainnode_slot_requires_key_order_and_explicit_model(self) -> None:

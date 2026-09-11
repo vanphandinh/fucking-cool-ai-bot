@@ -52,12 +52,12 @@ class Settings(BaseSettings):
     # Provider-specific AI credentials/models. Routing order stays provider-agnostic.
     bai_api_key: str = ""
     bai_text_model: str = "qwen3.8-flash"
-    bai_request_timeout_sec: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    bai_request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     chainnode_api_key: str = ""
     chainnode_base_url: str = "https://dn.chainno.de/v1"
     chainnode_text_model: str = ""
     chainnode_request_timeout_sec: float = Field(
-        default=30.0,
+        default=60.0,
         gt=0,
         allow_inf_nan=False,
     )

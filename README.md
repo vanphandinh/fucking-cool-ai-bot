@@ -2,9 +2,9 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Current configured AI provider: B.AI.** B.AI là provider duy nhất đang được register trong production hiện tại; Gemini, Groq, OpenRouter và Cloudflare Workers AI đã bị xóa khỏi source/runtime.
+**Default configured AI route: B.AI.** Runtime registry hỗ trợ B.AI và optional Chainnode cho text; Chainnode không hoạt động trừ khi deployment cấu hình credential/model và đưa `chainnode` vào `TEXT_PROVIDER_ORDER`. Vision hiện vẫn dùng B.AI.
 
-**Architecture: generic capability-aware, health-aware, ordered multi-provider framework.** Core router, orchestrator, startup, metrics và Telegram handlers không coi B.AI là provider đặc biệt, nên có thể thêm provider khác sau này mà không viết lại state machine chính.
+**Architecture: generic capability-aware, health-aware, ordered multi-provider framework.** Core router, orchestrator, startup, metrics và Telegram handlers không coi B.AI là provider đặc biệt, nên có thể thêm provider khác mà không viết lại state machine chính.
 
 Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input và Telegram-native HTML formatting.
 
@@ -12,6 +12,7 @@ Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, 
 
 - [Documentation index](docs/README.md) — canonical/current guides, historical records và source-of-truth order.
 - [B.AI integration](docs/BAI_INTEGRATION.md) — model allowlist, adapter behavior, tool calling, health và synthesis.
+- [Chainnode text provider](docs/CHAINNODE.md) — optional text route, qualified model, configuration và rollback.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md).
 - [Search resilience](docs/SEARCH_RESILIENCE.md).
@@ -41,25 +42,29 @@ AIProviderRouter
    ├─ health/cooldown filtering
    └─ ordered provider attempts
           │
-          └─ current production registry: B.AI
-               ├─ text slot
-               └─ vision slot (max_images=1)
+          ├─ B.AI
+          │    ├─ text slot
+          │    └─ vision slot (max_images=1)
+          └─ Chainnode
+               └─ optional text slot
 ```
 
-Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. `OpenAICompatProvider` chỉ là transport/parser reusable cho API kiểu OpenAI Chat Completions. B.AI hiện dùng implementation đó qua:
+Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. `OpenAICompatProvider` chỉ là transport/parser reusable cho API kiểu OpenAI Chat Completions. B.AI và Chainnode hiện đều reuse implementation này qua provider-specific factories.
+
+B.AI endpoint:
 
 ```text
 POST https://api.b.ai/v1/chat/completions
 ```
 
-Current production orders:
+Default production orders:
 
 ```env
 TEXT_PROVIDER_ORDER=bai
 VISION_PROVIDER_ORDER=bai
 ```
 
-Framework hỗ trợ ordered fallback. Vì registry production hiện chỉ có `bai`, một B.AI outage hiện vẫn kết thúc request sau local recovery; không có provider thứ hai để thử. Khi provider mới được register và thêm vào order, router có thể chuyển sang provider đó theo cùng generic state machine.
+Framework hỗ trợ ordered fallback. Với default order chỉ có `bai`, một B.AI outage kết thúc request sau local recovery. Khi deployment cấu hình Chainnode và dùng order như `chainnode,bai` hoặc `bai,chainnode`, router có thể chuyển giữa hai text providers theo cùng generic state machine. Chainnode không tham gia vision routing.
 
 ---
 
@@ -125,7 +130,7 @@ Yêu cầu:
 
 - Docker + Docker Compose plugin;
 - Telegram bot token;
-- credential của ít nhất một text provider trong configured order; hiện tại là B.AI API key;
+- credential của ít nhất một text provider trong configured order; default là B.AI API key;
 - Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
 
 ```bash
@@ -137,7 +142,7 @@ nano .env
 
 `sync_env.py` tự tạo `.env` từ `.env.example` nếu chưa có và dùng mode `0600` cho file mới.
 
-Cấu hình tối thiểu hiện tại:
+Cấu hình tối thiểu default:
 
 ```env
 BOT_TOKEN=...
@@ -162,7 +167,13 @@ docker compose logs -f bot
 ```env
 BAI_API_KEY=
 BAI_TEXT_MODEL=qwen3.8-flash
-BAI_REQUEST_TIMEOUT_SEC=30.0
+BAI_REQUEST_TIMEOUT_SEC=60.0
+
+CHAINNODE_API_KEY=
+CHAINNODE_BASE_URL=https://dn.chainno.de/v1
+CHAINNODE_TEXT_MODEL=
+CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
+
 TEXT_PROVIDER_ORDER=bai
 
 VISION_ENABLED=1
@@ -172,6 +183,8 @@ MAX_IMAGES_PER_REQUEST=1
 MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
 ```
+
+`BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển **read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`; tách phase giúp model có tới 60s chờ dữ liệu mà không giữ một kết nối chết tới 60s trước fallback.
 
 `VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động.
 
@@ -203,16 +216,19 @@ cp .env .env.bak
 python scripts/sync_env.py
 ```
 
-Script giữ value của key còn tồn tại, xóa key không còn trong `.env.example`, và bảo đảm `.env` không có execute/group/other permission bits. File mới dùng mode `0600`; permission-only repair không rewrite nội dung. `.env.bak` và `.env.*.bak` được ignore khỏi Git/build context nhưng vẫn chứa secret production nên không được upload/chia sẻ.
+Script giữ value của key còn tồn tại, xóa key không còn trong `.env.example`, thêm key mới theo template, và bảo đảm `.env` không có execute/group/other permission bits. File mới dùng mode `0600`; permission-only repair không rewrite nội dung. `.env.bak` và `.env.*.bak` được ignore khỏi Git/build context nhưng vẫn chứa secret production nên không được upload/chia sẻ.
 
 Migration hiện tại:
 
 - giữ B.AI settings hiện có;
+- thêm/giữ các `CHAINNODE_*` keys cho optional Chainnode text provider;
 - giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng vẫn là generic routing config;
 - xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
 - giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
 
-Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` **giữ nguyên intent đó** thay vì silently sửa. Startup sẽ reject unknown provider rõ ràng. Trước khi restart production, sửa order về các provider đang register; hiện tại:
+`sync_env.py` cố ý giữ value hiện có. Vì vậy deployment đang có `BAI_REQUEST_TIMEOUT_SEC=30.0` hoặc `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0` **không tự đổi thành 60.0**; muốn áp dụng read timeout mới, sửa các value đó thành `60.0` trước khi restart.
+
+Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` **giữ nguyên intent đó** thay vì silently sửa. Startup sẽ reject unknown provider rõ ràng. Text provider keys hiện được register là `bai` và `chainnode`; vision provider hiện chỉ có `bai`. Default orders vẫn là:
 
 ```env
 TEXT_PROVIDER_ORDER=bai
@@ -274,7 +290,7 @@ Provider health state là per-slot:
 - network/`5xx` transient → cooldown theo health policy;
 - success → reset transient state.
 
-`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Trong B.AI-only production bình thường, fallback count thường là `0` vì chưa có provider thứ hai.
+`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Với default B.AI-only text order, fallback count thường là `0`; khi Chainnode được bật cùng B.AI, các provider transition được ghi nhận theo request.
 
 ---
 
@@ -301,5 +317,5 @@ Manual production smoke sau deploy nên gồm:
 4. một ảnh;
 5. request vượt effective image limit;
 6. `/status`;
-7. B.AI failure path hiện tại;
-8. nếu sau này có provider thứ hai, một controlled provider-local failure để xác nhận ordered fallback và metadata isolation.
+7. B.AI failure path với default order;
+8. nếu Chainnode được bật cùng B.AI, một controlled provider-local failure để xác nhận ordered fallback và metadata isolation.
