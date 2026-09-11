@@ -180,6 +180,10 @@ class Settings(BaseSettings):
         return parse_csv_ints(self.admin_ids)
 
     @property
+    def bot_username_clean(self) -> str:
+        return self.bot_username.lower().lstrip("@")
+
+    @property
     def text_provider_order_list(self) -> list[str]:
         return parse_unique_csv(self.text_provider_order)
 
