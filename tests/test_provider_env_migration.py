@@ -19,7 +19,7 @@ class ProviderEnvMigrationTests(unittest.TestCase):
         self.assertIn("CHAINNODE_API_KEY=", template)
         self.assertIn("CHAINNODE_BASE_URL=https://dn.chainno.de/v1", template)
         self.assertIn("CHAINNODE_TEXT_MODEL=\n", template)
-        self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=30.0", template)
+        self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", template)
         self.assertIn("TEXT_PROVIDER_ORDER=bai", template)
         self.assertIn("VISION_PROVIDER_ORDER=bai", template)
 
