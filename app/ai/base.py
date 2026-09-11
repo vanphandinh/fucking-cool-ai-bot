@@ -43,6 +43,23 @@ def _contains_internal_tool_markup(value: object) -> bool:
     return bool(_TOOL_MARKUP_HINT_RE.search(str(value or "")))
 
 
+def _transport_error_detail(exc: httpx.HTTPError, timeout: float) -> str:
+    """Return useful diagnostics even when HTTPX exception text is empty."""
+    detail = str(exc).strip()
+    parts = [type(exc).__name__]
+    if isinstance(exc, httpx.ReadTimeout):
+        parts.append(f"read_timeout={timeout:g}s")
+    elif isinstance(exc, httpx.ConnectTimeout):
+        parts.append(f"connect_timeout={timeout:g}s")
+    elif isinstance(exc, httpx.WriteTimeout):
+        parts.append(f"write_timeout={timeout:g}s")
+    elif isinstance(exc, httpx.PoolTimeout):
+        parts.append(f"pool_timeout={timeout:g}s")
+    if detail:
+        parts.append(detail)
+    return ": ".join(parts)
+
+
 class ProviderError(Exception):
     def __init__(
         self,
@@ -248,6 +265,7 @@ class OpenAICompatProvider:
         self.health = ProviderHealth()
         self.force_tool_choice_none_when_no_tools = False
         self.explicit_stream = explicit_stream
+        self._request_timeout = timeout
         headers = {"Authorization": f"Bearer {api_key}"}
         if extra_headers:
             headers.update(extra_headers)
@@ -263,10 +281,37 @@ class OpenAICompatProvider:
             payload["tools"] = tools
         elif self.force_tool_choice_none_when_no_tools:
             payload["tool_choice"] = "none"
-        try:
-            resp = await self._client.post("chat/completions", json=payload)
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"{self.name}: lỗi mạng ({exc})", transient=True) from exc
+
+        resp: httpx.Response | None = None
+        last_transport_error: httpx.HTTPError | None = None
+        for attempt in range(2):
+            try:
+                resp = await self._client.post("chat/completions", json=payload)
+                break
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_transport_error = exc
+                if attempt == 0:
+                    continue
+                raise ProviderError(
+                    f"{self.name}: lỗi mạng "
+                    f"({_transport_error_detail(exc, self._request_timeout)})",
+                    transient=True,
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise ProviderError(
+                    f"{self.name}: lỗi mạng "
+                    f"({_transport_error_detail(exc, self._request_timeout)})",
+                    transient=True,
+                ) from exc
+
+        if resp is None:
+            assert last_transport_error is not None
+            raise ProviderError(
+                f"{self.name}: lỗi mạng "
+                f"({_transport_error_detail(last_transport_error, self._request_timeout)})",
+                transient=True,
+            ) from last_transport_error
+
         if resp.status_code >= 400:
             body = _safe_error_excerpt(resp.text, 500)
             error_message = resp.text
