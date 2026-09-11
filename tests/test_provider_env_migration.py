@@ -33,11 +33,11 @@ class ProviderEnvMigrationTests(unittest.TestCase):
         )
 
         self.assertIn("BAI_REQUEST_TIMEOUT_SEC=60.0", readme)
-        self.assertNotIn("BAI_REQUEST_TIMEOUT_SEC=30.0", readme)
         self.assertIn("BAI_REQUEST_TIMEOUT_SEC=60.0", bai_guide)
-        self.assertNotIn("BAI_REQUEST_TIMEOUT_SEC=30.0", bai_guide)
         self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", chainnode_guide)
-        self.assertNotIn("CHAINNODE_REQUEST_TIMEOUT_SEC=30.0", chainnode_guide)
+        self.assertIn("read timeout", readme)
+        self.assertIn("read timeout", bai_guide)
+        self.assertIn("read timeout", chainnode_guide)
 
     def test_current_docs_acknowledge_registered_chainnode_provider(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
