@@ -11,7 +11,11 @@ from app.ai.base import OpenAICompatProvider, ProviderError
 
 class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def test_empty_read_timeout_reports_type_and_configured_phase_timeout(self) -> None:
+        attempts = 0
+
         def fail(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
             raise httpx.ReadTimeout("", request=request)
 
         provider = _provider()
@@ -28,9 +32,36 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
             await provider.aclose()
 
         message = str(raised.exception)
+        self.assertEqual(attempts, 1)
         self.assertIn("ReadTimeout", message)
         self.assertIn("read_timeout=30s", message)
         self.assertNotIn("lỗi mạng ()", message)
+
+    async def test_connect_timeout_fails_fast_before_router_fallback(self) -> None:
+        attempts = 0
+
+        def fail(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            raise httpx.ConnectTimeout("", request=request)
+
+        provider = _provider()
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.test/v1/",
+            timeout=30.0,
+            transport=httpx.MockTransport(fail),
+        )
+        try:
+            with self.assertRaises(ProviderError) as raised:
+                await provider.chat([{"role": "user", "content": "hello"}])
+        finally:
+            await provider.aclose()
+
+        message = str(raised.exception)
+        self.assertEqual(attempts, 1)
+        self.assertIn("ConnectTimeout", message)
+        self.assertIn("connect_timeout=30s", message)
 
     async def test_connect_error_retries_once_before_failing_over(self) -> None:
         attempts = 0
