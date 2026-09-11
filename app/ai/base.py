@@ -282,35 +282,23 @@ class OpenAICompatProvider:
         elif self.force_tool_choice_none_when_no_tools:
             payload["tool_choice"] = "none"
 
-        resp: httpx.Response | None = None
-        last_transport_error: httpx.HTTPError | None = None
-        for attempt in range(2):
+        try:
+            resp = await self._client.post("chat/completions", json=payload)
+        except httpx.ConnectError:
             try:
                 resp = await self._client.post("chat/completions", json=payload)
-                break
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-                last_transport_error = exc
-                if attempt == 0:
-                    continue
-                raise ProviderError(
-                    f"{self.name}: lỗi mạng "
-                    f"({_transport_error_detail(exc, self._request_timeout)})",
-                    transient=True,
-                ) from exc
             except httpx.HTTPError as exc:
                 raise ProviderError(
                     f"{self.name}: lỗi mạng "
                     f"({_transport_error_detail(exc, self._request_timeout)})",
                     transient=True,
                 ) from exc
-
-        if resp is None:
-            assert last_transport_error is not None
+        except httpx.HTTPError as exc:
             raise ProviderError(
                 f"{self.name}: lỗi mạng "
-                f"({_transport_error_detail(last_transport_error, self._request_timeout)})",
+                f"({_transport_error_detail(exc, self._request_timeout)})",
                 transient=True,
-            ) from last_transport_error
+            ) from exc
 
         if resp.status_code >= 400:
             body = _safe_error_excerpt(resp.text, 500)
