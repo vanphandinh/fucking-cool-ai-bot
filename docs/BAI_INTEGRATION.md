@@ -32,15 +32,17 @@ BAI_API_KEY=...
 BAI_TEXT_MODEL=qwen3.8-flash
 BAI_REQUEST_TIMEOUT_SEC=60.0
 TEXT_PROVIDER_ORDER=bai
-PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=2
-PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=3
-PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=5
+PROVIDER_RETRY_MAX_CONSECUTIVE=2
+PROVIDER_RETRY_MAX_PER_PROVIDER=3
+PROVIDER_RETRY_MAX_PER_REQUEST=5
 
 VISION_ENABLED=1
 BAI_VISION_MODEL=qwen3.8-flash
 VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 ```
+
+Ba tên `PROVIDER_RETRY_MAX_*` ở trên là canonical contract. Các tên verbose cũ `PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES`, `PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER`, `PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST` vẫn được Settings chấp nhận như compatibility aliases. `scripts/sync_env.py` migrate value legacy sang canonical; nếu cả canonical và legacy cùng tồn tại thì canonical thắng.
 
 `BAI_REQUEST_TIMEOUT_SEC` là **per-HTTP-attempt read timeout** của B.AI. Shared OpenAI-compatible transport tách các phase còn lại thành `connect=8s`, `write=20s`, `pool=5s`. `QUESTION_TIMEOUT_SEC` vẫn là outer hard deadline cho toàn bộ end-user question, bao gồm tools, retry và fallback. Nếu deployment hiện đang ghi rõ `BAI_REQUEST_TIMEOUT_SEC=30.0`, `scripts/sync_env.py` giữ nguyên value đó; không thay timeout production cùng lúc với rollout retry policy.
 
@@ -57,7 +59,7 @@ bai / route=text
 bai / route=vision / supports_vision=True / max_images=1
 ```
 
-Route identity nằm trong `ProviderCapabilities`, không encode bằng tên UI kiểu `bai_vision`.
+Route identity nằm trong `ProviderCapabilities`, không encode bằng tên UI kiểu `bai_vision`. Router reject duplicate `(provider.name, route)` slots để retry/health state không bị alias sai; cùng `bai` có một text slot và một vision slot vẫn hợp lệ vì route khác nhau.
 
 Một text request với default order chọn B.AI text slot. Một image request trong capability limit chọn B.AI vision slot. Chainnode chỉ là text provider; nếu sau này registry có provider vision khác, router có thể route/fallback theo `VISION_PROVIDER_ORDER` mà không đổi B.AI adapter.
 
@@ -114,6 +116,8 @@ Shared `OpenAICompatProvider` chỉ thực hiện **một HTTP attempt** mỗi l
 
 Ba request-scoped budget mặc định là `consecutive=2`, `per-provider cumulative=3`, `per-request cumulative=5`. Một `provider.chat()` hợp lệ — kể cả response chứa tool call — reset **chỉ** consecutive counter của đúng provider đó. Provider cumulative và request cumulative counters không reset trong cùng end-user request.
 
+Mỗi provider còn có một request-scoped same-provider retry token monotonic. Khi token đã được consume, một chat success sau đó **không hoàn lại token**. Vì vậy chuỗi `ConnectTimeout -> same-provider retry tool success -> tool -> ReadTimeout` không được tạo thêm call #4 trong setup chỉ có một provider. Khi failure yêu cầu rotation, scheduler loại provider vừa fail khỏi selection kế tiếp để không gọi immediate wrap về chính provider đó là một rotation.
+
 Với `TEXT_PROVIDER_ORDER=chainnode,bai`, cyclic routing có thể đi:
 
 ```text
@@ -148,7 +152,7 @@ B.AI slot health behavior:
 
 Text và vision slots có health state riêng.
 
-Cyclic-retryable transport streak được giữ pending trong request. Nếu provider recover bằng một valid chat response, pending error bị clear và shared health không bị increment. Nếu provider bị exhaust/block hoặc provider khác hoàn tất request trước khi nó recover, unresolved streak được flush **một logical health failure** đúng một lần. `401/403/429` và non-cyclic failures vẫn áp dụng shared-health behavior ngay như trước.
+Cyclic-retryable transport streak được giữ pending trong request. Nếu provider recover bằng một valid chat response, pending error bị clear và shared health không bị increment. Nếu provider bị exhaust/block hoặc provider khác hoàn tất request trước khi nó recover, unresolved streak được flush **một logical health failure** đúng một lần. Shared `ProviderHealth` có causal generation: success và immediate terminal/error health write (`401/403/429/5xx`, v.v.) advance generation; pending transport streak capture generation khi bắt đầu và chỉ được deferred-apply nếu generation chưa đổi. Deferred apply không advance generation, nên hai unresolved concurrent failures độc lập vẫn có thể count hai lần. Cơ chế này ngăn stale ReadTimeout overwrite một success mới hơn hoặc rút ngắn `429 Retry-After` mới hơn.
 
 Fallback statistics đếm provider transition, không đếm same-provider attempts. Vì vậy `chainnode -> bai -> chainnode` ghi hai fallback transitions; retry `chainnode -> chainnode` không ghi fallback.
 
@@ -188,5 +192,6 @@ Probe không in Authorization header. Experimental reasoning flags chỉ dùng �
 9. Với multiple text providers, quan sát `ReadTimeout -> eligible alternative` và natural `provider A -> provider B -> provider A` wrap khi xảy ra.
 10. Xác nhận completed tool evidence được reuse nhưng tool executor không chạy lần hai sau rotation/wrap.
 11. Xác nhận all-provider failure dừng ở configured budgets và không spin vô hạn.
+12. Xác nhận 429 `Retry-After` mới hơn không bị stale deferred transport health ghi đè.
 
 Rollback retry code bằng revert PR hoặc deploy commit trước; không cần đổi timeout để rollback.
