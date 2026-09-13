@@ -122,7 +122,10 @@ def main() -> int:
         print(f"ERROR: {args.path} is stale or unsafe:")
         for error in errors:
             print(f"- {error}")
-        print("Merge searxng/settings.example.yml into the production file without replacing secret_key.")
+        print(
+            "Merge searxng/settings.example.yml into the production file "
+            "without replacing secret_key."
+        )
         return 1
 
     print(f"OK: {args.path} matches required SearXNG production invariants")
