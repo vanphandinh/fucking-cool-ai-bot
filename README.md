@@ -118,12 +118,25 @@ Shared OpenAI-compatible adapter thực hiện đúng **một HTTP attempt cho m
 Request-scoped defaults:
 
 ```env
-PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=2
-PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=3
-PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=5
+PROVIDER_RETRY_MAX_CONSECUTIVE=2
+PROVIDER_RETRY_MAX_PER_PROVIDER=3
+PROVIDER_RETRY_MAX_PER_REQUEST=5
 ```
 
+Ba tên trên là canonical env contract. Các tên verbose cũ `PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES`, `PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER`, `PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST` vẫn được đọc như compatibility aliases; canonical thắng nếu cả hai dạng cùng tồn tại.
+
 Một valid `provider.chat()` response, kể cả tool-call response, reset **chỉ consecutive counter của provider đó**. Provider cumulative và request cumulative transport-failure counters không reset trong cùng end-user request. Request mới bắt đầu với retry state mới.
+
+Same-provider retry còn có token monotonic theo provider trong request. Token đã consume **không được hoàn lại bởi chat success**. Vì vậy chuỗi:
+
+```text
+ConnectTimeout
+-> same-provider retry returns tool call
+-> tool succeeds
+-> ReadTimeout
+```
+
+không được cấp thêm same-provider retry chỉ vì tool-call chat trước đó thành công. Nếu ring chỉ có một provider và token đã consume, request dừng thay vì tạo call #4. Khi một failure yêu cầu rotation, scheduler exclude provider vừa fail cho đúng transition kế tiếp; một wrap về provider đó chỉ hợp lệ sau khi đã thật sự chọn provider khác.
 
 Ví dụ với `TEXT_PROVIDER_ORDER=chainnode,bai`:
 
@@ -168,7 +181,9 @@ Router tách hai state:
 
 Same-provider retry giữ exact provider-local continuation. Khi rotate/wrap, portable state mang tool evidence đã hoàn thành sang provider tiếp theo nhưng không mang vendor-specific assistant metadata.
 
-Request retry state tách khỏi shared `ProviderHealth`. Retryable transport error được giữ pending cho logical streak: nếu provider recover thì pending error bị clear và shared health không tăng; nếu provider bị exhaust/block hoặc request hoàn tất bằng provider khác trước khi nó recover thì pending streak được flush **một logical health failure** đúng một lần. `401/403/429` vẫn có availability behavior ngay như trước.
+Request retry state tách khỏi shared `ProviderHealth`. Retryable transport error được giữ pending cho logical streak: nếu provider recover thì pending error bị clear và shared health không tăng; nếu provider bị exhaust/block hoặc request hoàn tất bằng provider khác trước khi nó recover thì pending streak được flush **một logical health failure** đúng một lần.
+
+Shared health có causal generation. `record_success()` và immediate `record_error()` advance generation; pending transport failure capture generation khi streak bắt đầu và deferred failure chỉ apply nếu generation chưa đổi. Deferred apply không advance generation, nên hai independent unresolved concurrent failures vẫn có thể count hai lần. Nhờ đó stale pending ReadTimeout không thể overwrite một success mới hơn hoặc rút cooldown `429 Retry-After` mới hơn về transient cooldown cũ.
 
 Fallback statistics đếm provider transitions, không đếm attempts. `chainnode -> chainnode` immediate retry không tạo fallback; `chainnode -> bai -> chainnode` tạo hai transitions.
 
@@ -231,9 +246,9 @@ CHAINNODE_TEXT_MODEL=
 CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=bai
-PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=2
-PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=3
-PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=5
+PROVIDER_RETRY_MAX_CONSECUTIVE=2
+PROVIDER_RETRY_MAX_PER_PROVIDER=3
+PROVIDER_RETRY_MAX_PER_REQUEST=5
 
 VISION_ENABLED=1
 BAI_VISION_MODEL=qwen3.8-flash
@@ -250,6 +265,8 @@ Retry bounds validation:
 - consecutive: `1..5`;
 - per-provider cumulative: `1..10` và phải `>= consecutive`;
 - per-request cumulative: `1..20` và phải `>= consecutive`.
+
+Legacy verbose retry env names vẫn được chấp nhận khi runtime đọc Settings. Khi chạy `scripts/sync_env.py`, legacy value được migrate sang canonical name; canonical value thắng nếu hai dạng cùng có. Lần sync tiếp theo là idempotent nếu không có thay đổi khác.
 
 `VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động.
 
@@ -270,6 +287,8 @@ Một provider thông thường nên được add mà **không sửa** router st
 
 Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks phải nằm trong adapter, không đưa vào core router. Transport retry policy là generic router concern; adapter chỉ classify transport failures.
 
+Provider slot identity là `(provider.name, route)`. Router reject duplicate identity để retry/health state keyed theo provider name không bị nhập nhằng. Cùng provider name có thể có một text slot và một vision slot vì route khác nhau; B.AI hiện dùng đúng pattern này.
+
 ---
 
 ## 7. Nâng cấp deployment cũ
@@ -287,7 +306,8 @@ Migration hiện tại:
 
 - giữ B.AI settings hiện có;
 - thêm/giữ các `CHAINNODE_*` keys cho optional Chainnode text provider;
-- thêm ba `PROVIDER_RETRY_*` keys với defaults mới nếu deployment chưa có;
+- migrate ba retry keys legacy sang canonical `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; canonical thắng nếu cả hai dạng tồn tại;
+- thêm canonical retry defaults nếu deployment chưa có cả canonical lẫn legacy value;
 - giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng vẫn là generic routing config;
 - xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
 - giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
@@ -354,7 +374,8 @@ Provider health state là per-slot:
 - `401/403` → disable slot đến process restart;
 - `429` → cooldown, ưu tiên numeric `Retry-After`;
 - unresolved network transport streak → một logical transient health failure sau request-scoped recovery;
-- success → reset transient state.
+- success → reset transient state;
+- deferred transport health chỉ apply nếu causal generation chưa bị success/immediate error mới hơn thay đổi.
 
 Retry/rotation logs chỉ chứa provider name + transport kind/decision, ví dụ:
 
@@ -375,18 +396,22 @@ Không log API key, Authorization, full prompt, image base64 hay raw sensitive t
 ```bash
 python -m unittest tests.test_provider_retry_state -v
 python -m unittest tests.test_provider_transport_retry -v
-python -m unittest tests.test_ai_transport_resilience -v
-python -m unittest tests.test_chainnode_audit -v
-python -m unittest tests.test_chainnode_provider -v
+python -m unittest tests.test_provider_local_recovery_retry -v
+python -m unittest tests.test_provider_retry_health -v
 python -m unittest tests.test_config_regressions -v
+python -m unittest tests.test_ai_transport_resilience -v
+python -m unittest tests.test_provider_routing -v
+python -m unittest tests.test_provider_portability -v
+python -m unittest tests.test_provider_observability -v
 python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
 python -m pip check
 python -m compileall -q app tests scripts
+cp .env.example .env
 python scripts/sync_env.py
 docker compose config --quiet
-docker build --tag fcai-cyclic-retry-test .
+docker build --tag fcai-pr47-audit-fix .
 ```
 
 GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXNG YAML và build production image.
@@ -402,9 +427,11 @@ Manual production smoke sau deploy nên gồm:
 7. natural `ConnectTimeout -> same-provider retry -> success/fallback`;
 8. natural `ReadTimeout -> eligible alternative`;
 9. nếu xảy ra, `ReadTimeout -> wrap-around to prior provider`;
-10. valid chat sau failure reset consecutive streak nhưng cumulative budgets vẫn giới hạn request;
-11. all providers bounded -> `AllProvidersFailed` không infinite loop;
-12. tool evidence tồn tại sau rotation/wrap và completed tool không chạy lại.
+10. valid chat sau failure reset consecutive streak nhưng cumulative budgets và consumed same-provider retry token vẫn monotonic;
+11. `ConnectTimeout -> retry tool success -> tool -> ReadTimeout` trong one-provider setup không tạo call #4;
+12. all providers bounded -> `AllProvidersFailed` không infinite loop;
+13. tool evidence tồn tại sau rotation/wrap và completed tool không chạy lại;
+14. stale deferred transport health không overwrite newer success hoặc 429 `Retry-After`.
 
 Production rollout nên deploy retry code trước, giữ timeout hiện tại. Rollback bằng revert PR hoặc deploy application commit trước.
 
