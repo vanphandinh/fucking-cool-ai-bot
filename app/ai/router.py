@@ -362,7 +362,6 @@ class AIProviderRouter:
             except ProviderError as exc:
                 kind = transport_kind(exc)
                 if kind is None or not is_cyclic_retryable_transport(exc):
-                    state.retry.block_provider(provider.name)
                     raise
 
                 state.retry.record_transport_failure(provider.name, exc)
