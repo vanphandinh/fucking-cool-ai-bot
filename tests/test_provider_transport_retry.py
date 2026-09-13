@@ -66,6 +66,22 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chainnode.calls), 1)
         self.assertEqual(len(bai.calls), 1)
 
+    async def test_read_timeout_rechecks_fallback_health_at_failure_time(self) -> None:
+        bai = ScriptedProvider("bai", [ChatResponse(content="must not be called")])
+        chainnode = _FallbackDisablingProvider(
+            "chainnode",
+            [_transport_error("read_timeout"), ChatResponse(content="recovered")],
+            fallback=bai,
+        )
+        router = _router(chainnode, bai)
+
+        result = await router.complete(_messages(), None, noop_tool)
+
+        self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
+        self.assertEqual(len(chainnode.calls), 2)
+        self.assertEqual(bai.calls, [])
+        self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
+
     async def test_read_timeout_retries_final_healthy_provider_once(self) -> None:
         bai = ScriptedProvider(
             "bai",
@@ -195,6 +211,26 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chainnode.calls), 3)
         self.assertEqual(len(bai.calls), 1)
         self.assertIn("PORTABLE-EVIDENCE", repr(bai.calls[0][0]))
+
+
+class _FallbackDisablingProvider(ScriptedProvider):
+    def __init__(
+        self,
+        name: str,
+        script: list[ChatResponse | Exception],
+        *,
+        fallback: ScriptedProvider,
+    ) -> None:
+        super().__init__(name, script)
+        self._fallback = fallback
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> ChatResponse:
+        self._fallback.health.disabled = True
+        return await super().chat(messages, tools)
 
 
 def _transport_error(kind: str) -> ProviderError:
