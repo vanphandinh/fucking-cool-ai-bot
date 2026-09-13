@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from ..config import Settings
@@ -15,6 +15,7 @@ from .base import (
     NoCapableProvider,
     ProviderError,
     ToolCall,
+    TransportFailureKind,
 )
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
@@ -59,11 +60,26 @@ class _ToolBudget:
 
 
 @dataclass
+class _ProviderRetryBudget:
+    retried_providers: set[str] = field(default_factory=set)
+
+    def can_consume(self, provider_name: str) -> bool:
+        return provider_name not in self.retried_providers
+
+    def consume(self, provider_name: str) -> bool:
+        if not self.can_consume(provider_name):
+            return False
+        self.retried_providers.add(provider_name)
+        return True
+
+
+@dataclass
 class _RequestState:
     base_messages: list[dict]
     portable_messages: list[dict]
     tool_outputs: list[str]
     budget: _ToolBudget
+    retry_budget: _ProviderRetryBudget
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -93,6 +109,32 @@ def _record_error(provider: object, error: ProviderError) -> None:
             retry_after=error.retry_after,
             transient=error.transient,
         )
+
+
+def _transport_kind(error: ProviderError) -> TransportFailureKind | None:
+    kind = getattr(error, "transport_kind", None)
+    if isinstance(kind, TransportFailureKind):
+        return kind
+    if isinstance(kind, str):
+        try:
+            return TransportFailureKind(kind)
+        except ValueError:
+            return None
+    return None
+
+
+def _should_retry_transport(
+    error: ProviderError,
+    *,
+    has_healthy_fallback: bool,
+) -> bool:
+    kind = _transport_kind(error)
+    if kind in {
+        TransportFailureKind.CONNECT_ERROR,
+        TransportFailureKind.CONNECT_TIMEOUT,
+    }:
+        return True
+    return kind == TransportFailureKind.READ_TIMEOUT and not has_healthy_fallback
 
 
 async def _execute_tool_batch(
@@ -187,23 +229,26 @@ class AIProviderRouter:
             portable_messages=deepcopy(messages),
             tool_outputs=[],
             budget=_ToolBudget(),
+            retry_budget=_ProviderRetryBudget(),
         )
         attempted: list[str] = []
         fallbacks: list[str] = []
         last_error: ProviderError | None = None
 
-        for provider in candidates:
+        for index, provider in enumerate(candidates):
             if not _available(provider):
                 continue
             if attempted:
                 fallbacks.append(provider.name)
             attempted.append(provider.name)
+            fallback_candidates = tuple(candidates[index + 1 :])
             try:
                 text = await self._attempt_provider(
                     provider,
                     tools,
                     tool_executor,
                     state,
+                    fallback_candidates=fallback_candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -222,6 +267,8 @@ class AIProviderRouter:
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
         state: _RequestState,
+        *,
+        fallback_candidates: tuple[AIProvider, ...],
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
             provider_messages = build_fresh_synthesis_messages(
@@ -256,6 +303,7 @@ class AIProviderRouter:
                     use_tools,
                     tool_executor,
                     state,
+                    fallback_candidates=fallback_candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -274,6 +322,37 @@ class AIProviderRouter:
             f"{provider.name}: không thể hoàn tất provider-local recovery"
         )
 
+    async def _chat_with_retry(
+        self,
+        provider: AIProvider,
+        messages: list[dict],
+        tools: list[dict] | None,
+        state: _RequestState,
+        *,
+        fallback_candidates: tuple[AIProvider, ...],
+    ) -> ChatResponse:
+        try:
+            return await provider.chat(messages, tools)
+        except ProviderError as exc:
+            has_healthy_fallback = any(
+                _available(candidate) for candidate in fallback_candidates
+            )
+            if not _should_retry_transport(
+                exc,
+                has_healthy_fallback=has_healthy_fallback,
+            ):
+                raise
+            if not state.retry_budget.consume(provider.name):
+                raise
+            kind = _transport_kind(exc)
+            kind_value = kind.value if kind is not None else "transport_failure"
+            logger.warning(
+                "AI provider %s transient %s; retry cùng provider 1 lần",
+                provider.name,
+                kind_value,
+            )
+            return await provider.chat(messages, tools)
+
     async def _complete_with_provider(
         self,
         provider: AIProvider,
@@ -281,6 +360,8 @@ class AIProviderRouter:
         tools: list[dict] | None,
         tool_executor: ToolExecutor,
         state: _RequestState,
+        *,
+        fallback_candidates: tuple[AIProvider, ...],
     ) -> str:
         active_tools = tools
         while True:
@@ -291,7 +372,13 @@ class AIProviderRouter:
                 )
                 active_tools = None
 
-            resp = await provider.chat(messages, active_tools)
+            resp = await self._chat_with_retry(
+                provider,
+                messages,
+                active_tools,
+                state,
+                fallback_candidates=fallback_candidates,
+            )
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
                 if not text:

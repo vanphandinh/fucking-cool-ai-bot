@@ -64,7 +64,7 @@ TEXT_PROVIDER_ORDER=bai
 VISION_PROVIDER_ORDER=bai
 ```
 
-Framework hỗ trợ ordered fallback. Với default order chỉ có `bai`, một B.AI outage kết thúc request sau local recovery. Khi deployment cấu hình Chainnode và dùng order như `chainnode,bai` hoặc `bai,chainnode`, router có thể chuyển giữa hai text providers theo cùng generic state machine. Chainnode không tham gia vision routing.
+Framework hỗ trợ ordered fallback. Với default order chỉ có `bai`, một B.AI outage kết thúc request sau bounded router recovery. Khi deployment cấu hình Chainnode và dùng order như `chainnode,bai` hoặc `bai,chainnode`, router có thể chuyển giữa hai text providers theo cùng generic state machine. Chainnode không tham gia vision routing.
 
 ---
 
@@ -90,7 +90,7 @@ B.AI vision hiện advertise `max_images=1`. Đây là capability của adapter,
 
 ---
 
-## 3. Ordered fallback, tool state và Fresh Synthesis
+## 3. Ordered fallback, bounded transport retry, tool state và Fresh Synthesis
 
 Router chọn candidate theo route order, capability và health:
 
@@ -99,13 +99,31 @@ configured order
  -> capable slot?
  -> healthy?
  -> attempt provider
+ -> bounded transport retry nếu policy cho phép?
  -> provider-local failure?
  -> next capable healthy provider
 ```
 
 Chỉ `ProviderError` là provider-local failure hợp lệ để outer router fallback. Lỗi lập trình/runtime bất ngờ thoát khỏi provider contract không bị che bằng việc thử provider tiếp theo.
 
-Tool budget là **request-wide**, không reset khi đổi provider:
+Shared OpenAI-compatible adapter thực hiện đúng **một HTTP attempt cho mỗi `chat()` call** và gắn transport classification vào `ProviderError`. Same-provider retry được quản lý ở router, request-scoped:
+
+| Failure | Same-provider retry |
+|---|---|
+| `ConnectError` | tối đa 1 lần |
+| `ConnectTimeout` | tối đa 1 lần |
+| `ReadTimeout` | tối đa 1 lần chỉ khi không còn healthy ordered fallback |
+| `WriteTimeout` | không retry |
+| `PoolTimeout` | không retry |
+| HTTP `401/403/429/4xx/5xx` | giữ policy hiện tại; không thêm retry |
+
+Hard rule: **mỗi provider name chỉ có tối đa một same-provider retry trong toàn bộ một end-user request**. Nếu provider đã consume retry vì ConnectTimeout, nó không được retry lần hai ở một ReadTimeout sau tool round.
+
+ReadTimeout ưu tiên fallback để tránh cộng latency không cần thiết. Ví dụ với `TEXT_PROVIDER_ORDER=chainnode,bai`, nếu Chainnode ReadTimeout và B.AI vẫn healthy thì router chuyển B.AI ngay; nếu B.AI là healthy provider cuối cùng thì B.AI có thể retry ReadTimeout một lần nếu chưa dùng retry budget.
+
+Retry diễn ra tại đúng AI HTTP continuation bị lỗi. Nếu flow là model -> `fetch_url` -> model continuation -> ReadTimeout, router retry chính model continuation đó; tool executor không chạy lại.
+
+Tool budget là **request-wide**, không reset khi đổi provider hoặc retry cùng provider:
 
 - `MAX_TOOL_ROUNDS` — default `2`;
 - hard cap nội bộ: tối đa `8` tool calls/request;
@@ -116,7 +134,9 @@ Router tách hai state:
 - provider-local continuation state — có thể chứa metadata riêng của provider;
 - portable state — chỉ chứa canonical messages, generic tool calls/results và normalized evidence.
 
-Ví dụ `reasoning_content` của B.AI `mimo-v2.5` có thể replay trong cùng provider, nhưng không được leak sang provider khác.
+Same-provider retry không reset tool calls/rounds/closed state, portable messages hoặc successful tool outputs. Ví dụ `reasoning_content` của B.AI `mimo-v2.5` có thể replay trong cùng provider, nhưng không được leak sang provider khác.
+
+Provider health chỉ record failure sau khi bounded same-provider retry đã exhausted hoặc không được phép. Retry thành công không increment transient failure count và không cooldown; retry thất bại hai lần vẫn chỉ tạo một logical health failure trước fallback.
 
 Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original request + bounded untrusted plain-text evidence, tắt tools và bỏ structured provider-local trajectory. Nếu provider hiện tại fail ở synthesis stage và còn provider sau, provider sau nhận cùng generic Fresh Synthesis context với tools vẫn tắt. Với B.AI, no-tool request còn đặt `tool_choice=none`.
 
@@ -184,7 +204,7 @@ MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
 ```
 
-`BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển **read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`; tách phase giúp model có tới 60s chờ dữ liệu mà không giữ một kết nối chết tới 60s trước fallback.
+`BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển **per-HTTP-attempt read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`. `QUESTION_TIMEOUT_SEC` là outer hard deadline cho toàn bộ end-user question, bao gồm model attempts, same-provider retry, tools và fallback. Không tăng `QUESTION_TIMEOUT_SEC` chỉ để bù cho retry policy.
 
 `VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động.
 
@@ -203,7 +223,7 @@ Một provider thông thường nên được add mà **không sửa** router st
 5. Khai báo `ProviderCapabilities` cho từng slot và thêm provider key vào `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` phù hợp.
 6. Pass provider registry, ordered routing/fallback, portability và provider-specific regression tests.
 
-Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks phải nằm trong adapter, không đưa vào core router.
+Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks phải nằm trong adapter, không đưa vào core router. Transport retry policy là generic router concern; adapter chỉ classify transport failures.
 
 ---
 
@@ -226,7 +246,7 @@ Migration hiện tại:
 - xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
 - giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
 
-`sync_env.py` cố ý giữ value hiện có. Vì vậy deployment đang có `BAI_REQUEST_TIMEOUT_SEC=30.0` hoặc `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0` **không tự đổi thành 60.0**; muốn áp dụng read timeout mới, sửa các value đó thành `60.0` trước khi restart.
+`sync_env.py` cố ý giữ value hiện có. Vì vậy deployment đang có `BAI_REQUEST_TIMEOUT_SEC=30.0` hoặc `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0` **không tự đổi thành 60.0**. Khi rollout retry policy, giữ nguyên timeout production hiện tại; đánh giá timeout riêng sau khi đã quan sát retry/fallback behavior.
 
 Nếu order cũ vẫn chứa provider đã bị xóa, ví dụ `bai,gemini`, `sync_env.py` **giữ nguyên intent đó** thay vì silently sửa. Startup sẽ reject unknown provider rõ ràng. Text provider keys hiện được register là `bai` và `chainnode`; vision provider hiện chỉ có `bai`. Default orders vẫn là:
 
@@ -287,8 +307,10 @@ Provider health state là per-slot:
 
 - `401/403` → disable slot đến process restart;
 - `429` → cooldown, ưu tiên numeric `Retry-After`;
-- network/`5xx` transient → cooldown theo health policy;
+- network/`5xx` transient → cooldown theo health policy sau bounded retry policy;
 - success → reset transient state.
+
+Same-provider retry log chỉ chứa provider name + transport kind, ví dụ `AI provider chainnode transient connect_timeout; retry cùng provider 1 lần`; không log API key, Authorization, full prompt, image base64 hay raw sensitive tool output.
 
 `/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Với default B.AI-only text order, fallback count thường là `0`; khi Chainnode được bật cùng B.AI, các provider transition được ghi nhận theo request.
 
@@ -297,6 +319,10 @@ Provider health state là per-slot:
 ## 10. Verification
 
 ```bash
+python -m unittest tests.test_ai_transport_resilience -v
+python -m unittest tests.test_chainnode_audit -v
+python -m unittest tests.test_chainnode_provider -v
+python -m unittest tests.test_provider_transport_retry -v
 python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
@@ -304,7 +330,7 @@ python -m pip check
 python -m compileall -q app tests scripts
 python scripts/sync_env.py
 docker compose config --quiet
-docker build --tag fcai-bai-generic-provider-test .
+docker build --tag fcai-retry-test .
 ```
 
 GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXNG YAML và build production image.
@@ -317,5 +343,9 @@ Manual production smoke sau deploy nên gồm:
 4. một ảnh;
 5. request vượt effective image limit;
 6. `/status`;
-7. B.AI failure path với default order;
-8. nếu Chainnode được bật cùng B.AI, một controlled provider-local failure để xác nhận ordered fallback và metadata isolation.
+7. `ConnectTimeout -> retry -> success`;
+8. `ConnectTimeout -> retry -> failure -> fallback` nếu có ordered fallback;
+9. final-provider `ReadTimeout -> retry -> success/failure`;
+10. nếu Chainnode được bật cùng B.AI, xác nhận Chainnode ReadTimeout ưu tiên healthy B.AI fallback và tool evidence không bị chạy lại.
+
+Production rollout nên deploy retry code trước, giữ timeout hiện tại. Rollback bằng revert PR hoặc deploy application commit trước.

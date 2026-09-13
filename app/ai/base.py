@@ -7,6 +7,7 @@ import re
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
+from enum import Enum
 
 import httpx
 
@@ -35,6 +36,14 @@ _AI_WRITE_TIMEOUT_SEC = 20.0
 _AI_POOL_TIMEOUT_SEC = 5.0
 
 
+class TransportFailureKind(str, Enum):
+    CONNECT_ERROR = "connect_error"
+    CONNECT_TIMEOUT = "connect_timeout"
+    READ_TIMEOUT = "read_timeout"
+    WRITE_TIMEOUT = "write_timeout"
+    POOL_TIMEOUT = "pool_timeout"
+
+
 def _safe_error_excerpt(value: object, limit: int) -> str:
     """Redact image payloads before provider responses can reach logs/status."""
     text = value if isinstance(value, str) else str(value)
@@ -44,6 +53,20 @@ def _safe_error_excerpt(value: object, limit: int) -> str:
 
 def _contains_internal_tool_markup(value: object) -> bool:
     return bool(_TOOL_MARKUP_HINT_RE.search(str(value or "")))
+
+
+def _transport_failure_kind(exc: httpx.HTTPError) -> TransportFailureKind | None:
+    if isinstance(exc, httpx.ConnectTimeout):
+        return TransportFailureKind.CONNECT_TIMEOUT
+    if isinstance(exc, httpx.ReadTimeout):
+        return TransportFailureKind.READ_TIMEOUT
+    if isinstance(exc, httpx.WriteTimeout):
+        return TransportFailureKind.WRITE_TIMEOUT
+    if isinstance(exc, httpx.PoolTimeout):
+        return TransportFailureKind.POOL_TIMEOUT
+    if isinstance(exc, httpx.ConnectError):
+        return TransportFailureKind.CONNECT_ERROR
+    return None
 
 
 def _transport_error_detail(exc: httpx.HTTPError, read_timeout: float) -> str:
@@ -73,6 +96,7 @@ class ProviderError(Exception):
         status_code: int | None = None,
         retry_after: float | None = None,
         transient: bool = True,
+        transport_kind: TransportFailureKind | None = None,
     ) -> None:
         super().__init__(message)
         self.unsupported_tools = unsupported_tools
@@ -80,6 +104,7 @@ class ProviderError(Exception):
         self.status_code = status_code
         self.retry_after = retry_after
         self.transient = transient
+        self.transport_kind = transport_kind
 
 
 class AllProvidersFailed(Exception):
@@ -293,20 +318,12 @@ class OpenAICompatProvider:
 
         try:
             resp = await self._client.post("chat/completions", json=payload)
-        except httpx.ConnectError:
-            try:
-                resp = await self._client.post("chat/completions", json=payload)
-            except httpx.HTTPError as exc:
-                raise ProviderError(
-                    f"{self.name}: lỗi mạng "
-                    f"({_transport_error_detail(exc, self._request_timeout)})",
-                    transient=True,
-                ) from exc
         except httpx.HTTPError as exc:
             raise ProviderError(
                 f"{self.name}: lỗi mạng "
                 f"({_transport_error_detail(exc, self._request_timeout)})",
                 transient=True,
+                transport_kind=_transport_failure_kind(exc),
             ) from exc
 
         if resp.status_code >= 400:
