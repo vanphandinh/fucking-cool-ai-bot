@@ -20,19 +20,53 @@ _REQUIRED_REMOVED_ENGINES = {
 }
 
 
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
 def _removed_engines(text: str) -> set[str]:
-    match = re.search(
-        r"(?ms)^use_default_settings:\s*\n(?:^[ \t].*\n)*?"
-        r"^[ \t]+remove:\s*\n(?P<body>(?:^[ \t]+(?:#.*|- .*)\n?)*)",
-        text,
-    )
-    if not match:
-        return set()
+    lines = text.splitlines()
+    in_defaults = False
+    in_engines = False
+    in_remove = False
+    defaults_indent = engines_indent = remove_indent = -1
     removed: set[str] = set()
-    for line in match.group("body").splitlines():
+
+    for line in lines:
         stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = _indent(line)
+
+        if not in_defaults:
+            if stripped == "use_default_settings:":
+                in_defaults = True
+                defaults_indent = indent
+            continue
+
+        if indent <= defaults_indent:
+            break
+
+        if not in_engines:
+            if stripped == "engines:":
+                in_engines = True
+                engines_indent = indent
+            continue
+
+        if indent <= engines_indent:
+            break
+
+        if not in_remove:
+            if stripped == "remove:":
+                in_remove = True
+                remove_indent = indent
+            continue
+
+        if indent <= remove_indent:
+            break
         if stripped.startswith("- "):
             removed.add(stripped[2:].strip())
+
     return removed
 
 
