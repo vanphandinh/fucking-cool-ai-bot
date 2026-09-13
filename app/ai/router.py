@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
@@ -20,6 +20,12 @@ from .base import (
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
 from .registry import build_registered_providers
+from .retry import (
+    ProviderRetryPolicy,
+    RequestRetryState,
+    is_cyclic_retryable_transport,
+    transport_kind,
+)
 from .synthesis import build_fresh_synthesis_messages
 
 logger = logging.getLogger(__name__)
@@ -60,26 +66,12 @@ class _ToolBudget:
 
 
 @dataclass
-class _ProviderRetryBudget:
-    retried_providers: set[str] = field(default_factory=set)
-
-    def can_consume(self, provider_name: str) -> bool:
-        return provider_name not in self.retried_providers
-
-    def consume(self, provider_name: str) -> bool:
-        if not self.can_consume(provider_name):
-            return False
-        self.retried_providers.add(provider_name)
-        return True
-
-
-@dataclass
 class _RequestState:
     base_messages: list[dict]
     portable_messages: list[dict]
     tool_outputs: list[str]
     budget: _ToolBudget
-    retry_budget: _ProviderRetryBudget
+    retry: RequestRetryState
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -92,6 +84,13 @@ def _capabilities(provider: object) -> ProviderCapabilities:
 def _available(provider: object) -> bool:
     health = getattr(provider, "health", None)
     return health is None or health.available()
+
+
+def _health_generation(provider: object) -> int | None:
+    health = getattr(provider, "health", None)
+    if health is None:
+        return None
+    return health.generation
 
 
 def _record_success(provider: object) -> None:
@@ -111,30 +110,44 @@ def _record_error(provider: object, error: ProviderError) -> None:
         )
 
 
-def _transport_kind(error: ProviderError) -> TransportFailureKind | None:
-    kind = getattr(error, "transport_kind", None)
-    if isinstance(kind, TransportFailureKind):
-        return kind
-    if isinstance(kind, str):
-        try:
-            return TransportFailureKind(kind)
-        except ValueError:
-            return None
-    return None
+def _flush_pending_health_error(provider: AIProvider, state: _RequestState) -> None:
+    slot = state.retry.provider_state(provider.name)
+    error = slot.pending_health_error
+    if error is None:
+        return
+    health = getattr(provider, "health", None)
+    generation = slot.pending_health_generation
+    if health is not None and generation is not None:
+        health.record_deferred_error(
+            str(error),
+            expected_generation=generation,
+            status_code=error.status_code,
+            retry_after=error.retry_after,
+            transient=error.transient,
+        )
+    slot.pending_health_error = None
+    slot.pending_health_generation = None
 
 
-def _should_retry_transport(
-    error: ProviderError,
+def _flush_all_pending_health_errors(
+    candidates: tuple[AIProvider, ...],
+    state: _RequestState,
     *,
-    has_healthy_fallback: bool,
-) -> bool:
-    kind = _transport_kind(error)
-    if kind in {
-        TransportFailureKind.CONNECT_ERROR,
-        TransportFailureKind.CONNECT_TIMEOUT,
-    }:
-        return True
-    return kind == TransportFailureKind.READ_TIMEOUT and not has_healthy_fallback
+    exclude: str | None = None,
+) -> None:
+    for provider in candidates:
+        if provider.name == exclude:
+            continue
+        _flush_pending_health_error(provider, state)
+
+
+def _candidate_eligible(provider: AIProvider, state: _RequestState) -> bool:
+    return _available(provider) and state.retry.can_attempt(provider.name)
+
+
+def _cyclic_indices(size: int, start: int):
+    for offset in range(size):
+        yield (start + offset) % size
 
 
 async def _execute_tool_batch(
@@ -161,7 +174,17 @@ class AIProviderRouter:
         *,
         text_provider_order: tuple[str, ...] | None = None,
         vision_provider_order: tuple[str, ...] | None = None,
+        retry_policy: ProviderRetryPolicy | None = None,
     ) -> None:
+        provider_slots: set[tuple[str, str]] = set()
+        for provider in providers:
+            slot = (provider.name, _capabilities(provider).route)
+            if slot in provider_slots:
+                raise ValueError(
+                    f"duplicate provider slot: name={slot[0]!r}, route={slot[1]!r}"
+                )
+            provider_slots.add(slot)
+
         self.providers = providers
         default_order = tuple(dict.fromkeys(provider.name for provider in providers))
         self.text_provider_order = (
@@ -171,6 +194,7 @@ class AIProviderRouter:
             default_order if vision_provider_order is None else vision_provider_order
         )
         self.max_tool_rounds = max_tool_rounds
+        self.retry_policy = retry_policy or ProviderRetryPolicy()
 
     def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
         if requires_vision:
@@ -215,9 +239,11 @@ class AIProviderRouter:
         requires_vision: bool = False,
         image_count: int = 0,
     ) -> CompletionResult:
-        candidates = self.capable_providers(
-            requires_vision=requires_vision,
-            image_count=image_count,
+        candidates = tuple(
+            self.capable_providers(
+                requires_vision=requires_vision,
+                image_count=image_count,
+            )
         )
         if not candidates:
             raise NoCapableProvider(
@@ -229,35 +255,65 @@ class AIProviderRouter:
             portable_messages=deepcopy(messages),
             tool_outputs=[],
             budget=_ToolBudget(),
-            retry_budget=_ProviderRetryBudget(),
+            retry=RequestRetryState(self.retry_policy),
         )
-        attempted: list[str] = []
         fallbacks: list[str] = []
         last_error: ProviderError | None = None
+        cursor = 0
+        previous_provider_name: str | None = None
+        exclude_next_provider_name: str | None = None
 
-        for index, provider in enumerate(candidates):
-            if not _available(provider):
-                continue
-            if attempted:
+        while not state.retry.request_transport_budget_exhausted():
+            selected: tuple[int, AIProvider] | None = None
+            for index in _cyclic_indices(len(candidates), cursor):
+                provider = candidates[index]
+                if provider.name == exclude_next_provider_name:
+                    continue
+                if _candidate_eligible(provider, state):
+                    selected = (index, provider)
+                    break
+            if selected is None:
+                break
+
+            index, provider = selected
+            exclude_next_provider_name = None
+            if (
+                previous_provider_name is not None
+                and provider.name != previous_provider_name
+            ):
                 fallbacks.append(provider.name)
-            attempted.append(provider.name)
-            fallback_candidates = tuple(candidates[index + 1 :])
+            previous_provider_name = provider.name
+
             try:
                 text = await self._attempt_provider(
                     provider,
                     tools,
                     tool_executor,
                     state,
-                    fallback_candidates=fallback_candidates,
+                    candidates=candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
-                _record_error(provider, exc)
+                if is_cyclic_retryable_transport(exc):
+                    exclude_next_provider_name = provider.name
+                    if not state.retry.can_attempt(provider.name):
+                        _flush_pending_health_error(provider, state)
+                else:
+                    state.retry.block_provider(provider.name)
+                    _record_error(provider, exc)
                 logger.warning("AI provider %s lỗi: %s", provider.name, exc)
+                cursor = (index + 1) % len(candidates)
                 continue
+
             _record_success(provider)
+            _flush_all_pending_health_errors(
+                candidates,
+                state,
+                exclude=provider.name,
+            )
             return CompletionResult(text, provider.name, tuple(fallbacks))
 
+        _flush_all_pending_health_errors(candidates, state)
         message = str(last_error) if last_error else "Không có AI provider khả dụng"
         raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
 
@@ -268,7 +324,7 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
-        fallback_candidates: tuple[AIProvider, ...],
+        candidates: tuple[AIProvider, ...],
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
             provider_messages = build_fresh_synthesis_messages(
@@ -303,7 +359,7 @@ class AIProviderRouter:
                     use_tools,
                     tool_executor,
                     state,
-                    fallback_candidates=fallback_candidates,
+                    candidates=candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -329,29 +385,44 @@ class AIProviderRouter:
         tools: list[dict] | None,
         state: _RequestState,
         *,
-        fallback_candidates: tuple[AIProvider, ...],
+        candidates: tuple[AIProvider, ...],
     ) -> ChatResponse:
-        try:
-            return await provider.chat(messages, tools)
-        except ProviderError as exc:
-            has_healthy_fallback = any(
-                _available(candidate) for candidate in fallback_candidates
-            )
-            if not _should_retry_transport(
-                exc,
-                has_healthy_fallback=has_healthy_fallback,
-            ):
-                raise
-            if not state.retry_budget.consume(provider.name):
-                raise
-            kind = _transport_kind(exc)
-            kind_value = kind.value if kind is not None else "transport_failure"
-            logger.warning(
-                "AI provider %s transient %s; retry cùng provider 1 lần",
-                provider.name,
-                kind_value,
-            )
-            return await provider.chat(messages, tools)
+        while True:
+            try:
+                response = await provider.chat(messages, tools)
+            except ProviderError as exc:
+                kind = transport_kind(exc)
+                if kind is None or not is_cyclic_retryable_transport(exc):
+                    raise
+
+                state.retry.record_transport_failure(
+                    provider.name,
+                    exc,
+                    health_generation=_health_generation(provider),
+                )
+                if not state.retry.can_attempt(provider.name):
+                    raise
+
+                alternatives = [
+                    candidate
+                    for candidate in candidates
+                    if candidate.name != provider.name
+                    and _candidate_eligible(candidate, state)
+                ]
+                if kind == TransportFailureKind.READ_TIMEOUT and alternatives:
+                    raise
+                if not state.retry.consume_same_provider_retry(provider.name):
+                    raise
+
+                logger.warning(
+                    "AI provider %s transient %s; retry same provider",
+                    provider.name,
+                    kind.value,
+                )
+                continue
+            else:
+                state.retry.record_chat_success(provider.name)
+                return response
 
     async def _complete_with_provider(
         self,
@@ -361,7 +432,7 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
-        fallback_candidates: tuple[AIProvider, ...],
+        candidates: tuple[AIProvider, ...],
     ) -> str:
         active_tools = tools
         while True:
@@ -377,7 +448,7 @@ class AIProviderRouter:
                 messages,
                 active_tools,
                 state,
-                fallback_candidates=fallback_candidates,
+                candidates=candidates,
             )
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
@@ -476,9 +547,15 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     vision_order = tuple(settings.vision_provider_order_list)
     registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
     providers = build_registered_providers(settings, registered_names)
+    retry_policy = ProviderRetryPolicy(
+        max_consecutive_failures=settings.provider_retry_max_consecutive_failures,
+        max_failures_per_provider=settings.provider_retry_max_failures_per_provider,
+        max_failures_per_request=settings.provider_retry_max_failures_per_request,
+    )
     return AIProviderRouter(
         providers,
         max_tool_rounds=settings.max_tool_rounds,
         text_provider_order=text_order,
         vision_provider_order=vision_order,
+        retry_policy=retry_policy,
     )

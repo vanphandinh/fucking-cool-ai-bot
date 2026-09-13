@@ -104,6 +104,70 @@ class SyncEnvTests(unittest.TestCase):
             ):
                 self.assertNotIn(removed, rendered)
 
+    def test_provider_retry_legacy_names_migrate_and_second_run_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            example = (
+                "PROVIDER_RETRY_MAX_CONSECUTIVE=2\n"
+                "PROVIDER_RETRY_MAX_PER_PROVIDER=3\n"
+                "PROVIDER_RETRY_MAX_PER_REQUEST=5\n"
+            )
+            env_path = directory / ".env"
+            (directory / ".env.example").write_text(example, encoding="utf-8")
+            env_path.write_text(
+                "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=3\n"
+                "PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=7\n"
+                "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=9\n",
+                encoding="utf-8",
+            )
+
+            first = self._run(directory)
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            expected = (
+                "PROVIDER_RETRY_MAX_CONSECUTIVE=3\n"
+                "PROVIDER_RETRY_MAX_PER_PROVIDER=7\n"
+                "PROVIDER_RETRY_MAX_PER_REQUEST=9\n"
+            )
+            self.assertEqual(env_path.read_text(encoding="utf-8"), expected)
+
+            fixed_ns = 1_600_000_000_000_000_000
+            os.utime(env_path, ns=(fixed_ns, fixed_ns))
+            second = self._run(directory)
+
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(env_path.read_text(encoding="utf-8"), expected)
+            self.assertEqual(env_path.stat().st_mtime_ns, fixed_ns)
+
+    def test_provider_retry_canonical_names_win_over_legacy_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "PROVIDER_RETRY_MAX_CONSECUTIVE=2\n"
+                "PROVIDER_RETRY_MAX_PER_PROVIDER=3\n"
+                "PROVIDER_RETRY_MAX_PER_REQUEST=5\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "PROVIDER_RETRY_MAX_CONSECUTIVE=4\n"
+                "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=1\n"
+                "PROVIDER_RETRY_MAX_PER_PROVIDER=8\n"
+                "PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=6\n"
+                "PROVIDER_RETRY_MAX_PER_REQUEST=10\n"
+                "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=7\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (directory / ".env").read_text(encoding="utf-8"),
+                "PROVIDER_RETRY_MAX_CONSECUTIVE=4\n"
+                "PROVIDER_RETRY_MAX_PER_PROVIDER=8\n"
+                "PROVIDER_RETRY_MAX_PER_REQUEST=10\n",
+            )
+
     def test_duplicate_key_in_example_fails_without_touching_env(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

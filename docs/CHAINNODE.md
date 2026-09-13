@@ -32,7 +32,15 @@ CHAINNODE_BASE_URL=https://dn.chainno.de/v1
 CHAINNODE_TEXT_MODEL=
 CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
 TEXT_PROVIDER_ORDER=bai
+PROVIDER_RETRY_MAX_CONSECUTIVE=2
+PROVIDER_RETRY_MAX_PER_PROVIDER=3
+PROVIDER_RETRY_MAX_PER_REQUEST=5
 ```
+
+The three `PROVIDER_RETRY_MAX_*` names above are canonical. Legacy verbose
+`*_FAILURES*` names remain accepted as compatibility aliases. `sync_env.py`
+migrates legacy values to canonical keys and canonical values win if both forms
+exist.
 
 `CHAINNODE_REQUEST_TIMEOUT_SEC` controls the Chainnode per-HTTP-attempt read timeout.
 The shared OpenAI-compatible transport uses `connect=8s`, `write=20s`, and
@@ -60,34 +68,90 @@ TEXT_PROVIDER_ORDER=chainnode,bai
 Keep the existing vision route unchanged. Chainnode does not advertise vision
 support in this provider slot.
 
-## Transport retry policy
+## Bounded cyclic transport retry policy
 
 The OpenAI-compatible adapter performs exactly one HTTP attempt and classifies
-transport failures. The router owns the bounded same-provider retry policy:
+transport failures. The router owns request-scoped bounded cyclic scheduling:
 
-| Failure | Same-provider retry |
+| Failure | Policy |
 |---|---|
-| `ConnectError` | once |
-| `ConnectTimeout` | once |
-| `ReadTimeout` | once only when no healthy ordered fallback remains |
-| `WriteTimeout` | never |
-| `PoolTimeout` | never |
-| HTTP `401/403/429/4xx/5xx` | no new retry; existing policy unchanged |
+| `ConnectError` | retry same provider while eligible, then rotate |
+| `ConnectTimeout` | retry same provider while eligible, then rotate |
+| `ReadTimeout` | prefer another currently eligible provider; retry same provider only when no eligible alternative exists |
+| `WriteTimeout` | no new cyclic revisit |
+| `PoolTimeout` | no new cyclic revisit |
+| HTTP `401/403/429/4xx/5xx` | no new cyclic behavior; existing health/fallback policy remains |
 
-A provider name can consume at most **one same-provider retry per end-user
-request**. The budget is request-scoped, so a ConnectTimeout retry used before a
-tool call prevents a second retry after a later ReadTimeout in the same request.
+Default request-scoped bounds are:
 
-With `TEXT_PROVIDER_ORDER=chainnode,bai`, a Chainnode ReadTimeout normally falls
-back to healthy B.AI immediately rather than adding another Chainnode read wait.
-ConnectError/ConnectTimeout still get their one local retry first. A ReadTimeout
-on the final healthy provider can use the one retry if that provider has not
-already consumed it.
+```text
+consecutive transport failures per provider = 2
+cumulative transport failures per provider = 3
+cumulative transport failures per request = 5
+```
 
-Retry wraps the exact failing model HTTP continuation. Completed tool execution,
-portable messages, successful tool outputs and the request-wide tool budget are
-not reset or rerun. Provider health records one failure only after the bounded
-local retry is unavailable or exhausted; a successful retry records no failure.
+A valid `provider.chat()` response, including a tool-call response, resets only
+that provider's consecutive counter. Provider cumulative and request cumulative
+counters never reset inside the same end-user request. Each provider also gets
+one monotonic request-scoped same-provider retry token; once consumed, a later
+chat success does not refund it.
+
+With `TEXT_PROVIDER_ORDER=chainnode,bai`, the router can recover through a full
+wrap instead of the old one-way suffix traversal:
+
+```text
+chainnode ReadTimeout
+-> bai ReadTimeout
+-> chainnode success
+```
+
+Repeated ReadTimeouts remain bounded:
+
+```text
+chainnode #1 fail
+-> bai #1 fail
+-> chainnode #2 fail/exhaust
+-> bai #2 fail/exhaust
+-> AllProvidersFailed
+```
+
+ConnectError/ConnectTimeout keep same-provider-first behavior, for example:
+
+```text
+chainnode #1 ConnectTimeout
+-> chainnode #2 immediate retry
+-> rotate only if the provider is then exhausted/blocked
+```
+
+When rotation is required, the next scheduler selection excludes the provider
+that just failed for that transition. This prevents a one-provider ring from
+immediately selecting the same provider again and calling that a cyclic wrap.
+A later wrap remains possible after another provider was genuinely selected.
+
+Retry on the same provider wraps the exact failing model HTTP continuation.
+Completed tool execution, portable messages, successful tool outputs and the
+request-wide tool budget are not reset or rerun. Rotation/wrap also preserves
+portable evidence, so a provider revisited later receives completed tool results
+without causing the tool executor to run again.
+
+ReadTimeout alternative eligibility is recomputed at failure time across the
+full capability-filtered ring using current shared health and current
+request-scoped budgets; the router does not reuse a stale suffix snapshot.
+
+Shared `ProviderHealth` is separate from request retry state. Retryable transport
+errors remain pending until the logical streak resolves. Recovery clears the
+pending error without incrementing shared health; exhaustion or unresolved
+fallback flushes one logical health failure exactly once. Shared health carries
+a causal generation: success and immediate health errors advance it; a pending
+transport streak captures its starting generation and is only deferred-applied
+if that generation is still current. Deferred apply itself does not advance the
+generation, so two independent unresolved concurrent failures can both count.
+This prevents an older pending ReadTimeout from overwriting a newer success or a
+newer 429 cooldown/`Retry-After` value.
+
+Fallback metrics count provider transitions, not attempts. A same-provider retry
+adds no fallback entry; `chainnode -> bai -> chainnode` records both real
+transitions.
 
 ## Wire contract
 
@@ -141,11 +205,13 @@ After enabling Chainnode, verify at least these behaviors through the real bot:
 2. A request for current Bitcoin price selects `web_search`.
 3. A direct `https://example.com/` request selects `fetch_url`.
 4. An image-reference request selects `image_search`.
+5. Observe natural `ConnectTimeout -> same-provider retry -> success/fallback`.
+6. Observe natural `ReadTimeout -> eligible alternative` and, if it occurs, `chainnode -> bai -> chainnode` wrap.
+7. Verify completed tool evidence survives rotation/wrap without a duplicate tool execution.
+8. Verify bounded all-provider failure terminates rather than spinning.
+9. Verify a newer 429 `Retry-After` is not replaced by stale deferred transport health.
 
-For a retry-policy rollout, keep current production timeout values unchanged and
-observe these log patterns separately: ConnectTimeout -> retry -> success,
-ConnectTimeout -> retry -> failure -> fallback, and final-provider ReadTimeout
--> retry -> success/failure.
+For retry-policy rollout, keep current production timeout values unchanged.
 
 Watch `image_search` most closely because it was the weakest routing scenario in
 the final qualification, although the model still cleared the production gate.

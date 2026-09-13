@@ -11,6 +11,7 @@ Script coi `.env.example` là source of truth cho danh sách key, thứ tự, co
 - key còn tồn tại trong cả hai file: giữ nguyên value hiện tại trong `.env`;
 - key mới: lấy default từ `.env.example`;
 - key đã bị xóa khỏi `.env.example`: xóa khỏi `.env`;
+- một số rename có migration explicit, hiện gồm ba provider-retry legacy aliases sang canonical keys;
 - `.env` chưa tồn tại: tạo mới từ `.env.example`;
 - duplicate key / assignment lỗi: fail-fast, không ghi đè file;
 - output không đổi: không rewrite nội dung;
@@ -81,6 +82,44 @@ SEARCH_BACKEND=searxng
 
 Trong khi credential/model keys của provider đã xóa biến mất.
 
+### Provider retry key migration
+
+Canonical retry names là:
+
+```env
+PROVIDER_RETRY_MAX_CONSECUTIVE=2
+PROVIDER_RETRY_MAX_PER_PROVIDER=3
+PROVIDER_RETRY_MAX_PER_REQUEST=5
+```
+
+Runtime vẫn đọc ba verbose names cũ như compatibility aliases:
+
+```env
+PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=
+PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=
+PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=
+```
+
+`sync_env.py` có explicit migration cho đúng ba rename này. Nếu `.env` chỉ có legacy values, lần sync đầu tiên chuyển value sang canonical key và bỏ legacy key vì template chỉ còn canonical names. Ví dụ:
+
+```env
+PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES=3
+PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER=7
+PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST=9
+```
+
+trở thành:
+
+```env
+PROVIDER_RETRY_MAX_CONSECUTIVE=3
+PROVIDER_RETRY_MAX_PER_PROVIDER=7
+PROVIDER_RETRY_MAX_PER_REQUEST=9
+```
+
+Nếu canonical và legacy cùng tồn tại, **canonical wins**, kể cả khi canonical value là chuỗi rỗng. Sau lần migration đầu tiên, chạy sync lần hai không rewrite file nếu không có thay đổi khác; regression test còn khóa mtime để bảo đảm idempotency.
+
+Ngoài mapping explicit này, `sync_env.py` không tự diễn giải hoặc rewrite semantic value của operator.
+
 ### Timeout mới không ghi đè value production cũ
 
 `BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` hiện điều khiển **read timeout** của provider, default `60.0`. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`.
@@ -101,7 +140,7 @@ Tương tự với `CHAINNODE_REQUEST_TIMEOUT_SEC` nếu Chainnode đã được
 
 ### Vì sao order cũ không tự bị sửa?
 
-`sync_env.py` không diễn giải semantic của value; nó chỉ đồng bộ key set và giữ value hiện tại. Vì vậy một order cũ như:
+Ngoài explicit key migrations đã liệt kê, `sync_env.py` không diễn giải semantic của value. Vì vậy một order cũ như:
 
 ```env
 TEXT_PROVIDER_ORDER=bai,gemini
@@ -132,7 +171,7 @@ Repo ignore `.env`, `.env.bak` và `.env.*.bak`; Docker build context cũng lo�
 Sau đó kiểm tra ít nhất:
 
 ```bash
-grep -E '^(BAI_|CHAINNODE_|TEXT_PROVIDER_ORDER|VISION_PROVIDER_ORDER|SEARCH_BACKEND)' .env
+grep -E '^(BAI_|CHAINNODE_|PROVIDER_RETRY_|TEXT_PROVIDER_ORDER|VISION_PROVIDER_ORDER|SEARCH_BACKEND)' .env
 stat -c '%a %n' .env
 ```
 
@@ -140,6 +179,7 @@ Xác nhận:
 
 - B.AI secret/model/timeout values vẫn đúng;
 - Chainnode values đúng nếu provider này được bật; key để trống là bình thường khi không dùng;
+- retry config chỉ dùng canonical keys sau sync, legacy values đã được migrate nếu có;
 - `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` chỉ chứa provider đã register;
 - AI read timeout đã là `60.0` nếu deployment muốn áp dụng default mới;
 - Telegram/search/Crawl4AI values quan trọng vẫn còn;

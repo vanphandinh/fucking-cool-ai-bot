@@ -10,6 +10,17 @@ _ASSIGNMENT_RE = re.compile(
     r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$"
 )
 _PRIVATE_ENV_MODE = 0o600
+_ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
+    "PROVIDER_RETRY_MAX_CONSECUTIVE": (
+        "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES",
+    ),
+    "PROVIDER_RETRY_MAX_PER_PROVIDER": (
+        "PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER",
+    ),
+    "PROVIDER_RETRY_MAX_PER_REQUEST": (
+        "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST",
+    ),
+}
 
 
 def _split_assignment(line: str, source: str) -> tuple[str, str]:
@@ -30,6 +41,18 @@ def _parse_values(text: str) -> dict[str, str]:
             raise ValueError(f"duplicate key in .env: {key}")
         values[key] = value
     return values
+
+
+def _migrate_values(values: dict[str, str]) -> dict[str, str]:
+    migrated = dict(values)
+    for canonical, legacy_names in _ENV_MIGRATIONS.items():
+        if canonical in values:
+            continue
+        for legacy_name in legacy_names:
+            if legacy_name in values:
+                migrated[canonical] = values[legacy_name]
+                break
+    return migrated
 
 
 def _owner_only_mode(mode: int) -> int:
@@ -58,7 +81,7 @@ def _sync() -> None:
     example = example_path.read_text(encoding="utf-8")
     env_exists = env_path.exists()
     current = env_path.read_text(encoding="utf-8") if env_exists else ""
-    current_values = _parse_values(current)
+    current_values = _migrate_values(_parse_values(current))
 
     output: list[str] = []
     seen_keys: set[str] = set()
