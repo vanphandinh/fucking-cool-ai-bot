@@ -4,7 +4,8 @@
 #   1) cp searxng/settings.example.yml searxng/settings.yml
 #   2) Sửa searxng/settings.yml -> đổi secret_key thành chuỗi ngẫu nhiên:
 #        openssl rand -hex 32
-#   3) docker compose --profile searxng up -d --build
+#   3) python scripts/check_searxng_settings.py
+#   4) docker compose --profile searxng up -d --build
 #
 # Nếu đã có settings.yml: merge các thay đổi bên dưới, GIỮ secret_key hiện tại.
 # Sửa file mẫu không tự cập nhật file thật đang được mount trong container.
@@ -30,6 +31,10 @@ use_default_settings:
       - duckduckgo
       # Wikipedia đang trả HTTP 400 trên deployment đã quan sát.
       - wikipedia
+      # Wikidata SPARQL thỉnh thoảng vượt global 3s trên VPS và hoàn thành sau khi
+      # ResultContainer đã đóng, tạo log timeout + add_unresponsive_engine-after-close.
+      # Bot cần SERP/web sources, không phụ thuộc structured Wikidata results.
+      - wikidata
 
 server:
   # BẮT BUỘC đổi thành chuỗi ngẫu nhiên: openssl rand -hex 32
