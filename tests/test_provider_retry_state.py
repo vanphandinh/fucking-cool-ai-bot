@@ -38,6 +38,13 @@ class ProviderRetryStateTests(unittest.TestCase):
         self.assertEqual(slot.total_transport_failures, 1)
         self.assertEqual(self.state.total_transport_failures, 1)
 
+    def test_same_provider_retry_token_is_monotonic_across_success(self) -> None:
+        self.assertTrue(self.state.can_retry_same("chainnode"))
+        self.state.consume_same_provider_retry("chainnode")
+        self.state.record_chat_success("chainnode")
+
+        self.assertFalse(self.state.can_retry_same("chainnode"))
+
     def test_provider_blocks_after_consecutive_limit(self) -> None:
         self.state.record_transport_failure(
             "chainnode", transport_error("read_timeout")

@@ -250,14 +250,14 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PORTABLE-EVIDENCE", repr(bai.calls[0][0]))
         self.assertIn("PORTABLE-EVIDENCE", repr(chainnode.calls[-1][0]))
 
-    async def test_tool_chat_success_resets_consecutive_for_later_transport_failure(self) -> None:
+    async def test_tool_chat_success_does_not_refund_same_provider_retry(self) -> None:
         provider = ScriptedProvider(
             "bai",
             [
                 _transport_error("connect_timeout"),
                 _tool_call(),
                 _transport_error("read_timeout"),
-                ChatResponse(content="final answer"),
+                ChatResponse(content="must not be reached"),
             ],
         )
         router = AIProviderRouter([provider], text_provider_order=("bai",))
@@ -268,11 +268,11 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             tool_invocations += 1
             return "TOOL-EVIDENCE"
 
-        result = await router.complete(_messages(), [fetch_url_tool()], execute)
+        with self.assertRaises(AllProvidersFailed):
+            await router.complete(_messages(), [fetch_url_tool()], execute)
 
-        self.assertEqual(result.content, "final answer")
         self.assertEqual(tool_invocations, 1)
-        self.assertEqual(len(provider.calls), 4)
+        self.assertEqual(len(provider.calls), 3)
 
     async def test_provider_cumulative_budget_survives_tool_chat_success(self) -> None:
         provider = ScriptedProvider(
