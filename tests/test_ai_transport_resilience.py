@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import httpx
 
+from app.ai import base as ai_base
 from app.ai.base import OpenAICompatProvider, ProviderError
 from app.config import Settings
 
@@ -31,94 +32,66 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settings.bai_request_timeout_sec, 60.0)
         self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
 
-    async def test_empty_read_timeout_reports_type_and_configured_phase_timeout(self) -> None:
-        attempts = 0
-
-        def fail(request: httpx.Request) -> httpx.Response:
-            nonlocal attempts
-            attempts += 1
-            raise httpx.ReadTimeout("", request=request)
-
-        provider = _provider(timeout=30.0)
-        await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://example.test/v1/",
-            timeout=30.0,
-            transport=httpx.MockTransport(fail),
+    async def test_connect_error_is_classified_without_adapter_retry(self) -> None:
+        message = await self._assert_transport_failure(
+            httpx.ConnectError,
+            "connect_error",
+            timeout=60.0,
         )
-        try:
-            with self.assertRaises(ProviderError) as raised:
-                await provider.chat([{"role": "user", "content": "hello"}])
-        finally:
-            await provider.aclose()
+        self.assertIn("ConnectError", message)
 
-        message = str(raised.exception)
-        self.assertEqual(attempts, 1)
+    async def test_connect_timeout_is_classified_without_adapter_retry(self) -> None:
+        message = await self._assert_transport_failure(
+            httpx.ConnectTimeout,
+            "connect_timeout",
+            timeout=60.0,
+        )
+        self.assertIn("ConnectTimeout", message)
+        self.assertIn("connect_timeout=8s", message)
+
+    async def test_read_timeout_is_classified_without_adapter_retry(self) -> None:
+        message = await self._assert_transport_failure(
+            httpx.ReadTimeout,
+            "read_timeout",
+            timeout=30.0,
+        )
         self.assertIn("ReadTimeout", message)
         self.assertIn("read_timeout=30s", message)
         self.assertNotIn("lỗi mạng ()", message)
 
-    async def test_connect_timeout_fails_fast_before_router_fallback(self) -> None:
-        attempts = 0
-
-        def fail(request: httpx.Request) -> httpx.Response:
-            nonlocal attempts
-            attempts += 1
-            raise httpx.ConnectTimeout("", request=request)
-
-        provider = _provider(timeout=60.0)
-        await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://example.test/v1/",
-            timeout=30.0,
-            transport=httpx.MockTransport(fail),
+    async def test_write_timeout_is_classified_without_adapter_retry(self) -> None:
+        message = await self._assert_transport_failure(
+            httpx.WriteTimeout,
+            "write_timeout",
+            timeout=60.0,
         )
-        try:
-            with self.assertRaises(ProviderError) as raised:
-                await provider.chat([{"role": "user", "content": "hello"}])
-        finally:
-            await provider.aclose()
-
-        message = str(raised.exception)
-        self.assertEqual(attempts, 1)
-        self.assertIn("ConnectTimeout", message)
-        self.assertIn("connect_timeout=8s", message)
-
-    async def test_write_timeout_reports_fixed_phase_timeout_and_fails_fast(self) -> None:
-        attempts = 0
-
-        def fail(request: httpx.Request) -> httpx.Response:
-            nonlocal attempts
-            attempts += 1
-            raise httpx.WriteTimeout("", request=request)
-
-        provider = _provider(timeout=60.0)
-        await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://example.test/v1/",
-            timeout=30.0,
-            transport=httpx.MockTransport(fail),
-        )
-        try:
-            with self.assertRaises(ProviderError) as raised:
-                await provider.chat([{"role": "user", "content": "hello"}])
-        finally:
-            await provider.aclose()
-
-        message = str(raised.exception)
-        self.assertEqual(attempts, 1)
         self.assertIn("WriteTimeout", message)
         self.assertIn("write_timeout=20s", message)
 
-    async def test_pool_timeout_reports_fixed_phase_timeout_and_fails_fast(self) -> None:
+    async def test_pool_timeout_is_classified_without_adapter_retry(self) -> None:
+        message = await self._assert_transport_failure(
+            httpx.PoolTimeout,
+            "pool_timeout",
+            timeout=60.0,
+        )
+        self.assertIn("PoolTimeout", message)
+        self.assertIn("pool_timeout=5s", message)
+
+    async def _assert_transport_failure(
+        self,
+        error_type: type[httpx.HTTPError],
+        expected_kind: str,
+        *,
+        timeout: float,
+    ) -> str:
         attempts = 0
 
         def fail(request: httpx.Request) -> httpx.Response:
             nonlocal attempts
             attempts += 1
-            raise httpx.PoolTimeout("", request=request)
+            raise error_type("", request=request)
 
-        provider = _provider(timeout=60.0)
+        provider = _provider(timeout=timeout)
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://example.test/v1/",
@@ -131,43 +104,12 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        message = str(raised.exception)
         self.assertEqual(attempts, 1)
-        self.assertIn("PoolTimeout", message)
-        self.assertIn("pool_timeout=5s", message)
-
-    async def test_connect_error_retries_once_before_failing_over(self) -> None:
-        attempts = 0
-
-        def respond(request: httpx.Request) -> httpx.Response:
-            nonlocal attempts
-            attempts += 1
-            if attempts == 1:
-                raise httpx.ConnectError("temporary connect failure", request=request)
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"role": "assistant", "content": "recovered"}}
-                    ]
-                },
-                request=request,
-            )
-
-        provider = _provider(timeout=60.0)
-        await provider.aclose()
-        provider._client = httpx.AsyncClient(
-            base_url="https://example.test/v1/",
-            timeout=30.0,
-            transport=httpx.MockTransport(respond),
-        )
-        try:
-            response = await provider.chat([{"role": "user", "content": "hello"}])
-        finally:
-            await provider.aclose()
-
-        self.assertEqual(response.content, "recovered")
-        self.assertEqual(attempts, 2)
+        kind_type = getattr(ai_base, "TransportFailureKind", None)
+        self.assertIsNotNone(kind_type)
+        self.assertIsInstance(getattr(raised.exception, "transport_kind", None), kind_type)
+        self.assertEqual(raised.exception.transport_kind, expected_kind)
+        return str(raised.exception)
 
 
 def _provider(*, timeout: float) -> OpenAICompatProvider:
