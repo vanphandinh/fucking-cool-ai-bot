@@ -66,6 +66,43 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chainnode.calls), 1)
         self.assertEqual(len(bai.calls), 1)
 
+    async def test_read_timeout_wraps_to_previous_provider_and_recovers(self) -> None:
+        chainnode = ScriptedProvider(
+            "chainnode",
+            [
+                _transport_error("read_timeout"),
+                ChatResponse(content="recovered on wrap"),
+            ],
+        )
+        bai = ScriptedProvider("bai", [_transport_error("read_timeout")])
+        router = _router(chainnode, bai)
+
+        result = await router.complete(_messages(), None, noop_tool)
+
+        self.assertEqual(
+            result,
+            CompletionResult("recovered on wrap", "chainnode", ("bai", "chainnode")),
+        )
+        self.assertEqual(len(chainnode.calls), 2)
+        self.assertEqual(len(bai.calls), 1)
+
+    async def test_cyclic_read_timeouts_stop_after_bounded_failures(self) -> None:
+        chainnode = ScriptedProvider(
+            "chainnode",
+            [_transport_error("read_timeout"), _transport_error("read_timeout")],
+        )
+        bai = ScriptedProvider(
+            "bai",
+            [_transport_error("read_timeout"), _transport_error("read_timeout")],
+        )
+        router = _router(chainnode, bai)
+
+        with self.assertRaises(AllProvidersFailed):
+            await router.complete(_messages(), None, noop_tool)
+
+        self.assertEqual(len(chainnode.calls), 2)
+        self.assertEqual(len(bai.calls), 2)
+
     async def test_read_timeout_rechecks_fallback_health_at_failure_time(self) -> None:
         bai = ScriptedProvider("bai", [ChatResponse(content="must not be called")])
         chainnode = _FallbackDisablingProvider(
