@@ -241,16 +241,14 @@ class AIProviderRouter:
             if attempted:
                 fallbacks.append(provider.name)
             attempted.append(provider.name)
-            has_healthy_fallback = any(
-                _available(candidate) for candidate in candidates[index + 1 :]
-            )
+            fallback_candidates = tuple(candidates[index + 1 :])
             try:
                 text = await self._attempt_provider(
                     provider,
                     tools,
                     tool_executor,
                     state,
-                    has_healthy_fallback=has_healthy_fallback,
+                    fallback_candidates=fallback_candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -270,7 +268,7 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
-        has_healthy_fallback: bool,
+        fallback_candidates: tuple[AIProvider, ...],
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
             provider_messages = build_fresh_synthesis_messages(
@@ -305,7 +303,7 @@ class AIProviderRouter:
                     use_tools,
                     tool_executor,
                     state,
-                    has_healthy_fallback=has_healthy_fallback,
+                    fallback_candidates=fallback_candidates,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -331,11 +329,14 @@ class AIProviderRouter:
         tools: list[dict] | None,
         state: _RequestState,
         *,
-        has_healthy_fallback: bool,
+        fallback_candidates: tuple[AIProvider, ...],
     ) -> ChatResponse:
         try:
             return await provider.chat(messages, tools)
         except ProviderError as exc:
+            has_healthy_fallback = any(
+                _available(candidate) for candidate in fallback_candidates
+            )
             if not _should_retry_transport(
                 exc,
                 has_healthy_fallback=has_healthy_fallback,
@@ -360,7 +361,7 @@ class AIProviderRouter:
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
-        has_healthy_fallback: bool,
+        fallback_candidates: tuple[AIProvider, ...],
     ) -> str:
         active_tools = tools
         while True:
@@ -376,7 +377,7 @@ class AIProviderRouter:
                 messages,
                 active_tools,
                 state,
-                has_healthy_fallback=has_healthy_fallback,
+                fallback_candidates=fallback_candidates,
             )
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
