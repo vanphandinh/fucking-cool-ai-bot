@@ -176,6 +176,15 @@ class AIProviderRouter:
         vision_provider_order: tuple[str, ...] | None = None,
         retry_policy: ProviderRetryPolicy | None = None,
     ) -> None:
+        provider_slots: set[tuple[str, str]] = set()
+        for provider in providers:
+            slot = (provider.name, _capabilities(provider).route)
+            if slot in provider_slots:
+                raise ValueError(
+                    f"duplicate provider slot: name={slot[0]!r}, route={slot[1]!r}"
+                )
+            provider_slots.add(slot)
+
         self.providers = providers
         default_order = tuple(dict.fromkeys(provider.name for provider in providers))
         self.text_provider_order = (
