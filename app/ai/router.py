@@ -86,6 +86,13 @@ def _available(provider: object) -> bool:
     return health is None or health.available()
 
 
+def _health_generation(provider: object) -> int | None:
+    health = getattr(provider, "health", None)
+    if health is None:
+        return None
+    return health.generation
+
+
 def _record_success(provider: object) -> None:
     health = getattr(provider, "health", None)
     if health is not None:
@@ -108,8 +115,18 @@ def _flush_pending_health_error(provider: AIProvider, state: _RequestState) -> N
     error = slot.pending_health_error
     if error is None:
         return
-    _record_error(provider, error)
+    health = getattr(provider, "health", None)
+    generation = slot.pending_health_generation
+    if health is not None and generation is not None:
+        health.record_deferred_error(
+            str(error),
+            expected_generation=generation,
+            status_code=error.status_code,
+            retry_after=error.retry_after,
+            transient=error.transient,
+        )
     slot.pending_health_error = None
+    slot.pending_health_generation = None
 
 
 def _flush_all_pending_health_errors(
@@ -369,7 +386,11 @@ class AIProviderRouter:
                 if kind is None or not is_cyclic_retryable_transport(exc):
                     raise
 
-                state.retry.record_transport_failure(provider.name, exc)
+                state.retry.record_transport_failure(
+                    provider.name,
+                    exc,
+                    health_generation=_health_generation(provider),
+                )
                 if not state.retry.can_attempt(provider.name):
                     raise
 

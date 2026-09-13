@@ -20,6 +20,7 @@ class ProviderAttemptState:
     consecutive_transport_failures: int = 0
     total_transport_failures: int = 0
     pending_health_error: ProviderError | None = None
+    pending_health_generation: int | None = None
     blocked_for_request: bool = False
     same_provider_retry_consumed: bool = False
 
@@ -39,10 +40,18 @@ class RequestRetryState:
     def provider_state(self, provider_name: str) -> ProviderAttemptState:
         return self.providers.setdefault(provider_name, ProviderAttemptState())
 
-    def record_transport_failure(self, provider_name: str, error: ProviderError) -> None:
+    def record_transport_failure(
+        self,
+        provider_name: str,
+        error: ProviderError,
+        *,
+        health_generation: int | None = None,
+    ) -> None:
         slot = self.provider_state(provider_name)
         slot.consecutive_transport_failures += 1
         slot.total_transport_failures += 1
+        if slot.pending_health_error is None:
+            slot.pending_health_generation = health_generation
         slot.pending_health_error = error
         self.total_transport_failures += 1
         if (
@@ -55,6 +64,7 @@ class RequestRetryState:
         slot = self.provider_state(provider_name)
         slot.consecutive_transport_failures = 0
         slot.pending_health_error = None
+        slot.pending_health_generation = None
 
     def block_provider(self, provider_name: str) -> None:
         self.provider_state(provider_name).blocked_for_request = True
