@@ -235,11 +235,14 @@ class AIProviderRouter:
         last_error: ProviderError | None = None
         cursor = 0
         previous_provider_name: str | None = None
+        exclude_next_provider_name: str | None = None
 
         while not state.retry.request_transport_budget_exhausted():
             selected: tuple[int, AIProvider] | None = None
             for index in _cyclic_indices(len(candidates), cursor):
                 provider = candidates[index]
+                if provider.name == exclude_next_provider_name:
+                    continue
                 if _candidate_eligible(provider, state):
                     selected = (index, provider)
                     break
@@ -247,6 +250,7 @@ class AIProviderRouter:
                 break
 
             index, provider = selected
+            exclude_next_provider_name = None
             if (
                 previous_provider_name is not None
                 and provider.name != previous_provider_name
@@ -265,6 +269,7 @@ class AIProviderRouter:
             except ProviderError as exc:
                 last_error = exc
                 if is_cyclic_retryable_transport(exc):
+                    exclude_next_provider_name = provider.name
                     if not state.retry.can_attempt(provider.name):
                         _flush_pending_health_error(provider, state)
                 else:
@@ -375,6 +380,8 @@ class AIProviderRouter:
                     and _candidate_eligible(candidate, state)
                 ]
                 if kind == TransportFailureKind.READ_TIMEOUT and alternatives:
+                    raise
+                if not state.retry.consume_same_provider_retry(provider.name):
                     raise
 
                 logger.warning(

@@ -21,6 +21,7 @@ class ProviderAttemptState:
     total_transport_failures: int = 0
     pending_health_error: ProviderError | None = None
     blocked_for_request: bool = False
+    same_provider_retry_consumed: bool = False
 
 
 class TransportRetryAction(str, Enum):
@@ -70,6 +71,16 @@ class RequestRetryState:
             and slot.total_transport_failures < self.policy.max_failures_per_provider
             and slot.consecutive_transport_failures < self.policy.max_consecutive_failures
         )
+
+    def can_retry_same(self, provider_name: str) -> bool:
+        slot = self.provider_state(provider_name)
+        return self.can_attempt(provider_name) and not slot.same_provider_retry_consumed
+
+    def consume_same_provider_retry(self, provider_name: str) -> bool:
+        if not self.can_retry_same(provider_name):
+            return False
+        self.provider_state(provider_name).same_provider_retry_consumed = True
+        return True
 
 
 def transport_kind(error: ProviderError) -> TransportFailureKind | None:
