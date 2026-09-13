@@ -34,14 +34,17 @@ CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
 TEXT_PROVIDER_ORDER=bai
 ```
 
-`CHAINNODE_REQUEST_TIMEOUT_SEC` controls the Chainnode **read timeout**. The
-shared OpenAI-compatible transport uses `connect=8s`, `write=20s`, and
-`pool=5s`. This lets slow non-streaming model generation wait longer for data
-without spending the same 60 seconds establishing a dead connection.
+`CHAINNODE_REQUEST_TIMEOUT_SEC` controls the Chainnode per-HTTP-attempt read timeout.
+The shared OpenAI-compatible transport uses `connect=8s`, `write=20s`, and
+`pool=5s`. `QUESTION_TIMEOUT_SEC` remains the outer hard deadline for the whole
+end-user question, including tools, retry and fallback. This lets slow
+non-streaming model generation wait longer for data without spending the same
+60 seconds establishing a dead connection.
 
 `scripts/sync_env.py` preserves existing values. If an upgraded deployment
-already has `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0`, change it to `60.0` explicitly
-to adopt the new read timeout.
+already has `CHAINNODE_REQUEST_TIMEOUT_SEC=30.0`, it stays `30.0` until changed
+explicitly. Do not change production timeout values as part of a retry-policy
+deploy.
 
 The API key must come from the environment. Do not commit it, log it, put it in
 GitHub Actions, or pass it on the command line.
@@ -56,6 +59,35 @@ TEXT_PROVIDER_ORDER=chainnode,bai
 
 Keep the existing vision route unchanged. Chainnode does not advertise vision
 support in this provider slot.
+
+## Transport retry policy
+
+The OpenAI-compatible adapter performs exactly one HTTP attempt and classifies
+transport failures. The router owns the bounded same-provider retry policy:
+
+| Failure | Same-provider retry |
+|---|---|
+| `ConnectError` | once |
+| `ConnectTimeout` | once |
+| `ReadTimeout` | once only when no healthy ordered fallback remains |
+| `WriteTimeout` | never |
+| `PoolTimeout` | never |
+| HTTP `401/403/429/4xx/5xx` | no new retry; existing policy unchanged |
+
+A provider name can consume at most **one same-provider retry per end-user
+request**. The budget is request-scoped, so a ConnectTimeout retry used before a
+tool call prevents a second retry after a later ReadTimeout in the same request.
+
+With `TEXT_PROVIDER_ORDER=chainnode,bai`, a Chainnode ReadTimeout normally falls
+back to healthy B.AI immediately rather than adding another Chainnode read wait.
+ConnectError/ConnectTimeout still get their one local retry first. A ReadTimeout
+on the final healthy provider can use the one retry if that provider has not
+already consumed it.
+
+Retry wraps the exact failing model HTTP continuation. Completed tool execution,
+portable messages, successful tool outputs and the request-wide tool budget are
+not reset or rerun. Provider health records one failure only after the bounded
+local retry is unavailable or exhausted; a successful retry records no failure.
 
 ## Wire contract
 
@@ -110,6 +142,11 @@ After enabling Chainnode, verify at least these behaviors through the real bot:
 3. A direct `https://example.com/` request selects `fetch_url`.
 4. An image-reference request selects `image_search`.
 
+For a retry-policy rollout, keep current production timeout values unchanged and
+observe these log patterns separately: ConnectTimeout -> retry -> success,
+ConnectTimeout -> retry -> failure -> fallback, and final-provider ReadTimeout
+-> retry -> success/failure.
+
 Watch `image_search` most closely because it was the weakest routing scenario in
 the final qualification, although the model still cleared the production gate.
 
@@ -121,7 +158,8 @@ Chainnode is optional. To return to the previous production route, restore:
 TEXT_PROVIDER_ORDER=bai
 ```
 
-and restart the bot. No code change is required.
+To rollback only the retry implementation, revert the retry PR or deploy the
+previous application commit. No timeout change is required.
 
 ## Benchmark artifacts
 

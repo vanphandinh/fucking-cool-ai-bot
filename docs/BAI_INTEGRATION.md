@@ -39,7 +39,7 @@ VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-`BAI_REQUEST_TIMEOUT_SEC` điều khiển read timeout của B.AI. Shared OpenAI-compatible transport tách các phase còn lại thành `connect=8s`, `write=20s`, `pool=5s`. Nếu deployment cũ đang ghi rõ `BAI_REQUEST_TIMEOUT_SEC=30.0`, `scripts/sync_env.py` sẽ giữ nguyên value đó; sửa thành `60.0` để áp dụng default mới.
+`BAI_REQUEST_TIMEOUT_SEC` là **per-HTTP-attempt read timeout** của B.AI. Shared OpenAI-compatible transport tách các phase còn lại thành `connect=8s`, `write=20s`, `pool=5s`. `QUESTION_TIMEOUT_SEC` vẫn là outer hard deadline cho toàn bộ end-user question, bao gồm tools, retry và fallback. Nếu deployment hiện đang ghi rõ `BAI_REQUEST_TIMEOUT_SEC=30.0`, `scripts/sync_env.py` giữ nguyên value đó; không thay timeout production cùng lúc với rollout retry policy.
 
 `TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` là config generic của framework. Default orders đều là `bai`. Text registry hiện có `bai` và optional `chainnode`; vision hiện chỉ có B.AI.
 
@@ -72,7 +72,7 @@ Hard request-wide safety limits:
 - tối đa 2 tool calls chạy song song;
 - `MAX_TOOL_ROUNDS` điều khiển discovery rounds.
 
-Tool budget không reset khi router chuyển provider.
+Tool budget không reset khi router chuyển provider hoặc khi cùng provider thực hiện bounded transport retry.
 
 Assistant metadata do B.AI trả (`reasoning_details`, `reasoning`, `reasoning_content`) chỉ được replay trong **cùng provider attempt** khi cần cho continuation. Portable cross-provider state loại bỏ metadata này. `ToolCall.extra_content` provider-specific cũng không được chuyển sang provider khác.
 
@@ -96,6 +96,25 @@ khi request không có tools.
 
 Nếu B.AI vẫn trả tool call sau khi tools đã tắt, tool đó không thực thi và B.AI attempt fail với non-transient `ProviderError`. Với default B.AI-only text order, request kết thúc sau failure đó. Nếu Chainnode hoặc provider text khác được cấu hình sau B.AI trong order, router có thể thử candidate tiếp theo bằng **cùng closed tool budget** và generic Fresh Synthesis context.
 
+## Bounded transport retry
+
+Shared `OpenAICompatProvider` chỉ thực hiện **một HTTP attempt** mỗi lần `chat()` được gọi và phân loại transport failure. Router sở hữu retry policy request-scoped:
+
+| Failure | Same-provider retry |
+|---|---|
+| `ConnectError` | 1 lần |
+| `ConnectTimeout` | 1 lần |
+| `ReadTimeout` | 1 lần chỉ khi không còn healthy ordered fallback |
+| `WriteTimeout` | không retry |
+| `PoolTimeout` | không retry |
+| HTTP `401/403/429/4xx/5xx` | giữ policy hiện tại, không thêm retry |
+
+Mỗi provider name chỉ được consume tối đa **một same-provider retry trong toàn bộ một end-user request**. Ví dụ provider đã retry ConnectTimeout rồi thì một ReadTimeout ở model continuation sau tool call không được retry lần thứ hai.
+
+Retry diễn ra tại đúng model HTTP continuation bị lỗi, với cùng `messages` và active tool schema. Router không restart provider flow, không chạy lại tool đã thành công và không reset `_ToolBudget`, portable messages hay successful tool outputs.
+
+ReadTimeout ưu tiên latency của ordered fallback: nếu B.AI còn một healthy provider phía sau trong route order thì fallback ngay; nếu B.AI là healthy provider cuối cùng thì có thể retry một lần nếu retry budget của B.AI chưa được dùng.
+
 ## Health và ordered fallback
 
 B.AI slot health behavior:
@@ -108,7 +127,9 @@ B.AI slot health behavior:
 
 Text và vision slots có health state riêng.
 
-Generic router chỉ fallback khi provider adapter phát `ProviderError` sau local recovery. Lỗi lập trình/runtime arbitrary thoát khỏi provider contract không bị che bằng fallback sang provider khác.
+Transport failure chỉ được record vào provider health sau khi bounded same-provider retry policy đã exhausted hoặc không cho phép retry. Nếu attempt đầu ConnectTimeout rồi retry thành công, health không tăng failure count và không cooldown. Nếu retry cũng fail, logical provider attempt chỉ tạo **một** health failure trước khi fallback.
+
+Generic router fallback khi provider-local recovery/retry đã kết thúc bằng `ProviderError`. Lỗi lập trình/runtime arbitrary thoát khỏi provider contract không bị che bằng fallback sang provider khác.
 
 ## Thêm provider khác bên cạnh B.AI
 
@@ -140,6 +161,9 @@ Probe không in Authorization header. Experimental reasoning flags chỉ dùng �
 3. Nếu dùng vision, probe đúng một ảnh.
 4. Không nâng B.AI `max_images=1` nếu chưa có live multi-image compatibility test riêng.
 5. Xác nhận `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` chỉ chứa provider đã register.
-6. Rebuild/restart bot.
+6. Deploy retry code **không đổi timeout production cùng lúc**.
 7. Smoke text, web-search, direct URL, one-image vision và `/status`.
-8. Với default order, kiểm tra B.AI failure path fail sạch; nếu Chainnode được bật cùng B.AI, kiểm tra controlled fallback giữa hai text providers.
+8. Quan sát `ConnectTimeout -> retry -> success`, `ConnectTimeout -> retry -> failure -> fallback`, và final-provider `ReadTimeout -> retry -> success/failure`.
+9. Với default order, kiểm tra B.AI failure path fail sạch; nếu Chainnode được bật cùng B.AI, kiểm tra controlled fallback giữa hai text providers.
+
+Rollback retry code bằng revert PR hoặc deploy commit trước; không cần đổi timeout để rollback.
