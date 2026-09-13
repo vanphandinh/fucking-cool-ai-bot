@@ -103,6 +103,27 @@ def _record_error(provider: object, error: ProviderError) -> None:
         )
 
 
+def _flush_pending_health_error(provider: AIProvider, state: _RequestState) -> None:
+    slot = state.retry.provider_state(provider.name)
+    error = slot.pending_health_error
+    if error is None:
+        return
+    _record_error(provider, error)
+    slot.pending_health_error = None
+
+
+def _flush_all_pending_health_errors(
+    candidates: tuple[AIProvider, ...],
+    state: _RequestState,
+    *,
+    exclude: str | None = None,
+) -> None:
+    for provider in candidates:
+        if provider.name == exclude:
+            continue
+        _flush_pending_health_error(provider, state)
+
+
 def _candidate_eligible(provider: AIProvider, state: _RequestState) -> bool:
     return _available(provider) and state.retry.can_attempt(provider.name)
 
@@ -243,16 +264,25 @@ class AIProviderRouter:
                 )
             except ProviderError as exc:
                 last_error = exc
-                if not is_cyclic_retryable_transport(exc):
+                if is_cyclic_retryable_transport(exc):
+                    if not state.retry.can_attempt(provider.name):
+                        _flush_pending_health_error(provider, state)
+                else:
                     state.retry.block_provider(provider.name)
-                _record_error(provider, exc)
+                    _record_error(provider, exc)
                 logger.warning("AI provider %s lỗi: %s", provider.name, exc)
                 cursor = (index + 1) % len(candidates)
                 continue
 
             _record_success(provider)
+            _flush_all_pending_health_errors(
+                candidates,
+                state,
+                exclude=provider.name,
+            )
             return CompletionResult(text, provider.name, tuple(fallbacks))
 
+        _flush_all_pending_health_errors(candidates, state)
         message = str(last_error) if last_error else "Không có AI provider khả dụng"
         raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
 
