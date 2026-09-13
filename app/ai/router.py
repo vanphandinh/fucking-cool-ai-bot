@@ -511,9 +511,15 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     vision_order = tuple(settings.vision_provider_order_list)
     registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
     providers = build_registered_providers(settings, registered_names)
+    retry_policy = ProviderRetryPolicy(
+        max_consecutive_failures=settings.provider_retry_max_consecutive_failures,
+        max_failures_per_provider=settings.provider_retry_max_failures_per_provider,
+        max_failures_per_request=settings.provider_retry_max_failures_per_request,
+    )
     return AIProviderRouter(
         providers,
         max_tool_rounds=settings.max_tool_rounds,
         text_provider_order=text_order,
         vision_provider_order=vision_order,
+        retry_policy=retry_policy,
     )

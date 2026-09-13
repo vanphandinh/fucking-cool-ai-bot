@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
     )
     text_provider_order: str = "bai"
+    provider_retry_max_consecutive_failures: int = Field(default=2, ge=1, le=5)
+    provider_retry_max_failures_per_provider: int = Field(default=3, ge=1, le=10)
+    provider_retry_max_failures_per_request: int = Field(default=5, ge=1, le=20)
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
@@ -151,6 +154,23 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CHAINNODE_TEXT_MODEL là bắt buộc khi Chainnode được bật "
                 "trong TEXT_PROVIDER_ORDER"
+            )
+
+        if (
+            self.provider_retry_max_failures_per_provider
+            < self.provider_retry_max_consecutive_failures
+        ):
+            raise ValueError(
+                "PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER must be >= "
+                "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES"
+            )
+        if (
+            self.provider_retry_max_failures_per_request
+            < self.provider_retry_max_consecutive_failures
+        ):
+            raise ValueError(
+                "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST must be >= "
+                "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES"
             )
 
         total = self.search_total_timeout_sec
