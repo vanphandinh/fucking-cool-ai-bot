@@ -41,6 +41,22 @@ class SearXNGConfigTests(unittest.TestCase):
         self.assertIn("SearxEngineAccessDenied: 86400", text)
         self.assertIn("SearxEngineCaptcha: 86400", text)
 
+    def test_wikidata_is_removed_to_avoid_late_timeout_results(self):
+        removed = {
+            line.strip()[2:]
+            for line in self._settings_lines()
+            if line.strip().startswith("- ")
+        }
+        self.assertIn("wikidata", removed)
+
+    def test_default_searxng_image_is_pinned(self):
+        compose = (Path(__file__).parents[1] / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertNotIn("searxng/searxng:latest", compose)
+        self.assertRegex(
+            compose,
+            r"ghcr\.io/searxng/searxng:[0-9]{4}\.[0-9]+\.[0-9]+-[0-9a-f]{7,}",
+        )
+
     def test_google_cse_web_and_image_timeout_are_overridden(self):
         text = self._settings_text()
         self.assertIn("- name: google cse\n    timeout: 5.0", text)
