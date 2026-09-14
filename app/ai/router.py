@@ -48,11 +48,7 @@ class _ToolBudget:
     closed: bool = False
 
     def exhausted(self, max_rounds: int) -> bool:
-        return (
-            self.closed
-            or self.rounds >= max_rounds
-            or self.calls >= _MAX_TOOL_CALLS_TOTAL
-        )
+        return self.closed or self.rounds >= max_rounds or self.calls >= _MAX_TOOL_CALLS_TOTAL
 
     def can_execute(self, requested_calls: int, max_rounds: int) -> bool:
         return (
@@ -153,17 +149,28 @@ def _cyclic_indices(size: int, start: int):
 async def _execute_tool_batch(
     tool_calls: list[ToolCall],
     tool_executor: ToolExecutor,
+    *,
+    operations=None,
+    retain: Callable[[int, str], None] | None = None,
 ) -> list[str]:
     semaphore = asyncio.Semaphore(_MAX_PARALLEL_TOOL_CALLS)
 
-    async def run(tc: ToolCall) -> str:
+    async def run(index: int, tc: ToolCall) -> str:
         async with semaphore:
+            if operations is not None:
+                await operations.control.checkpoint()
             try:
-                return await tool_executor(tc.name, tc.arguments)
+                output = await tool_executor(tc.name, tc.arguments)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:  # noqa: BLE001
-                return f"Lỗi khi chạy tool '{tc.name}': {exc}"
+                output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
+            normalized = str(output)[:6000]
+            if retain is not None:
+                retain(index, normalized)
+            return normalized
 
-    return await asyncio.gather(*(run(tc) for tc in tool_calls))
+    return await asyncio.gather(*(run(index, tc) for index, tc in enumerate(tool_calls)))
 
 
 class AIProviderRouter:
@@ -187,12 +194,8 @@ class AIProviderRouter:
 
         self.providers = providers
         default_order = tuple(dict.fromkeys(provider.name for provider in providers))
-        self.text_provider_order = (
-            default_order if text_provider_order is None else text_provider_order
-        )
-        self.vision_provider_order = (
-            default_order if vision_provider_order is None else vision_provider_order
-        )
+        self.text_provider_order = default_order if text_provider_order is None else text_provider_order
+        self.vision_provider_order = default_order if vision_provider_order is None else vision_provider_order
         self.max_tool_rounds = max_tool_rounds
         self.retry_policy = retry_policy or ProviderRetryPolicy()
 
@@ -238,6 +241,7 @@ class AIProviderRouter:
         *,
         requires_vision: bool = False,
         image_count: int = 0,
+        operations=None,
     ) -> CompletionResult:
         candidates = tuple(
             self.capable_providers(
@@ -246,9 +250,7 @@ class AIProviderRouter:
             )
         )
         if not candidates:
-            raise NoCapableProvider(
-                "Không có AI provider nào phù hợp capability của request"
-            )
+            raise NoCapableProvider("Không có AI provider nào phù hợp capability của request")
 
         state = _RequestState(
             base_messages=deepcopy(messages),
@@ -277,10 +279,7 @@ class AIProviderRouter:
 
             index, provider = selected
             exclude_next_provider_name = None
-            if (
-                previous_provider_name is not None
-                and provider.name != previous_provider_name
-            ):
+            if previous_provider_name is not None and provider.name != previous_provider_name:
                 fallbacks.append(provider.name)
             previous_provider_name = provider.name
 
@@ -291,6 +290,7 @@ class AIProviderRouter:
                     tool_executor,
                     state,
                     candidates=candidates,
+                    operations=operations,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -306,11 +306,7 @@ class AIProviderRouter:
                 continue
 
             _record_success(provider)
-            _flush_all_pending_health_errors(
-                candidates,
-                state,
-                exclude=provider.name,
-            )
+            _flush_all_pending_health_errors(candidates, state, exclude=provider.name)
             return CompletionResult(text, provider.name, tuple(fallbacks))
 
         _flush_all_pending_health_errors(candidates, state)
@@ -325,12 +321,10 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
-            provider_messages = build_fresh_synthesis_messages(
-                state.base_messages,
-                state.tool_outputs,
-            )
+            provider_messages = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
         else:
             provider_messages = deepcopy(state.portable_messages)
 
@@ -360,6 +354,7 @@ class AIProviderRouter:
                     tool_executor,
                     state,
                     candidates=candidates,
+                    operations=operations,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -374,9 +369,7 @@ class AIProviderRouter:
 
         if last_error is not None:
             raise last_error
-        raise ProviderError(
-            f"{provider.name}: không thể hoàn tất provider-local recovery"
-        )
+        raise ProviderError(f"{provider.name}: không thể hoàn tất provider-local recovery")
 
     async def _chat_with_retry(
         self,
@@ -386,10 +379,25 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> ChatResponse:
         while True:
             try:
-                response = await provider.chat(messages, tools)
+                try:
+                    if operations is None:
+                        response = await provider.chat(messages, tools)
+                    else:
+                        response = await operations.run(
+                            f"AI {provider.name}",
+                            lambda: provider.chat(messages, tools),
+                            timeout_sec=operations.ai_timeout,
+                        )
+                except TimeoutError:
+                    raise ProviderError(
+                        f"{provider.name}: AI attempt timeout",
+                        transient=True,
+                        transport_kind=TransportFailureKind.READ_TIMEOUT,
+                    ) from None
             except ProviderError as exc:
                 kind = transport_kind(exc)
                 if kind is None or not is_cyclic_retryable_transport(exc):
@@ -406,8 +414,7 @@ class AIProviderRouter:
                 alternatives = [
                     candidate
                     for candidate in candidates
-                    if candidate.name != provider.name
-                    and _candidate_eligible(candidate, state)
+                    if candidate.name != provider.name and _candidate_eligible(candidate, state)
                 ]
                 if kind == TransportFailureKind.READ_TIMEOUT and alternatives:
                     raise
@@ -433,14 +440,12 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> str:
         active_tools = tools
         while True:
             if active_tools and state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
-                    state.tool_outputs,
-                )
+                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
                 active_tools = None
 
             resp = await self._chat_with_retry(
@@ -449,6 +454,7 @@ class AIProviderRouter:
                 active_tools,
                 state,
                 candidates=candidates,
+                operations=operations,
             )
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
@@ -464,39 +470,38 @@ class AIProviderRouter:
             requested_calls = len(resp.tool_calls)
             if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
                 state.budget.close()
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
-                    state.tool_outputs,
-                )
+                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
                 active_tools = None
                 continue
 
             state.budget.rounds += 1
             state.budget.calls += requested_calls
-            messages.append(
-                _assistant_tool_message(resp, include_provider_metadata=True)
-            )
-            state.portable_messages.append(
-                _assistant_tool_message(resp, include_provider_metadata=False)
-            )
+            messages.append(_assistant_tool_message(resp, include_provider_metadata=True))
+            state.portable_messages.append(_assistant_tool_message(resp, include_provider_metadata=False))
 
-            outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
+            base_index = len(state.tool_outputs)
+            state.tool_outputs.extend([""] * requested_calls)
+
+            def retain(index: int, output: str) -> None:
+                state.tool_outputs[base_index + index] = output
+
+            outputs = await _execute_tool_batch(
+                resp.tool_calls,
+                tool_executor,
+                operations=operations,
+                retain=retain,
+            )
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
-                normalized_output = str(output)[:6000]
-                state.tool_outputs.append(normalized_output)
                 tool_message = {
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": normalized_output,
+                    "content": output,
                 }
                 messages.append(deepcopy(tool_message))
                 state.portable_messages.append(tool_message)
 
             if state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
-                    state.tool_outputs,
-                )
+                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
                 active_tools = None
 
 
@@ -524,10 +529,7 @@ def _assistant_tool_message(
         "role": "assistant",
         "content": resp.content or "",
         "tool_calls": [
-            _tool_call_message(
-                tc,
-                include_provider_metadata=include_provider_metadata,
-            )
+            _tool_call_message(tc, include_provider_metadata=include_provider_metadata)
             for tc in resp.tool_calls
         ],
     }
