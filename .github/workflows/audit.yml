@@ -52,6 +52,12 @@ jobs:
           python -m unittest discover -s tests -p 'test_crawl4ai*.py' -v
           python -m unittest discover -s tests -p 'test_url_service.py' -v
           python -m unittest discover -s tests -p 'test_url_tool_integration.py' -v
+      - name: Targeted renewable job tests
+        run: |
+          python -m unittest discover -s tests -p 'test_job_*.py' -v
+          python -m unittest discover -s tests -p 'test_question_renewal_flow.py' -v
+          python -m unittest discover -s tests -p 'test_thread_work.py' -v
+          python -m unittest discover -s tests -p 'test_tool_url_dedupe.py' -v
       - name: Offline regression and integration tests
         run: |
           python tests/run_tests.py
