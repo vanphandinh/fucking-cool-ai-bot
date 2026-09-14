@@ -2,12 +2,12 @@ import asyncio
 import unittest
 
 from app.config import Settings
-from app.core.job_manager import JobManager, JobSubmission, JobCapacityError
+from app.core.job_manager import JobCapacityError, JobManager, JobSubmission
 
 
 class JobManagerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
-        manager = getattr(self, 'manager', None)
+        manager = getattr(self, "manager", None)
         if manager is not None:
             await manager.shutdown()
 
@@ -28,23 +28,23 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
             if record.submission.request_message_id == 1:
                 first_started.set()
                 await release_first.wait()
-                return 'A'
+                return "A"
             second_done.set()
-            return 'B'
+            return "B"
 
         self.manager = JobManager(settings, execute)
-        shared_history = [{'role': 'user', 'content': 'old'}]
+        shared_history = [{"role": "user", "content": "old"}]
         first = await self.manager.submit(
-            JobSubmission('a', None, 10, -100, None, 1, 101, shared_history)
+            JobSubmission("a", None, 10, -100, None, 1, 101, shared_history)
         )
         await first_started.wait()
-        shared_history.append({'role': 'assistant', 'content': 'later'})
+        shared_history.append({"role": "assistant", "content": "later"})
         second = await self.manager.submit(
-            JobSubmission('b', None, 11, -100, None, 2, 102, shared_history)
+            JobSubmission("b", None, 11, -100, None, 2, 102, shared_history)
         )
         await asyncio.wait_for(second_done.wait(), .2)
         await self.manager.wait(second)
-        self.assertEqual(seen_history[1], [{'role': 'user', 'content': 'old'}])
+        self.assertEqual(seen_history[1], [{"role": "user", "content": "old"}])
         self.assertEqual(len(seen_history[2]), 2)
         release_first.set()
         await self.manager.wait(first)
@@ -58,15 +58,15 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
 
         async def execute(record, operations):
             await release.wait()
-            return 'ok'
+            return "ok"
 
         self.manager = JobManager(settings, execute)
-        submission = JobSubmission('a', None, 10, -100, 7, 1, 101, [])
+        submission = JobSubmission("a", None, 10, -100, 7, 1, 101, [])
         first = await self.manager.submit(submission)
         duplicate = await self.manager.submit(submission)
         self.assertEqual(first, duplicate)
         with self.assertRaises(JobCapacityError):
-            await self.manager.submit(JobSubmission('b', None, 10, -100, 7, 2, 102, []))
+            await self.manager.submit(JobSubmission("b", None, 10, -100, 7, 2, 102, []))
         release.set()
         await self.manager.wait(first)
 
@@ -79,12 +79,15 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
             async def blocked():
                 entered.set()
                 await release.wait()
-                return 'x'
-            await operations.run('work', blocked, timeout_sec=10)
-            return 'answer'
+                return "x"
+
+            await operations.run("work", blocked, timeout_sec=10)
+            return "answer"
 
         self.manager = JobManager(settings, execute)
-        job_id = await self.manager.submit(JobSubmission('a', None, 10, -100, None, 1, 101, []))
+        job_id = await self.manager.submit(
+            JobSubmission("a", None, 10, -100, None, 1, 101, [])
+        )
         await entered.wait()
         record = self.manager.get(job_id)
         record.control.remaining = 0
@@ -92,15 +95,53 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         generation = record.control.generation
         self.assertEqual(
             await self.manager.renew(job_id, generation, 10, -100, 101),
-            'renewed',
+            "renewed",
         )
         self.assertEqual(
             await self.manager.renew(job_id, generation, 10, -100, 101),
-            'stale',
+            "stale",
         )
-        self.assertEqual(await self.manager.stop(job_id, 10, -100, 101), 'stopped')
+        self.assertEqual(await self.manager.stop(job_id, 10, -100, 101), "stopped")
         await self.manager.wait(job_id)
-        self.assertEqual(self.manager.snapshot(job_id).state, 'CANCELLED')
+        self.assertEqual(self.manager.snapshot(job_id).state, "CANCELLED")
+
+    async def test_admin_can_stop_but_cannot_renew_and_forged_target_is_rejected(self):
+        settings = Settings(admin_ids="99", question_renewal_interval_sec=1)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def execute(record, operations):
+            async def blocked():
+                entered.set()
+                await release.wait()
+                return "x"
+
+            await operations.run("work", blocked, timeout_sec=10)
+            return "answer"
+
+        self.manager = JobManager(settings, execute)
+        job_id = await self.manager.submit(
+            JobSubmission("a", None, 10, -100, None, 1, 101, [])
+        )
+        await entered.wait()
+        record = self.manager.get(job_id)
+        record.control.remaining = 0
+        self.assertTrue(await record.control.expire_if_due())
+        generation = record.control.generation
+
+        self.assertEqual(
+            await self.manager.renew(job_id, generation, 99, -100, 101),
+            "forbidden",
+        )
+        self.assertEqual(
+            await self.manager.stop(job_id, 10, -999, 101),
+            "forbidden",
+        )
+        self.assertEqual(
+            await self.manager.stop(job_id, 10, -100, 999),
+            "forbidden",
+        )
+        self.assertEqual(await self.manager.stop(job_id, 99, -100, 101), "stopped")
 
     async def test_shutdown_leaves_no_owned_tasks(self):
         settings = Settings()
@@ -111,7 +152,35 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
 
         self.manager = JobManager(settings, execute)
-        await self.manager.submit(JobSubmission('a', None, 10, -100, None, 1, 101, []))
+        await self.manager.submit(JobSubmission("a", None, 10, -100, None, 1, 101, []))
         await started.wait()
         await self.manager.shutdown()
+        self.assertEqual(self.manager.owned_task_count, 0)
+
+    async def test_shutdown_gives_delivery_a_bounded_grace_then_marks_interrupted(self):
+        settings = Settings()
+        delivering = asyncio.Event()
+        release_delivery = asyncio.Event()
+
+        async def execute(record, operations):
+            return "answer"
+
+        async def deliver(record, result):
+            delivering.set()
+            await release_delivery.wait()
+
+        self.manager = JobManager(
+            settings,
+            execute,
+            deliver,
+            delivery_shutdown_grace_sec=.01,
+        )
+        job_id = await self.manager.submit(
+            JobSubmission("a", None, 10, -100, None, 1, 101, [])
+        )
+        await delivering.wait()
+        await self.manager.shutdown()
+        snapshot = self.manager.snapshot(job_id)
+        self.assertEqual(snapshot.state, "FAILED")
+        self.assertIn("gián đoạn", snapshot.error)
         self.assertEqual(self.manager.owned_task_count, 0)
