@@ -189,7 +189,7 @@ class JobStatusPresenter:
                     replacement = await self.bot.send_message(
                         chat_id=snapshot.chat_id,
                         text=text,
-                        reply_markup=markup,
+                        reply_markup=None,
                         **kwargs,
                     )
                 except Exception:  # noqa: BLE001 - leave parked at next consent boundary
@@ -201,6 +201,21 @@ class JobStatusPresenter:
                 )
                 if not updated:
                     return
+                if markup is not None:
+                    try:
+                        await self.bot.edit_message_reply_markup(
+                            chat_id=snapshot.chat_id,
+                            message_id=replacement.message_id,
+                            reply_markup=markup,
+                        )
+                    except TelegramRetryAfter as retry:
+                        await asyncio.sleep(max(0.0, float(retry.retry_after)))
+                        if self._closing:
+                            return
+                        self.enqueue(job_id, force=True)
+                        return
+                    except Exception:  # noqa: BLE001 - later refresh may restore controls
+                        return
             except Exception:  # noqa: BLE001 - Telegram status failure is not AI failure
                 return
             state.last_text = text
