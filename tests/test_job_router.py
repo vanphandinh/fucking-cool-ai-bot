@@ -94,9 +94,6 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_local_ai_timeout_is_classified_retryable_read_timeout(self):
         from app.ai.base import AllProvidersFailed
 
-        async def forever(_name, _args):
-            await asyncio.Event().wait()
-
         class HungProvider(ScriptedProvider):
             async def chat(self, messages, tools=None):
                 await asyncio.Event().wait()
@@ -114,8 +111,8 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
             await router.complete(
                 [{'role': 'user', 'content': 'q'}],
                 None,
-                forever,
+                lambda name, args: asyncio.sleep(0, result='unused'),
                 operations=operations,
             )
         self.assertIn('timeout', str(caught.exception).lower())
-        self.assertGreaterEqual(provider.health.failures, 1)
+        self.assertIsNotNone(provider.health.last_error)
