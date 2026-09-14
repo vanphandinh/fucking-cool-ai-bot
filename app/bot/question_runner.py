@@ -262,6 +262,17 @@ async def submit_controlled_question(
             pass
         return None
 
+    record = manager.get(job_id)
+    if record is not None and record.submission.status_message_id != status.message_id:
+        # Telegram may redeliver the same update while the first submission is alive.
+        # Manager admission is idempotent; remove the extra status and do not count a
+        # second question or hold the duplicate Message via its prepare closure.
+        try:
+            await status.delete()
+        except Exception:  # noqa: BLE001 - duplicate cleanup is best effort
+            pass
+        return job_id
+
     stats.record_question()
     presenter.enqueue(job_id, force=True)
     return job_id
