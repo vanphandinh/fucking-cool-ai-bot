@@ -194,8 +194,12 @@ class AIProviderRouter:
 
         self.providers = providers
         default_order = tuple(dict.fromkeys(provider.name for provider in providers))
-        self.text_provider_order = default_order if text_provider_order is None else text_provider_order
-        self.vision_provider_order = default_order if vision_provider_order is None else vision_provider_order
+        self.text_provider_order = (
+            default_order if text_provider_order is None else text_provider_order
+        )
+        self.vision_provider_order = (
+            default_order if vision_provider_order is None else vision_provider_order
+        )
         self.max_tool_rounds = max_tool_rounds
         self.retry_policy = retry_policy or ProviderRetryPolicy()
 
@@ -324,7 +328,10 @@ class AIProviderRouter:
         operations=None,
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
-            provider_messages = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
+            provider_messages = build_fresh_synthesis_messages(
+                state.base_messages,
+                state.tool_outputs,
+            )
         else:
             provider_messages = deepcopy(state.portable_messages)
 
@@ -445,7 +452,10 @@ class AIProviderRouter:
         active_tools = tools
         while True:
             if active_tools and state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
+                )
                 active_tools = None
 
             resp = await self._chat_with_retry(
@@ -470,14 +480,19 @@ class AIProviderRouter:
             requested_calls = len(resp.tool_calls)
             if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
                 state.budget.close()
-                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
+                )
                 active_tools = None
                 continue
 
             state.budget.rounds += 1
             state.budget.calls += requested_calls
             messages.append(_assistant_tool_message(resp, include_provider_metadata=True))
-            state.portable_messages.append(_assistant_tool_message(resp, include_provider_metadata=False))
+            state.portable_messages.append(
+                _assistant_tool_message(resp, include_provider_metadata=False)
+            )
 
             base_index = len(state.tool_outputs)
             state.tool_outputs.extend([""] * requested_calls)
@@ -501,7 +516,10 @@ class AIProviderRouter:
                 state.portable_messages.append(tool_message)
 
             if state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(state.base_messages, state.tool_outputs)
+                messages[:] = build_fresh_synthesis_messages(
+                    state.base_messages,
+                    state.tool_outputs,
+                )
                 active_tools = None
 
 
