@@ -83,6 +83,36 @@ class _RetryReplacementBot(_ReplacementBot):
         return SimpleNamespace(message_id=202)
 
 
+class _MarkupRetryBot(_ReplacementBot):
+    def __init__(self, events):
+        super().__init__(events)
+        self.send_count = 0
+        self.markup_attempts = 0
+
+    async def edit_message_text(self, **kwargs):
+        if kwargs["message_id"] == 101:
+            raise TelegramBadRequest(
+                method=SimpleNamespace(),
+                message="Bad Request: message to edit not found",
+            )
+        self.events.append(
+            ("edit", kwargs["message_id"], kwargs.get("reply_markup"))
+        )
+
+    async def send_message(self, **kwargs):
+        self.send_count += 1
+        self.events.append(("send", kwargs.get("reply_markup")))
+        return SimpleNamespace(message_id=202)
+
+    async def edit_message_reply_markup(self, **kwargs):
+        self.markup_attempts += 1
+        self.events.append(
+            ("markup", kwargs["message_id"], kwargs.get("reply_markup"))
+        )
+        if self.markup_attempts == 1:
+            raise RuntimeError("temporary markup failure")
+
+
 class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _snapshot(*, state="RUNNING"):
@@ -160,6 +190,23 @@ class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
         markup_events = [event for event in events if event[0] == "markup"]
         self.assertEqual(len(markup_events), 1)
         self.assertIsNotNone(markup_events[0][2])
+
+    async def test_replacement_markup_failure_is_retried_after_ownership(self):
+        events = []
+        snapshot = self._snapshot(state="AWAITING_CONSENT")
+        manager = _ReplacementManager(snapshot, events)
+        bot = _MarkupRetryBot(events)
+        settings = Settings(_env_file=None)
+        presenter = JobStatusPresenter(bot, settings, manager)
+
+        await presenter.refresh(snapshot.job_id, force=True)
+        await presenter.refresh(snapshot.job_id, force=True)
+
+        self.assertEqual(bot.send_count, 1)
+        self.assertEqual(manager.snapshot(snapshot.job_id).status_message_id, 202)
+        edit_events = [event for event in events if event[0] == "edit"]
+        self.assertEqual(len(edit_events), 1)
+        self.assertIsNotNone(edit_events[0][2])
 
 
 if __name__ == "__main__":
