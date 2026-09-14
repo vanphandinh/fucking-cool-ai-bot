@@ -13,6 +13,7 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_paused_job_does_not_block_second_job_and_history_is_snapshot(self):
         settings = Settings(
+            _env_file=None,
             question_renewal_interval_sec=60,
             question_max_pending_jobs=4,
             question_max_jobs_per_user=2,
@@ -51,6 +52,7 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_caps_and_duplicate_submission_are_atomic(self):
         settings = Settings(
+            _env_file=None,
             question_max_pending_jobs=2,
             question_max_jobs_per_user=1,
         )
@@ -71,7 +73,11 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         await self.manager.wait(first)
 
     async def test_owner_renews_once_and_stop_cancels_owned_task(self):
-        settings = Settings(question_renewal_interval_sec=1)
+        settings = Settings(
+            _env_file=None,
+            question_renewal_interval_sec=1,
+            question_progress_interval_sec=.1,
+        )
         entered = asyncio.Event()
         release = asyncio.Event()
 
@@ -106,7 +112,12 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.snapshot(job_id).state, "CANCELLED")
 
     async def test_admin_can_stop_but_cannot_renew_and_forged_target_is_rejected(self):
-        settings = Settings(admin_ids="99", question_renewal_interval_sec=1)
+        settings = Settings(
+            _env_file=None,
+            admin_ids="99",
+            question_renewal_interval_sec=1,
+            question_progress_interval_sec=.1,
+        )
         entered = asyncio.Event()
         release = asyncio.Event()
 
@@ -144,7 +155,7 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.manager.stop(job_id, 99, -100, 101), "stopped")
 
     async def test_shutdown_leaves_no_owned_tasks(self):
-        settings = Settings()
+        settings = Settings(_env_file=None)
         started = asyncio.Event()
 
         async def execute(record, operations):
@@ -158,7 +169,7 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.owned_task_count, 0)
 
     async def test_shutdown_gives_delivery_a_bounded_grace_then_marks_interrupted(self):
-        settings = Settings()
+        settings = Settings(_env_file=None)
         delivering = asyncio.Event()
         release_delivery = asyncio.Event()
 
