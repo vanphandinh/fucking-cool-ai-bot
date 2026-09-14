@@ -337,6 +337,7 @@ class JobStatusPresenter:
             marker in text
             for marker in (
                 "message to edit not found",
+                "message to delete not found",
                 "message not found",
                 "message_id_invalid",
             )
