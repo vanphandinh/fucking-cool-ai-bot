@@ -187,7 +187,6 @@ class JobStatusPresenter:
             except TelegramBadRequest as exc:
                 if not self._is_missing_message(exc) or state.replacement_used:
                     return
-                state.replacement_used = True
                 kwargs = {}
                 if snapshot.topic_id is not None:
                     kwargs["message_thread_id"] = snapshot.topic_id
@@ -200,6 +199,7 @@ class JobStatusPresenter:
                     )
                 except Exception:  # noqa: BLE001 - leave parked at next consent boundary
                     return
+                state.replacement_used = True
                 updated = await self.manager.set_status_message_id(
                     job_id,
                     snapshot.status_message_id,
