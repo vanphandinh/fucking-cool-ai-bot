@@ -7,11 +7,3 @@ extend-exclude = [".venv", "venv", "build", "dist"]
 # Chuẩn repo: lỗi logic (F = pyflakes) + lỗi style cơ bản (E4/E7/E9) + độ dài dòng.
 # Các rule nâng cao (UP/BLE/DTZ/PIE...) cố ý KHÔNG bật để tránh nhiễu.
 select = ["E4", "E7", "E9", "E501", "F"]
-
-[tool.ruff.lint.per-file-ignores]
-# These files contain structured expressions/prompts where wrapping is handled in follow-up cleanup;
-# keep all logical lint rules active while CI exercises the behavioral changes.
-"app/ai/router.py" = ["E501"]
-"app/core/job_manager.py" = ["E501"]
-"app/core/orchestrator.py" = ["E501"]
-"app/search/router.py" = ["E501"]
