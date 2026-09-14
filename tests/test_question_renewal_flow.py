@@ -11,13 +11,15 @@ from app.core.orchestrator import Orchestrator
 
 class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
-        manager = getattr(self, 'manager', None)
+        manager = getattr(self, "manager", None)
         if manager is not None:
             await manager.shutdown()
 
     async def test_two_renewals_keep_same_job_and_do_not_replay_completed_steps(self):
         settings = Settings(
+            _env_file=None,
             question_renewal_interval_sec=1,
+            question_progress_interval_sec=.1,
             question_max_inflight_operations=1,
         )
         entered = [asyncio.Event() for _ in range(3)]
@@ -31,16 +33,16 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
                     calls[i] += 1
                     entered[i].set()
                     await release[i].wait()
-                    return f'evidence-{i}'
+                    return f"evidence-{i}"
 
                 evidence.append(
-                    await operations.run(f'step-{index}', step, timeout_sec=1)
+                    await operations.run(f"step-{index}", step, timeout_sec=1)
                 )
-            return '|'.join(evidence)
+            return "|".join(evidence)
 
         self.manager = JobManager(settings, execute)
         job_id = await self.manager.submit(
-            JobSubmission('q', None, 10, -100, 7, 1, 101, [])
+            JobSubmission("q", None, 10, -100, 7, 1, 101, [])
         )
         record = self.manager.get(job_id)
 
@@ -53,7 +55,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         generation1 = record.control.generation
         self.assertEqual(
             await self.manager.renew(job_id, generation1, 10, -100, 101),
-            'renewed',
+            "renewed",
         )
 
         await entered[1].wait()
@@ -65,14 +67,14 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         generation2 = record.control.generation
         self.assertEqual(
             await self.manager.renew(job_id, generation2, 10, -100, 101),
-            'renewed',
+            "renewed",
         )
 
         await entered[2].wait()
         release[2].set()
         await self.manager.wait(job_id)
         snapshot = self.manager.snapshot(job_id)
-        self.assertEqual(snapshot.state, 'COMPLETED')
+        self.assertEqual(snapshot.state, "COMPLETED")
         self.assertEqual(snapshot.renewals, 2)
         self.assertEqual(calls, [1, 1, 1])
         self.assertEqual(self.manager.owned_task_count, 1)  # monitor until shutdown
@@ -81,7 +83,11 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.manager = None
 
     async def test_orchestrator_url_cache_survives_expiry_without_refetch(self):
-        settings = Settings(question_renewal_interval_sec=1)
+        settings = Settings(
+            _env_file=None,
+            question_renewal_interval_sec=1,
+            question_progress_interval_sec=.1,
+        )
         control_holder = {}
 
         class FakeRouter:
@@ -95,14 +101,14 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
                 image_count=0,
                 operations=None,
             ):
-                first = await tool_executor('fetch_url', {'url': 'https://example.com'})
+                first = await tool_executor("fetch_url", {"url": "https://example.com"})
                 operations.control.remaining = 0
                 self.assert_expired = await operations.control.expire_if_due()
-                second = await tool_executor('fetch_url', {'url': 'https://example.com'})
-                control_holder['control'] = operations.control
+                second = await tool_executor("fetch_url", {"url": "https://example.com"})
+                control_holder["control"] = operations.control
                 self.first = first
                 self.second = second
-                return CompletionResult('answer', 'fake')
+                return CompletionResult("answer", "fake")
 
         fake_router = FakeRouter()
         orchestrator = Orchestrator(settings, fake_router)
@@ -113,19 +119,19 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         operations = OperationRunner(control, asyncio.Semaphore(1), lambda event: None)
         read_result = SimpleNamespace(
             ok=True,
-            source_url='https://example.com',
-            text='evidence',
+            source_url="https://example.com",
+            text="evidence",
         )
         read_mock = AsyncMock(return_value=read_result)
-        with patch('app.core.orchestrator.url_service.read_url', read_mock):
-            answer = await orchestrator.ask('q', operations=operations)
+        with patch("app.core.orchestrator.url_service.read_url", read_mock):
+            answer = await orchestrator.ask("q", operations=operations)
 
         self.assertTrue(fake_router.assert_expired)
-        self.assertEqual(answer.text, 'answer')
+        self.assertEqual(answer.text, "answer")
         self.assertEqual(fake_router.first, fake_router.second)
         self.assertEqual(read_mock.await_count, 1)
-        self.assertEqual(control_holder['control'].state, 'AWAITING_CONSENT')
+        self.assertEqual(control_holder["control"].state, "AWAITING_CONSENT")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
