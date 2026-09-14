@@ -65,6 +65,7 @@ class JobRecord:
     result: Any = None
     error: str | None = None
     delivered: bool = False
+    delivery_committed: bool = False
     events: list[Any] = field(default_factory=list)
 
 
@@ -224,9 +225,14 @@ class JobManager:
             await self._cancel_record(record)
         except asyncio.CancelledError:
             if record.control.state == "DELIVERING":
-                record.error = "Tác vụ bị gián đoạn khi bot dừng."
-                await record.control.finish("FAILED")
-                self._emit(record, ("state", "FAILED"))
+                if record.delivery_committed:
+                    record.delivered = True
+                    await record.control.finish("COMPLETED")
+                    self._emit(record, ("state", "COMPLETED"))
+                else:
+                    record.error = "Tác vụ bị gián đoạn khi bot dừng."
+                    await record.control.finish("FAILED")
+                    self._emit(record, ("state", "FAILED"))
             else:
                 await self._cancel_record(record)
         except UserFacingJobError as exc:
