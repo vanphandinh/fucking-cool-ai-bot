@@ -90,6 +90,8 @@ class _PresenterState:
     last_text: str | None = None
     last_edit: float = 0.0
     replacement_used: bool = False
+    refresh_pending: bool = False
+    force_pending: bool = False
 
 
 class JobStatusPresenter:
@@ -124,29 +126,33 @@ class JobStatusPresenter:
     def enqueue(self, job_id: str, *, force: bool = False) -> None:
         if self._closing:
             return
+        state = self._states.setdefault(job_id, _PresenterState())
+        state.refresh_pending = True
+        state.force_pending = state.force_pending or force
         existing = self._scheduled.get(job_id)
         if existing is not None and not existing.done():
-            if force:
-                existing.cancel()
-            else:
-                return
+            return
         task = asyncio.create_task(
-            self._refresh_later(job_id, force=force),
+            self._refresh_later(job_id),
             name=f"job-status:{job_id}",
         )
         self._scheduled[job_id] = task
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _refresh_later(self, job_id: str, *, force: bool) -> None:
+    async def _refresh_later(self, job_id: str) -> None:
         state = self._states.setdefault(job_id, _PresenterState())
-        if not force:
-            delay = self.settings.question_progress_interval_sec - (
-                time.monotonic() - state.last_edit
-            )
-            if delay > 0:
-                await asyncio.sleep(delay)
-        await self.refresh(job_id, force=force)
+        while state.refresh_pending and not self._closing:
+            force = state.force_pending
+            state.refresh_pending = False
+            state.force_pending = False
+            if not force:
+                delay = self.settings.question_progress_interval_sec - (
+                    time.monotonic() - state.last_edit
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
+            await self.refresh(job_id, force=force)
 
     async def refresh(self, job_id: str, *, force: bool = False) -> None:
         snapshot = self.manager.snapshot(job_id)
