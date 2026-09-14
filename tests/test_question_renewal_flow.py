@@ -102,8 +102,6 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
                 operations=None,
             ):
                 first = await tool_executor("fetch_url", {"url": "https://example.com"})
-                operations.control.remaining = 0
-                self.assert_expired = await operations.control.expire_if_due()
                 second = await tool_executor("fetch_url", {"url": "https://example.com"})
                 control_holder["control"] = operations.control
                 self.first = first
@@ -122,11 +120,24 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             source_url="https://example.com",
             text="evidence",
         )
-        read_mock = AsyncMock(return_value=read_result)
+
+        async def controlled_read(url, current_settings, mode="auto", *, operations=None):
+            self.assertEqual(url, "https://example.com")
+            self.assertIs(current_settings, settings)
+            self.assertEqual(mode, "auto")
+            self.assertIsNotNone(operations)
+
+            async def leaf():
+                operations.control.remaining = 0
+                self.assertTrue(await operations.control.expire_if_due())
+                return read_result
+
+            return await operations.run("mock URL", leaf, timeout_sec=.1)
+
+        read_mock = AsyncMock(side_effect=controlled_read)
         with patch("app.core.orchestrator.url_service.read_url", read_mock):
             answer = await orchestrator.ask("q", operations=operations)
 
-        self.assertTrue(fake_router.assert_expired)
         self.assertEqual(answer.text, "answer")
         self.assertEqual(fake_router.first, fake_router.second)
         self.assertEqual(read_mock.await_count, 1)
