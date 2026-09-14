@@ -18,7 +18,20 @@ class OperationBudget:
     remaining: float
 
 
-_budgets: ContextVar[tuple[OperationBudget, ...]] = ContextVar('job_budgets', default=())
+_budgets: ContextVar[tuple[OperationBudget, ...]] = ContextVar("job_budgets", default=())
+
+
+def _unique_budgets(*budgets: OperationBudget) -> tuple[OperationBudget, ...]:
+    """Preserve nesting order while charging each budget object only once."""
+    unique: list[OperationBudget] = []
+    seen: set[int] = set()
+    for budget in budgets:
+        marker = id(budget)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        unique.append(budget)
+    return tuple(unique)
 
 
 class OperationRunner:
@@ -31,9 +44,10 @@ class OperationRunner:
 
     @contextmanager
     def budget(self, seconds):
-        token = _budgets.set((*_budgets.get(), OperationBudget(seconds)))
+        budget = OperationBudget(seconds)
+        token = _budgets.set((*_budgets.get(), budget))
         try:
-            yield
+            yield budget
         finally:
             _budgets.reset(token)
 
@@ -44,7 +58,11 @@ class OperationRunner:
             logger.debug("Progress callback failed", exc_info=True)
 
     async def run(self, label, factory, *, timeout_sec, budget=None):
-        budgets = (*_budgets.get(), *((budget,) if budget is not None else ()))
+        inherited = _budgets.get()
+        budgets = _unique_budgets(
+            *inherited,
+            *((budget,) if budget is not None else ()),
+        )
         while True:
             await self.control.checkpoint()
             await self.slots.acquire()
@@ -56,11 +74,13 @@ class OperationRunner:
                 if not active:
                     continue
                 timeout = (
-                    min(timeout_sec, *(b.remaining for b in budgets)) if budgets else timeout_sec
+                    min(timeout_sec, *(b.remaining for b in budgets))
+                    if budgets
+                    else timeout_sec
                 )
                 if timeout <= 0:
-                    raise TimeoutError('operation budget exhausted')
-                self._emit(ProgressEvent('stage_started', label))
+                    raise TimeoutError("operation budget exhausted")
+                self._emit(ProgressEvent("stage_started", label))
                 started = time.monotonic()
                 async with asyncio.timeout(timeout):
                     result = await factory()
@@ -69,9 +89,9 @@ class OperationRunner:
             finally:
                 if started is not None:
                     elapsed = time.monotonic() - started
-                    for b in budgets:
-                        b.remaining -= elapsed
-                    self._emit(ProgressEvent('stage_finished', label, ok))
+                    for active_budget in budgets:
+                        active_budget.remaining -= elapsed
+                    self._emit(ProgressEvent("stage_finished", label, ok))
                 if active:
                     await self.control.release_operation()
                 self.slots.release()
