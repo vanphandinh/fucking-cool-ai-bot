@@ -86,9 +86,11 @@ The callback handler acknowledges Telegram first, then validates the job, actor,
 - Stop remains valid from an older button for the same current status message so a status refresh cannot accidentally remove the user's ability to stop.
 - Missing/restarted jobs return an expired/stale result and are never recreated from a callback.
 
-Status updates are coalesced. Normal progress is limited by `QUESTION_PROGRESS_INTERVAL_SEC`; consent and terminal transitions are prioritized. The UI does not invent percentages or claim the model is thinking when a network/tool operation is the actual active stage.
+Status updates are coalesced. Normal progress is limited by `QUESTION_PROGRESS_INTERVAL_SEC`; consent and terminal transitions are prioritized. A forced transition marks another refresh as pending instead of cancelling Telegram I/O already in progress. The UI does not invent percentages or claim the model is thinking when a network/tool operation is the actual active stage.
 
-If the status message was deleted, the presenter creates at most one managed replacement and atomically updates the job's status-message ID. If Telegram remains unreachable, the job does not receive an automatic renewal.
+If the status message was deleted, the presenter creates at most one successfully-sent managed replacement and atomically updates the job's status-message ID. A transient replacement-send failure remains retryable. If Telegram remains unreachable, the job does not receive an automatic renewal.
+
+Terminal presenter bookkeeping is released after the terminal refresh settles, and presenter shutdown clears remaining per-job state and scheduled-task references.
 
 ## Conversation isolation
 
@@ -96,7 +98,18 @@ Controlled jobs do not hold the legacy per-chat lock for the whole question. Mul
 
 Each accepted job gets a copy of conversation history at admission. Results from another job that finishes later are not retroactively inserted into that running snapshot.
 
-After the final answer is successfully sent, the user/assistant pair is committed through `ChatMemory.push_exchange()` without an await point between the two entries. Failed/stopped jobs do not commit an incomplete exchange.
+## Delivery completion boundary
+
+The controlled-question completion boundary is the successful primary answer commit:
+
+1. all primary answer parts have been sent;
+2. provider/fallback/search success accounting has been recorded;
+3. `ChatMemory.push_exchange()` has committed the user/assistant exchange; and
+4. the job records `delivery_committed=True` immediately, with no cancellable await between the memory commit and that flag.
+
+Before this boundary, an interrupted delivery is failed/interrupted and must not claim successful memory or success accounting. After this boundary, the job is logically `COMPLETED` even if shutdown cancels later enrichment work.
+
+Images and source/footer messages sent after the primary commit are **best-effort extras**. Failure or cancellation of those extras must not replay the primary answer, duplicate memory/stat accounting, or turn an already committed answer into `FAILED`.
 
 ## In-memory limitation
 
@@ -105,6 +118,14 @@ Release 1 keeps the registry and checkpoints in RAM. A process restart does not 
 ## Shutdown
 
 Shutdown stops admissions and owned controlled jobs before Telegram/search/provider clients are closed. Job tasks and the renewal monitor are cancelled/gathered so controlled work is not intentionally left running against already-closed clients.
+
+Shutdown semantics are state-aware:
+
+- `QUEUED`: execution must not start after cancellation;
+- `RUNNING`: active operation/semaphore capacity is released by cleanup;
+- `AWAITING_CONSENT`: the consent waiter is woken/cancelled without renewing or dispatching new work;
+- `DELIVERING` before the primary commit: interruption is failed/interrupted;
+- `DELIVERING` after the primary commit: the job remains `COMPLETED`, while images/sources may be abandoned as best effort.
 
 ## Rollout
 
@@ -128,4 +149,4 @@ and recreate/restart the deployment. New questions return to the legacy outer `Q
 
 ## Verification
 
-The CI workflow covers Python 3.11 and 3.12, lint, dependency compatibility, compile checks, offline tests, Docker Compose validation and production image build. Renewable-specific tests additionally cover state renewal, duplicate generation rejection, search/provider/tool gating, thread lifetime capacity, admission/shutdown, callbacks/status rendering and continuity across multiple renewals.
+The CI workflow covers Python 3.11 and 3.12, lint, dependency compatibility, compile checks, offline tests, Docker Compose validation and production image build. Renewable-specific tests additionally cover state renewal, duplicate generation rejection, search/provider/tool gating, thread lifetime capacity, admission/shutdown, callbacks/status rendering, presenter recovery/cleanup, delivery commit semantics and continuity across multiple renewals.
