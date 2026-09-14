@@ -84,12 +84,14 @@ class JobManager:
         *,
         emit: EventSink | None = None,
         clock: Callable[[], float] = time.monotonic,
+        delivery_shutdown_grace_sec: float = 5.0,
     ) -> None:
         self.settings = settings
         self.execute = execute
         self.deliver = deliver
         self.emit = emit
         self.clock = clock
+        self.delivery_shutdown_grace_sec = max(0.0, delivery_shutdown_grace_sec)
         self._slots = asyncio.Semaphore(settings.question_max_inflight_operations)
         self._jobs: dict[str, JobRecord] = {}
         self._by_message: dict[tuple[int, int], str] = {}
@@ -194,6 +196,14 @@ class JobManager:
                 )
             return job_id
 
+    async def _cancel_record(self, record: JobRecord) -> None:
+        if record.control.state not in TERMINAL and record.control.state != "DELIVERING":
+            await record.control.stop()
+        if record.control.state != "CANCELLED" and record.control.state != "DELIVERING":
+            await record.control.finish("CANCELLED")
+        if record.control.state == "CANCELLED":
+            self._emit(record, ("state", "CANCELLED"))
+
     async def _run(self, record: JobRecord) -> None:
         try:
             prepare = record.submission.prepare_request
@@ -210,13 +220,15 @@ class JobManager:
             record.delivered = True
             await record.control.finish("COMPLETED")
             self._emit(record, ("state", "COMPLETED"))
-        except (JobStopped, asyncio.CancelledError):
-            if record.control.state not in TERMINAL and record.control.state != "DELIVERING":
-                await record.control.stop()
-            if record.control.state != "CANCELLED" and record.control.state != "DELIVERING":
-                await record.control.finish("CANCELLED")
-            if record.control.state == "CANCELLED":
-                self._emit(record, ("state", "CANCELLED"))
+        except JobStopped:
+            await self._cancel_record(record)
+        except asyncio.CancelledError:
+            if record.control.state == "DELIVERING":
+                record.error = "Tác vụ bị gián đoạn khi bot dừng."
+                await record.control.finish("FAILED")
+                self._emit(record, ("state", "FAILED"))
+            else:
+                await self._cancel_record(record)
         except UserFacingJobError as exc:
             record.error = str(exc)[:500]
             if record.control.state not in TERMINAL:
@@ -344,19 +356,36 @@ class JobManager:
     async def shutdown(self) -> None:
         async with self._lock:
             self._accepting = False
-            tasks = [
-                record.task
-                for record in self._jobs.values()
-                if record.task is not None and not record.task.done()
-            ]
-        for record in tuple(self._jobs.values()):
-            if record.control.state not in TERMINAL and record.control.state != "DELIVERING":
+            records = tuple(self._jobs.values())
+
+        delivery_tasks: list[asyncio.Task] = []
+        cancel_tasks: list[asyncio.Task] = []
+        for record in records:
+            task = record.task
+            if task is None or task.done():
+                continue
+            if record.control.state == "DELIVERING":
+                delivery_tasks.append(task)
+                continue
+            if record.control.state not in TERMINAL:
                 await record.control.stop()
                 self._emit(record, ("state", "CANCELLED"))
-        for task in tasks:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            cancel_tasks.append(task)
+
+        if cancel_tasks:
+            await asyncio.gather(*cancel_tasks, return_exceptions=True)
+
+        if delivery_tasks:
+            _done, pending = await asyncio.wait(
+                delivery_tasks,
+                timeout=self.delivery_shutdown_grace_sec,
+            )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
         if self._monitor is not None and not self._monitor.done():
             self._monitor.cancel()
             await asyncio.gather(self._monitor, return_exceptions=True)
