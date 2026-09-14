@@ -169,7 +169,11 @@ async def route_auto(
             return second_fresh[:limit]
 
         loop = asyncio.get_running_loop()
-        deadline = None if operations is not None else loop.time() + settings.search_total_timeout_sec
+        deadline = (
+            None
+            if operations is not None
+            else loop.time() + settings.search_total_timeout_sec
+        )
         operation_budget = (
             OperationBudget(settings.search_total_timeout_sec) if operations is not None else None
         )
