@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
 from .job_progress import ProgressEvent
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,6 +37,12 @@ class OperationRunner:
         finally:
             _budgets.reset(token)
 
+    def _emit(self, event: ProgressEvent) -> None:
+        try:
+            self.emit(event)
+        except Exception:  # noqa: BLE001 - presenter failures must not break cleanup/work
+            logger.debug("Progress callback failed", exc_info=True)
+
     async def run(self, label, factory, *, timeout_sec, budget=None):
         budgets = (*_budgets.get(), *((budget,) if budget is not None else ()))
         while True:
@@ -51,7 +60,7 @@ class OperationRunner:
                 )
                 if timeout <= 0:
                     raise TimeoutError('operation budget exhausted')
-                self.emit(ProgressEvent('stage_started', label))
+                self._emit(ProgressEvent('stage_started', label))
                 started = time.monotonic()
                 async with asyncio.timeout(timeout):
                     result = await factory()
@@ -62,7 +71,7 @@ class OperationRunner:
                     elapsed = time.monotonic() - started
                     for b in budgets:
                         b.remaining -= elapsed
-                    self.emit(ProgressEvent('stage_finished', label, ok))
+                    self._emit(ProgressEvent('stage_finished', label, ok))
                 if active:
                     await self.control.release_operation()
                 self.slots.release()
