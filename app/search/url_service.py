@@ -20,7 +20,10 @@ class UrlReadResult:
     ok: bool
 
 
-async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadResult:
+async def read_url(url: str, settings: Settings, mode: str = "auto",
+                   *, operations=None) -> UrlReadResult:
+    from ..core.job_operations import OperationBudget
+    budget = OperationBudget(settings.url_read_total_timeout_sec)
     url = str(url or "").strip()
     mode = str(mode or "auto").strip().lower()
     if mode not in ("auto", "x_thread"):
@@ -44,6 +47,7 @@ async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadR
             target,
             mode,
             timeout=settings.request_timeout_sec,
+            **({"operations": operations, "budget": budget} if operations else {}),
         )
         if specialized is not None:
             return UrlReadResult(
@@ -60,7 +64,12 @@ async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadR
         and settings.crawl4ai_api_token.strip()
     ):
         try:
-            crawl = await crawl4ai_client.read_page(fetch_url, settings)
+            if operations:
+                crawl = await operations.run(
+                    "Crawl4AI", lambda: crawl4ai_client.read_page(fetch_url, settings),
+                    timeout_sec=settings.crawl4ai_timeout_sec, budget=budget)
+            else:
+                crawl = await crawl4ai_client.read_page(fetch_url, settings)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - this boundary must degrade to generic reading
@@ -75,6 +84,8 @@ async def read_url(url: str, settings: Settings, mode: str = "auto") -> UrlReadR
                 crawl.reason,
             )
 
-    text = await reader.read_page(fetch_url, timeout=settings.request_timeout_sec)
+    text = await reader.read_page(
+        fetch_url, timeout=settings.request_timeout_sec,
+        **({"operations": operations, "budget": budget} if operations else {}))
     ok = bool(text) and not text.startswith("Không tải được trang")
     return UrlReadResult(text, fetch_url, "generic_reader", ok)
