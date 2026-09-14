@@ -154,6 +154,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             question_progress_interval_sec=.1,
             question_max_inflight_operations=2,
             ai_attempt_total_timeout_sec=.5,
+            url_read_total_timeout_sec=.4,
             tool_call_total_timeout_sec=.5,
             max_tool_rounds=4,
         )
