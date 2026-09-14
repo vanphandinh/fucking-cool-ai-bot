@@ -1,12 +1,16 @@
 import asyncio
 import unittest
+from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.ai.router import CompletionResult
+from app.ai.base import ChatResponse, ProviderError, ToolCall, TransportFailureKind
+from app.ai.router import AIProviderRouter, CompletionResult
 from app.config import Settings
 from app.core.job_manager import JobManager, JobSubmission
 from app.core.orchestrator import Orchestrator
+from app.search.url_service import UrlReadResult
+from tests.provider_fakes import ScriptedProvider
 
 
 class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -142,6 +146,165 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fake_router.first, fake_router.second)
         self.assertEqual(read_mock.await_count, 1)
         self.assertEqual(control_holder["control"].state, "AWAITING_CONSENT")
+
+    async def test_provider_tools_resume_across_two_generations_without_replay(self):
+        settings = Settings(
+            _env_file=None,
+            question_renewal_interval_sec=1,
+            question_progress_interval_sec=.1,
+            question_max_inflight_operations=2,
+            ai_attempt_total_timeout_sec=.5,
+            tool_call_total_timeout_sec=.5,
+            max_tool_rounds=4,
+        )
+        url1 = "https://example.com/one"
+        url2 = "https://example.com/two"
+        chainnode = ScriptedProvider(
+            "chainnode",
+            [
+                ProviderError(
+                    "chainnode read timeout",
+                    transport_kind=TransportFailureKind.READ_TIMEOUT,
+                )
+            ],
+        )
+        bai = ScriptedProvider(
+            "bai",
+            [
+                ChatResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="url-one",
+                            name="fetch_url",
+                            arguments={"url": url1},
+                        )
+                    ]
+                ),
+                ChatResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="url-two",
+                            name="fetch_url",
+                            arguments={"url": url2},
+                        )
+                    ]
+                ),
+                ChatResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="url-one-cached",
+                            name="fetch_url",
+                            arguments={"url": url1},
+                        )
+                    ]
+                ),
+                ChatResponse(content="final answer"),
+            ],
+        )
+        provider_router = AIProviderRouter(
+            [chainnode, bai],
+            text_provider_order=("chainnode", "bai"),
+            vision_provider_order=(),
+            max_tool_rounds=4,
+        )
+        orchestrator = Orchestrator(settings, provider_router)
+        fetch_counts = Counter()
+        first_boundary = asyncio.Event()
+        second_boundary = asyncio.Event()
+        final_answers = []
+
+        async def controlled_read(url, current_settings, mode="auto", *, operations=None):
+            self.assertIs(current_settings, settings)
+            self.assertEqual(mode, "auto")
+            self.assertIsNotNone(operations)
+            fetch_counts[url] += 1
+
+            async def leaf():
+                operations.control.remaining = 0
+                self.assertTrue(await operations.control.expire_if_due())
+                if url == url2:
+                    await asyncio.sleep(0)
+                    return UrlReadResult(
+                        "Không tải được trang: HTTP 403",
+                        url,
+                        "generic_reader",
+                        False,
+                    )
+                return UrlReadResult("evidence-one", url, "generic_reader", True)
+
+            result = await operations.run(f"read {url}", leaf, timeout_sec=.2)
+            if url == url1:
+                first_boundary.set()
+            else:
+                second_boundary.set()
+            return result
+
+        async def execute(record, operations):
+            return await orchestrator.ask(
+                record.submission.question,
+                history=record.submission.history,
+                operations=operations,
+            )
+
+        async def deliver(record, answer):
+            final_answers.append((record.submission.topic_id, answer.text))
+
+        self.manager = JobManager(settings, execute, deliver)
+        submission = JobSubmission(
+            "research",
+            None,
+            10,
+            -100,
+            7,
+            1,
+            101,
+            [{"role": "user", "content": "older context"}],
+        )
+
+        with patch("app.core.orchestrator.url_service.read_url", new=controlled_read):
+            job_id = await self.manager.submit(submission)
+
+            await asyncio.wait_for(first_boundary.wait(), timeout=.5)
+            snapshot = self.manager.snapshot(job_id)
+            self.assertEqual(snapshot.state, "AWAITING_CONSENT")
+            self.assertEqual(
+                await self.manager.renew(
+                    job_id,
+                    snapshot.generation,
+                    submission.owner_id,
+                    submission.chat_id,
+                    submission.status_message_id,
+                ),
+                "renewed",
+            )
+
+            await asyncio.wait_for(second_boundary.wait(), timeout=.5)
+            snapshot = self.manager.snapshot(job_id)
+            self.assertEqual(snapshot.state, "AWAITING_CONSENT")
+            self.assertEqual(
+                await self.manager.renew(
+                    job_id,
+                    snapshot.generation,
+                    submission.owner_id,
+                    submission.chat_id,
+                    submission.status_message_id,
+                ),
+                "renewed",
+            )
+            await asyncio.wait_for(self.manager.wait(job_id), timeout=.5)
+
+        snapshot = self.manager.snapshot(job_id)
+        self.assertEqual(snapshot.state, "COMPLETED")
+        self.assertEqual(snapshot.renewals, 2)
+        self.assertEqual(fetch_counts[url1], 1)
+        self.assertEqual(fetch_counts[url2], 1)
+        self.assertEqual(len(chainnode.calls), 1)
+        self.assertEqual(len(bai.calls), 4)
+        self.assertEqual(final_answers, [(7, "final answer")])
+
+        await self.manager.shutdown()
+        self.assertEqual(self.manager.owned_task_count, 0)
+        self.manager = None
 
 
 if __name__ == "__main__":
