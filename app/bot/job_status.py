@@ -138,7 +138,19 @@ class JobStatusPresenter:
         )
         self._scheduled[job_id] = task
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(
+            lambda done, jid=job_id: self._on_scheduled_done(jid, done)
+        )
+
+    def _on_scheduled_done(self, job_id: str, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if self._scheduled.get(job_id) is not task:
+            return
+        self._scheduled.pop(job_id, None)
+        snapshot = self.manager.snapshot(job_id)
+        if snapshot is None or snapshot.state in _TERMINAL:
+            self._states.pop(job_id, None)
+            self._locks.pop(job_id, None)
 
     async def _refresh_later(self, job_id: str) -> None:
         state = self._states.setdefault(job_id, _PresenterState())
@@ -248,3 +260,5 @@ class JobStatusPresenter:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
         self._scheduled.clear()
+        self._states.clear()
+        self._locks.clear()
