@@ -12,9 +12,14 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.utils.token import TokenValidationError
 
 from .ai.router import build_provider_router
+from .bot.controlled_handlers import build_controlled_message_router
 from .bot.handlers import build_lifecycle_router, build_message_router
+from .bot.job_callbacks import build_job_callback_router
+from .bot.job_status import JobStatusPresenter
+from .bot.question_runner import QuestionProcessor
 from .config import Settings, get_settings
 from .core.context import ChatMemory
+from .core.job_manager import JobManager
 from .core.orchestrator import Orchestrator
 from .core.rate_limiter import RateLimiter
 from .core.stats import Stats
@@ -22,6 +27,7 @@ from .search.crawl4ai_client import close_crawl4ai_client
 from .search.runtime import close_search_runtimes
 
 logger = logging.getLogger(__name__)
+POLLING_UPDATES = ["message", "my_chat_member", "callback_query"]
 
 
 async def _close_providers(provider_router) -> None:
@@ -30,6 +36,13 @@ async def _close_providers(provider_router) -> None:
             await provider.aclose()
         except Exception:  # noqa: BLE001
             logger.debug("Đóng provider %s lỗi (bỏ qua)", provider.name)
+
+
+async def _shutdown_question_controls(manager, presenter) -> None:
+    if manager is not None:
+        await manager.shutdown()
+    if presenter is not None:
+        await presenter.close()
 
 
 async def _amain(settings: Settings) -> int:
@@ -45,6 +58,8 @@ async def _amain(settings: Settings) -> int:
     provider_router = None
     bot = None
     dp = None
+    job_manager = None
+    job_presenter = None
     try:
         try:
             provider_router = build_provider_router(settings)
@@ -94,7 +109,33 @@ async def _amain(settings: Settings) -> int:
         orchestrator = Orchestrator(settings, provider_router)
 
         dp = Dispatcher()
-        dp.include_router(build_message_router(settings, orchestrator, memory, limiter, stats))
+        if settings.question_controls_enabled:
+            processor = QuestionProcessor(bot, settings, orchestrator, memory, stats)
+            job_manager = JobManager(
+                settings,
+                processor.execute,
+                processor.deliver,
+            )
+            job_presenter = JobStatusPresenter(bot, settings, job_manager)
+            job_manager.emit = job_presenter.emit
+            dp.include_router(
+                build_controlled_message_router(
+                    settings,
+                    orchestrator,
+                    memory,
+                    limiter,
+                    stats,
+                    job_manager,
+                    job_presenter,
+                )
+            )
+            dp.include_router(
+                build_job_callback_router(settings, job_manager, job_presenter)
+            )
+        else:
+            dp.include_router(
+                build_message_router(settings, orchestrator, memory, limiter, stats)
+            )
         dp.include_router(build_lifecycle_router(settings))
 
         try:
@@ -105,10 +146,12 @@ async def _amain(settings: Settings) -> int:
             logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
             return 1
 
+        mode = "renewable" if settings.question_controls_enabled else "legacy-timeout"
         logger.info(
             "Text providers: %s | Vision providers: %s | Text order: %s | "
             "Vision order: %s | Search: %s | Allowed groups: %s | Admin: %s | "
-            "Context turns: %s | Learn-mode: %s",
+            "Context turns: %s | Learn-mode: %s | Question mode: %s | "
+            "Renewal: %ss | Operation cap: %s | Pending cap: %s | Per-user cap: %s",
             ", ".join(text_names) or "disabled",
             ", ".join(vision_names) or "disabled",
             ", ".join(settings.text_provider_order_list) or "disabled",
@@ -118,6 +161,11 @@ async def _amain(settings: Settings) -> int:
             settings.admin_ids_list or "-",
             settings.max_context_turns,
             settings.learn_group_id_mode,
+            mode,
+            settings.question_renewal_interval_sec,
+            settings.question_max_inflight_operations,
+            settings.question_max_pending_jobs,
+            settings.question_max_jobs_per_user,
         )
 
         try:
@@ -127,7 +175,7 @@ async def _amain(settings: Settings) -> int:
 
         await dp.start_polling(
             bot,
-            allowed_updates=["message", "my_chat_member"],
+            allowed_updates=POLLING_UPDATES,
             close_bot_session=False,
         )
         return 0
@@ -138,6 +186,7 @@ async def _amain(settings: Settings) -> int:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
+        await _shutdown_question_controls(job_manager, job_presenter)
         try:
             if bot is not None:
                 await bot.session.close()

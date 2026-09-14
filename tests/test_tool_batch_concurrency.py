@@ -4,7 +4,8 @@ import asyncio
 import unittest
 
 from app.ai.base import ChatResponse, ToolCall
-from app.ai.router import AIProviderRouter, CompletionResult
+from app.ai.router import AIProviderRouter, CompletionResult, _execute_tool_batch
+from app.core.job_control import JobStopped
 
 
 class _BatchProvider:
@@ -70,6 +71,37 @@ class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         evidence = str(provider.synthesis_messages[-1].get("content") or "")
         positions = [evidence.index(f"result-{label}") for label in ("a", "b", "c")]
         self.assertEqual(positions, sorted(positions))
+
+    async def test_cancelled_tool_batch_cancels_and_joins_sibling_tools(self) -> None:
+        sibling_started = asyncio.Event()
+        sibling_cancelled = asyncio.Event()
+        sibling_finished = asyncio.Event()
+
+        async def execute(name: str, _args: dict) -> str:
+            if name == "stop":
+                await sibling_started.wait()
+                raise JobStopped()
+            sibling_started.set()
+            try:
+                await asyncio.sleep(1)
+                sibling_finished.set()
+                return "late-result"
+            except asyncio.CancelledError:
+                sibling_cancelled.set()
+                raise
+
+        calls = [
+            ToolCall("call_stop", "stop", {}),
+            ToolCall("call_sibling", "sibling", {}),
+        ]
+        with self.assertRaises(JobStopped):
+            await _execute_tool_batch(calls, execute)
+
+        # Returning from the batch on cancellation must mean no owned child is still
+        # running. Otherwise a Stop can leave a tool mutating state after job teardown.
+        await asyncio.sleep(0)
+        self.assertTrue(sibling_cancelled.is_set())
+        self.assertFalse(sibling_finished.is_set())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..config import Settings
+from ..core.job_operations import OperationBudget
 from .ddgs_backend import search_ddgs_images
 from .searxng_backend import search_searxng_images
 
@@ -19,6 +20,8 @@ async def search_images(
     query: str,
     settings: Settings,
     limit: int | None = None,
+    *,
+    operations=None,
 ) -> list[dict]:
     """Search Internet images with the same backend policy as text search."""
     effective_limit = min(
@@ -29,12 +32,26 @@ async def search_images(
 
     if backend == "searxng":
         try:
+            if operations is not None:
+                return await operations.run(
+                    "searxng image search",
+                    lambda: search_searxng_images(query, settings, effective_limit),
+                    timeout_sec=settings.searxng_timeout_sec,
+                    budget=OperationBudget(settings.search_total_timeout_sec),
+                )
             return await search_searxng_images(query, settings, effective_limit)
         except Exception as exc:  # noqa: BLE001
             raise _image_search_error(backend, exc) from exc
 
     if backend == "ddgs":
         try:
+            if operations is not None:
+                return await operations.run(
+                    "ddgs image search",
+                    lambda: search_ddgs_images(query, settings, effective_limit),
+                    timeout_sec=settings.ddgs_timeout_sec,
+                    budget=OperationBudget(settings.search_total_timeout_sec),
+                )
             return await search_ddgs_images(query, settings, effective_limit)
         except Exception as exc:  # noqa: BLE001
             raise _image_search_error(backend, exc) from exc
@@ -50,6 +67,7 @@ async def search_images(
             result_url_key="image_url",
             searx_call=search_searxng_images,
             ddgs_call=search_ddgs_images,
+            operations=operations,
         )
     except RoutedSearchError as exc:
         raise ImageSearchError(
@@ -58,5 +76,8 @@ async def search_images(
 
 
 def _image_search_error(backend: str, exc: Exception) -> ImageSearchError:
-    logger.warning("Image search backend '%s' lỗi: %s", backend, exc)
-    return ImageSearchError(f"Không tìm kiếm được hình ảnh (backend {backend} lỗi: {exc}).")
+    error_type = type(exc).__name__
+    logger.warning("Image search backend '%s' lỗi (%s)", backend, error_type)
+    return ImageSearchError(
+        f"Không tìm kiếm được hình ảnh (backend {backend} lỗi: {error_type})."
+    )

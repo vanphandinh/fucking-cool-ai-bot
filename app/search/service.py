@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..config import Settings
+from ..core.job_operations import OperationBudget
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,13 @@ class SearchError(Exception):
     pass
 
 
-async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> list[dict]:
+async def search(
+    query: str,
+    settings: Settings,
+    limit: int = MAX_RESULTS,
+    *,
+    operations=None,
+) -> list[dict]:
     """Tìm kiếm web, trả list dict {title, url, snippet}."""
     backend = settings.search_backend.strip().lower()
 
@@ -23,6 +30,13 @@ async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> li
         from .searxng_backend import search_searxng
 
         try:
+            if operations is not None:
+                return await operations.run(
+                    "searxng web search",
+                    lambda: search_searxng(query, settings, limit),
+                    timeout_sec=settings.searxng_timeout_sec,
+                    budget=OperationBudget(settings.search_total_timeout_sec),
+                )
             return await search_searxng(query, settings, limit)
         except Exception as exc:  # noqa: BLE001
             raise _search_error(backend, exc) from exc
@@ -31,6 +45,13 @@ async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> li
         from .ddgs_backend import search_ddgs
 
         try:
+            if operations is not None:
+                return await operations.run(
+                    "ddgs web search",
+                    lambda: search_ddgs(query, settings, limit),
+                    timeout_sec=settings.ddgs_timeout_sec,
+                    budget=OperationBudget(settings.search_total_timeout_sec),
+                )
             return await search_ddgs(query, settings, limit)
         except Exception as exc:  # noqa: BLE001
             raise _search_error(backend, exc) from exc
@@ -48,6 +69,7 @@ async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> li
             result_url_key="url",
             searx_call=search_searxng,
             ddgs_call=search_ddgs,
+            operations=operations,
         )
     except RoutedSearchError as exc:
         raise SearchError(
@@ -57,8 +79,9 @@ async def search(query: str, settings: Settings, limit: int = MAX_RESULTS) -> li
 
 
 def _search_error(backend: str, exc: Exception) -> SearchError:
-    logger.warning("Search backend '%s' lỗi: %s", backend, exc)
+    error_type = type(exc).__name__
+    logger.warning("Search backend '%s' lỗi (%s)", backend, error_type)
     return SearchError(
-        f"Không tìm kiếm được web (backend {backend} lỗi: {exc}). "
+        f"Không tìm kiếm được web (backend {backend} lỗi: {error_type}). "
         "Trả lời dựa trên kiến thức và nói rõ là không có dữ liệu mới."
     )

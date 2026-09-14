@@ -145,6 +145,15 @@ class Settings(BaseSettings):
     max_tool_rounds: int = Field(default=2, ge=0)
     request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     question_timeout_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    question_controls_enabled: bool = False
+    question_renewal_interval_sec: float = Field(default=180, gt=0, allow_inf_nan=False)
+    question_progress_interval_sec: float = Field(default=25, gt=0, allow_inf_nan=False)
+    question_max_inflight_operations: int = Field(default=2, ge=1, le=16)
+    question_max_pending_jobs: int = Field(default=20, ge=1, le=200)
+    question_max_jobs_per_user: int = Field(default=2, ge=1, le=10)
+    ai_attempt_total_timeout_sec: float = Field(default=90, gt=0, allow_inf_nan=False)
+    url_read_total_timeout_sec: float = Field(default=40, gt=0, allow_inf_nan=False)
+    tool_call_total_timeout_sec: float = Field(default=45, gt=0, allow_inf_nan=False)
     log_level: str = "INFO"
 
     @field_validator("search_backend")
@@ -200,6 +209,12 @@ class Settings(BaseSettings):
                 "PROVIDER_RETRY_MAX_CONSECUTIVE"
             )
 
+        if self.question_progress_interval_sec >= self.question_renewal_interval_sec:
+            raise ValueError("progress interval must be below renewal interval")
+        if self.question_max_jobs_per_user > self.question_max_pending_jobs:
+            raise ValueError("per-user jobs must not exceed pending jobs")
+        if self.tool_call_total_timeout_sec < self.url_read_total_timeout_sec:
+            raise ValueError("tool budget must cover URL budget")
         total = self.search_total_timeout_sec
         if self.searxng_timeout_sec > total:
             raise ValueError(
@@ -214,7 +229,8 @@ class Settings(BaseSettings):
             and bool(self.crawl4ai_url.strip())
             and bool(self.crawl4ai_api_token.strip())
         )
-        if crawl4ai_active and self.crawl4ai_timeout_sec >= self.question_timeout_sec:
+        if (not self.question_controls_enabled and crawl4ai_active
+                and self.crawl4ai_timeout_sec >= self.question_timeout_sec):
             raise ValueError("CRAWL4AI_TIMEOUT_SEC phải nhỏ hơn QUESTION_TIMEOUT_SEC")
         return self
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Awaitable, Callable
@@ -48,11 +49,7 @@ class _ToolBudget:
     closed: bool = False
 
     def exhausted(self, max_rounds: int) -> bool:
-        return (
-            self.closed
-            or self.rounds >= max_rounds
-            or self.calls >= _MAX_TOOL_CALLS_TOTAL
-        )
+        return self.closed or self.rounds >= max_rounds or self.calls >= _MAX_TOOL_CALLS_TOTAL
 
     def can_execute(self, requested_calls: int, max_rounds: int) -> bool:
         return (
@@ -153,17 +150,49 @@ def _cyclic_indices(size: int, start: int):
 async def _execute_tool_batch(
     tool_calls: list[ToolCall],
     tool_executor: ToolExecutor,
+    *,
+    operations=None,
+    retain: Callable[[int, str], None] | None = None,
 ) -> list[str]:
     semaphore = asyncio.Semaphore(_MAX_PARALLEL_TOOL_CALLS)
 
-    async def run(tc: ToolCall) -> str:
+    async def run(index: int, tc: ToolCall) -> str:
         async with semaphore:
+            if operations is not None:
+                await operations.control.checkpoint()
+            budget_context = (
+                operations.budget(operations.tool_timeout)
+                if operations is not None
+                else nullcontext()
+            )
             try:
-                return await tool_executor(tc.name, tc.arguments)
+                with budget_context:
+                    output = await tool_executor(tc.name, tc.arguments)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:  # noqa: BLE001
-                return f"Lỗi khi chạy tool '{tc.name}': {exc}"
+                output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
+            normalized = str(output)[:6000]
+            if retain is not None:
+                retain(index, normalized)
+            return normalized
 
-    return await asyncio.gather(*(run(tc) for tc in tool_calls))
+    tasks = [
+        asyncio.create_task(run(index, tc), name=f"tool-batch:{tc.name}:{index}")
+        for index, tc in enumerate(tool_calls)
+    ]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        # asyncio.gather does not cancel sibling tasks when one child raises a
+        # CancelledError subclass (JobStopped is one). Explicitly cancel and join
+        # every owned child before returning control to the job boundary.
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 class AIProviderRouter:
@@ -238,6 +267,7 @@ class AIProviderRouter:
         *,
         requires_vision: bool = False,
         image_count: int = 0,
+        operations=None,
     ) -> CompletionResult:
         candidates = tuple(
             self.capable_providers(
@@ -246,9 +276,7 @@ class AIProviderRouter:
             )
         )
         if not candidates:
-            raise NoCapableProvider(
-                "Không có AI provider nào phù hợp capability của request"
-            )
+            raise NoCapableProvider("Không có AI provider nào phù hợp capability của request")
 
         state = _RequestState(
             base_messages=deepcopy(messages),
@@ -277,10 +305,7 @@ class AIProviderRouter:
 
             index, provider = selected
             exclude_next_provider_name = None
-            if (
-                previous_provider_name is not None
-                and provider.name != previous_provider_name
-            ):
+            if previous_provider_name is not None and provider.name != previous_provider_name:
                 fallbacks.append(provider.name)
             previous_provider_name = provider.name
 
@@ -291,6 +316,7 @@ class AIProviderRouter:
                     tool_executor,
                     state,
                     candidates=candidates,
+                    operations=operations,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -306,11 +332,7 @@ class AIProviderRouter:
                 continue
 
             _record_success(provider)
-            _flush_all_pending_health_errors(
-                candidates,
-                state,
-                exclude=provider.name,
-            )
+            _flush_all_pending_health_errors(candidates, state, exclude=provider.name)
             return CompletionResult(text, provider.name, tuple(fallbacks))
 
         _flush_all_pending_health_errors(candidates, state)
@@ -325,6 +347,7 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> str:
         if state.budget.exhausted(self.max_tool_rounds):
             provider_messages = build_fresh_synthesis_messages(
@@ -360,6 +383,7 @@ class AIProviderRouter:
                     tool_executor,
                     state,
                     candidates=candidates,
+                    operations=operations,
                 )
             except ProviderError as exc:
                 last_error = exc
@@ -374,9 +398,7 @@ class AIProviderRouter:
 
         if last_error is not None:
             raise last_error
-        raise ProviderError(
-            f"{provider.name}: không thể hoàn tất provider-local recovery"
-        )
+        raise ProviderError(f"{provider.name}: không thể hoàn tất provider-local recovery")
 
     async def _chat_with_retry(
         self,
@@ -386,10 +408,25 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> ChatResponse:
         while True:
             try:
-                response = await provider.chat(messages, tools)
+                try:
+                    if operations is None:
+                        response = await provider.chat(messages, tools)
+                    else:
+                        response = await operations.run(
+                            f"AI {provider.name}",
+                            lambda: provider.chat(messages, tools),
+                            timeout_sec=operations.ai_timeout,
+                        )
+                except TimeoutError:
+                    raise ProviderError(
+                        f"{provider.name}: AI attempt timeout",
+                        transient=True,
+                        transport_kind=TransportFailureKind.READ_TIMEOUT,
+                    ) from None
             except ProviderError as exc:
                 kind = transport_kind(exc)
                 if kind is None or not is_cyclic_retryable_transport(exc):
@@ -406,8 +443,7 @@ class AIProviderRouter:
                 alternatives = [
                     candidate
                     for candidate in candidates
-                    if candidate.name != provider.name
-                    and _candidate_eligible(candidate, state)
+                    if candidate.name != provider.name and _candidate_eligible(candidate, state)
                 ]
                 if kind == TransportFailureKind.READ_TIMEOUT and alternatives:
                     raise
@@ -433,6 +469,7 @@ class AIProviderRouter:
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
+        operations=None,
     ) -> str:
         active_tools = tools
         while True:
@@ -449,6 +486,7 @@ class AIProviderRouter:
                 active_tools,
                 state,
                 candidates=candidates,
+                operations=operations,
             )
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
@@ -473,21 +511,28 @@ class AIProviderRouter:
 
             state.budget.rounds += 1
             state.budget.calls += requested_calls
-            messages.append(
-                _assistant_tool_message(resp, include_provider_metadata=True)
-            )
+            messages.append(_assistant_tool_message(resp, include_provider_metadata=True))
             state.portable_messages.append(
                 _assistant_tool_message(resp, include_provider_metadata=False)
             )
 
-            outputs = await _execute_tool_batch(resp.tool_calls, tool_executor)
+            base_index = len(state.tool_outputs)
+            state.tool_outputs.extend([""] * requested_calls)
+
+            def retain(index: int, output: str) -> None:
+                state.tool_outputs[base_index + index] = output
+
+            outputs = await _execute_tool_batch(
+                resp.tool_calls,
+                tool_executor,
+                operations=operations,
+                retain=retain,
+            )
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
-                normalized_output = str(output)[:6000]
-                state.tool_outputs.append(normalized_output)
                 tool_message = {
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": normalized_output,
+                    "content": output,
                 }
                 messages.append(deepcopy(tool_message))
                 state.portable_messages.append(tool_message)
@@ -524,10 +569,7 @@ def _assistant_tool_message(
         "role": "assistant",
         "content": resp.content or "",
         "tool_calls": [
-            _tool_call_message(
-                tc,
-                include_provider_metadata=include_provider_metadata,
-            )
+            _tool_call_message(tc, include_provider_metadata=include_provider_metadata)
             for tc in resp.tool_calls
         ],
     }

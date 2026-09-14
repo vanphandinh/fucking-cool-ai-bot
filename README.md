@@ -15,6 +15,7 @@ Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, 
 - [Chainnode text provider](docs/CHAINNODE.md) — optional text route, qualified model, configuration và rollback.
 - [Telegram vision input](docs/telegram-vision-input.md) — input ảnh, capability routing và memory safety.
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md).
+- [Renewable question controls](docs/QUESTION_CONTROLS.md) — progress, Tiếp tục/Dừng, local bounds, rollout và rollback.
 - [Search resilience](docs/SEARCH_RESILIENCE.md).
 - [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md).
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md).
@@ -191,7 +192,7 @@ Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original req
 
 Tool call phát sinh sau khi tools đã tắt không bao giờ được execute.
 
-`QUESTION_TIMEOUT_SEC` vẫn là outer hard wall-clock guard; PR này không thêm deadline plumbing riêng vào scheduler.
+`QUESTION_CONTROLS_ENABLED=0` là default rollback-safe và giữ `QUESTION_TIMEOUT_SEC` làm outer hard wall-clock guard của legacy handler. Khi `QUESTION_CONTROLS_ENABLED=1`, toàn câu hỏi **không** bị bọc bởi hard deadline này: hết interval chỉ chuyển sang Tiếp tục/Dừng, trong khi từng provider/search/URL/media operation vẫn có timeout và capacity bound riêng.
 
 ---
 
@@ -256,9 +257,19 @@ VISION_PROVIDER_ORDER=bai
 MAX_IMAGES_PER_REQUEST=1
 MAX_IMAGE_BYTES=8388608
 MAX_TOTAL_IMAGE_BYTES=12582912
+
+QUESTION_CONTROLS_ENABLED=0
+QUESTION_RENEWAL_INTERVAL_SEC=180
+QUESTION_PROGRESS_INTERVAL_SEC=25
+QUESTION_MAX_INFLIGHT_OPERATIONS=2
+QUESTION_MAX_PENDING_JOBS=20
+QUESTION_MAX_JOBS_PER_USER=2
+AI_ATTEMPT_TOTAL_TIMEOUT_SEC=90
+URL_READ_TOTAL_TIMEOUT_SEC=40
+TOOL_CALL_TOTAL_TIMEOUT_SEC=45
 ```
 
-`BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển **per-HTTP-attempt read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`. `QUESTION_TIMEOUT_SEC` là outer hard deadline cho toàn bộ end-user question, bao gồm model attempts, retries, tools và fallback. Không tăng `QUESTION_TIMEOUT_SEC` chỉ để bù cho retry policy.
+`BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển **per-HTTP-attempt read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`. `QUESTION_TIMEOUT_SEC` chỉ là outer hard deadline của legacy path khi `QUESTION_CONTROLS_ENABLED=0`; không tăng key legacy này để bù retry policy hoặc để điều khiển renewable mode. Xem [docs/QUESTION_CONTROLS.md](docs/QUESTION_CONTROLS.md) cho time semantics, quyền callback và rollout/rollback.
 
 Retry bounds validation:
 
@@ -309,6 +320,7 @@ Migration hiện tại:
 - migrate ba retry keys legacy sang canonical `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; canonical thắng nếu cả hai dạng tồn tại;
 - thêm canonical retry defaults nếu deployment chưa có cả canonical lẫn legacy value;
 - giữ `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` vì chúng vẫn là generic routing config;
+- thêm các question-control keys mới từ `.env.example` mà không đổi value của `QUESTION_TIMEOUT_SEC`;
 - xóa credential/model variables của Gemini/Groq/OpenRouter/Cloudflare Workers AI vì chúng không còn trong template;
 - giữ Telegram/search/Crawl4AI values nếu key còn tồn tại.
 
@@ -337,7 +349,7 @@ DDGS_TIMEOUT_SEC=8.0
 SEARCH_TOTAL_TIMEOUT_SEC=15.0
 ```
 
-`auto` ưu tiên SearXNG rồi dùng DDGS theo policy resilience/cache hiện có.
+`auto` ưu tiên SearXNG rồi dùng DDGS theo policy resilience/cache hiện có. Trong renewable mode, shared cache vẫn dùng chung nhưng một live singleflight execution không được share giữa hai jobs có consent owner khác nhau; backend attempts đi qua operation gate và pause/queue không bị tính vào total operation budget.
 
 Crawl4AI là optional URL rendering backend:
 
@@ -349,7 +361,7 @@ CRAWL4AI_TIMEOUT_SEC=25.0
 CRAWL4AI_MAX_CHARS=12000
 ```
 
-Direct URL pipeline hiện là X-specific resolution trước, sau đó Crawl4AI nếu active, rồi generic reader. Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về generic reader thay vì làm bot fail startup.
+Direct URL pipeline hiện là X-specific resolution trước, sau đó Crawl4AI nếu active, rồi generic reader. Nếu Crawl4AI không được cấu hình đầy đủ, URL reader degrade về generic reader thay vì làm bot fail startup. DDGS và DNS resolver dùng bounded synchronous-thread capacity để asyncio cancellation không giả vờ rằng thread nền đã dừng.
 
 ---
 
@@ -367,7 +379,9 @@ Direct URL pipeline hiện là X-specific resolution trước, sau đó Crawl4AI
 | `/help` | hướng dẫn ngắn |
 | `/status` | admin-only status |
 
-Plain image không có text/caption trigger sẽ không tự gọi bot. Forum topic được cô lập history/lock bằng `(chat_id, message_thread_id)`.
+Plain image không có text/caption trigger sẽ không tự gọi bot. Forum topic luôn cô lập history bằng `(chat_id, message_thread_id)`. Legacy mode vẫn giữ per-conversation lock; renewable mode dùng immutable history snapshot theo job và không giữ chat lock xuyên toàn request, nên một job đang chờ consent không khóa job khác trong cùng group/topic.
+
+Trong renewable mode, owner có thể bấm **Tiếp tục** hoặc **Dừng**; admin chỉ có quyền Dừng. Continue phải khớp generation hiện tại, còn Stop của cùng job vẫn hữu dụng khi status vừa đổi. Registry Release 1 nằm trong RAM nên restart không resume job và callback cũ không tạo lại request.
 
 Provider health state là per-slot:
 
@@ -403,6 +417,13 @@ python -m unittest tests.test_ai_transport_resilience -v
 python -m unittest tests.test_provider_routing -v
 python -m unittest tests.test_provider_portability -v
 python -m unittest tests.test_provider_observability -v
+python -m unittest tests.test_job_control -v
+python -m unittest tests.test_job_operations -v
+python -m unittest tests.test_job_router -v
+python -m unittest tests.test_job_manager -v
+python -m unittest tests.test_job_telegram -v
+python -m unittest tests.test_job_lifecycle -v
+python -m unittest tests.test_question_renewal_flow -v
 python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 python -m ruff check .
@@ -410,13 +431,14 @@ python -m pip check
 python -m compileall -q app tests scripts
 cp .env.example .env
 python scripts/sync_env.py
+python scripts/sync_env.py
 docker compose config --quiet
-docker build --tag fcai-pr47-audit-fix .
+docker build --tag fcai-renewable-audit .
 ```
 
 GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXNG YAML và build production image.
 
-Manual production smoke sau deploy nên gồm:
+Manual smoke **sau khi operator quyết định deploy** nên gồm các flow cũ cộng với renewable controls trên bot/group thử nghiệm được chỉ định:
 
 1. normal text query không tool;
 2. query cần web search/tool;
@@ -424,15 +446,15 @@ Manual production smoke sau deploy nên gồm:
 4. một ảnh;
 5. request vượt effective image limit;
 6. `/status`;
-7. natural `ConnectTimeout -> same-provider retry -> success/fallback`;
-8. natural `ReadTimeout -> eligible alternative`;
-9. nếu xảy ra, `ReadTimeout -> wrap-around to prior provider`;
-10. valid chat sau failure reset consecutive streak nhưng cumulative budgets và consumed same-provider retry token vẫn monotonic;
-11. `ConnectTimeout -> retry tool success -> tool -> ReadTimeout` trong one-provider setup không tạo call #4;
-12. all providers bounded -> `AllProvidersFailed` không infinite loop;
-13. tool evidence tồn tại sau rotation/wrap và completed tool không chạy lại;
-14. stale deferred transport health không overwrite newer success hoặc 429 `Retry-After`.
+7. hai lần renewal liên tiếp giữ cùng evidence/retry/tool state;
+8. Stop khi queued/running/consent;
+9. paused job A không chặn job B;
+10. restart làm nút job cũ stale, không tự resume;
+11. natural `ConnectTimeout -> same-provider retry -> success/fallback`;
+12. natural `ReadTimeout -> eligible alternative`;
+13. all providers bounded -> `AllProvidersFailed` không infinite loop;
+14. tool evidence tồn tại sau rotation/wrap và completed tool không chạy lại.
 
-Production rollout nên deploy retry code trước, giữ timeout hiện tại. Rollback bằng revert PR hoặc deploy application commit trước.
+Rollout renewable controls phải deploy code với `QUESTION_CONTROLS_ENABLED=0` trước, smoke trên môi trường được operator chỉ định, rồi mới bật flag nếu đạt. Rollback đặt flag về `0` và recreate/restart deployment. Repo/PR không tự deploy hoặc gửi test vào group thật.
 
 Các phase circuit breaker CLOSED/OPEN/HALF_OPEN, per-provider bulkhead, adaptive scoring và hedged requests là follow-up riêng, không phải behavior hiện tại.

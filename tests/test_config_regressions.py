@@ -109,3 +109,21 @@ class ConfigRegressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JobConfigTests(unittest.TestCase):
+    def test_controls_defaults_and_validation(self):
+        s = Settings(_env_file=None)
+        self.assertFalse(s.question_controls_enabled)
+        self.assertEqual(s.question_renewal_interval_sec, 180)
+        for kw in ({'question_renewal_interval_sec': float('nan')},
+                   {'question_max_inflight_operations': 17},
+                   {'question_max_pending_jobs': 1, 'question_max_jobs_per_user': 2},
+                   {'question_progress_interval_sec': 180},
+                   {'tool_call_total_timeout_sec': 1}):
+            with self.subTest(kw=kw), self.assertRaises(ValidationError):
+                Settings(_env_file=None, **kw)
+
+    def test_controlled_mode_independent_of_legacy_timeout(self):
+        Settings(_env_file=None, question_controls_enabled=True,
+                 question_timeout_sec=1, crawl4ai_api_token='test')
