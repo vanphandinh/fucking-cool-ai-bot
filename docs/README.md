@@ -2,7 +2,7 @@
 
 Tài liệu trong repo được chia thành hai nhóm: **canonical/current guides** dùng để vận hành code hiện tại và **historical/maintenance records** dùng để giữ bối cảnh thiết kế, incident và audit tại một thời điểm cụ thể.
 
-Last full documentation sync: **2026-09-11**.
+Last full documentation sync: **2026-09-14**.
 
 ## Canonical / current guides
 
@@ -14,6 +14,7 @@ Các tài liệu dưới đây phải được giữ đồng bộ với source/r
 - [`CHAINNODE.md`](CHAINNODE.md) — optional Chainnode text provider, qualified model, configuration và rollback.
 - [`telegram-vision-input.md`](telegram-vision-input.md) — Telegram image input, limits và capability-aware vision routing.
 - [`TELEGRAM_FORMATTING.md`](TELEGRAM_FORMATTING.md) — Telegram-native HTML formatting, splitting và delivery fallback.
+- [`QUESTION_CONTROLS.md`](QUESTION_CONTROLS.md) — renewable Telegram jobs, consent/Stop semantics, local bounds, rollout và rollback.
 - [`SEARCH_RESILIENCE.md`](SEARCH_RESILIENCE.md) — search routing, circuit breaker, cache, singleflight và cancellation semantics.
 - [`CRAWL4AI_INTEGRATION.md`](CRAWL4AI_INTEGRATION.md) — optional Crawl4AI URL rendering backend.
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
@@ -45,7 +46,10 @@ Khi tài liệu và implementation không khớp, dùng thứ tự ưu tiên sau
 - Text provider registry register B.AI và optional Chainnode; default `TEXT_PROVIDER_ORDER=bai` nên Chainnode chỉ active khi deployment cấu hình và opt in qua order.
 - Vision provider hiện là B.AI; default `VISION_PROVIDER_ORDER=bai`, B.AI vision slot advertise `max_images=1`.
 - AI OpenAI-compatible transport dùng phase timeouts `connect=8s`, `write=20s`, `pool=5s`; `BAI_REQUEST_TIMEOUT_SEC` và `CHAINNODE_REQUEST_TIMEOUT_SEC` điều khiển read timeout, default `60s`.
-- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy.
+- `QUESTION_CONTROLS_ENABLED=0` là mặc định rollback-safe. Khi bật, câu hỏi chạy thành in-memory renewable jobs: hết interval chỉ xin Tiếp tục/Dừng, không đặt hard deadline lên toàn câu hỏi; leaf provider/search/URL/media operations vẫn có timeout và capacity bound riêng.
+- `QUESTION_TIMEOUT_SEC` chỉ còn là outer hard deadline của legacy path khi `QUESTION_CONTROLS_ENABLED=0`.
+- Controlled jobs giữ immutable history snapshot, không giữ chat lock xuyên toàn request, và chỉ commit cặp user/assistant sau delivery thành công. Release hiện tại không resume job qua process restart.
+- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy. Trong controlled mode, shared cache vẫn dùng chung nhưng live singleflight không được share giữa các job có consent owner khác nhau.
 - Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
 - `sync_env.py` giữ value của key còn tồn tại, đồng bộ key/comment/order theo `.env.example`, và bảo đảm `.env` không còn group/other/execute permissions; file mới dùng mode `0600`.
 - Vì sync giữ existing values, deployment cũ có AI request timeout `30.0` phải đổi thủ công thành `60.0` nếu muốn áp dụng read timeout mới.
@@ -58,6 +62,7 @@ Khi runtime thay đổi, kiểm tra ít nhất:
 
 - provider registration, model allowlist, capabilities, route order và fallback semantics;
 - env keys/defaults/validation, migration behavior và secret handling;
+- renewable-question interval, callback authorization, shutdown và rollback semantics;
 - search timeouts, cache, circuit breaker, cancellation và singleflight behavior;
 - URL/X/Crawl4AI ordering, SSRF boundary và rollback switches;
 - Telegram trigger, vision limits, formatting, multipart delivery và memory behavior;
