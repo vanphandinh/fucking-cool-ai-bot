@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 
 from ..config import Settings
+from ..core.thread_work import run_bounded_thread
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ def _ddgs_image_search_sync(query: str, limit: int, timeout_sec: float = 15.0) -
 async def search_ddgs(query: str, settings: Settings, limit: int) -> list[dict]:
     timeout = float(settings.ddgs_timeout_sec)
     return await asyncio.wait_for(
-        asyncio.to_thread(_ddgs_search_sync, query, limit, timeout),
+        run_bounded_thread(partial(_ddgs_search_sync, query, limit, timeout)),
         timeout=timeout,
     )
 
@@ -80,6 +82,6 @@ async def search_ddgs(query: str, settings: Settings, limit: int) -> list[dict]:
 async def search_ddgs_images(query: str, settings: Settings, limit: int) -> list[dict]:
     timeout = float(settings.ddgs_timeout_sec)
     return await asyncio.wait_for(
-        asyncio.to_thread(_ddgs_image_search_sync, query, limit, timeout),
+        run_bounded_thread(partial(_ddgs_image_search_sync, query, limit, timeout)),
         timeout=timeout,
     )

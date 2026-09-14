@@ -132,24 +132,25 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     endpoint = f"{settings.crawl4ai_url.rstrip('/')}/crawl"
 
     try:
-        async with client.stream(
-            "POST",
-            endpoint,
-            headers=headers,
-            json=payload,
-        ) as response:
-            if response.status_code in (401, 403):
-                return _failed(source_url, "auth")
-            if response.status_code == 429:
-                return _failed(source_url, "rate_limited")
-            if response.status_code >= 500:
-                return _failed(source_url, "upstream_5xx")
-            if response.status_code >= 400:
-                return _failed(source_url, f"http_{response.status_code}")
-            raw_body = await _read_response_bytes(response)
+        async with asyncio.timeout(settings.crawl4ai_timeout_sec):
+            async with client.stream(
+                "POST",
+                endpoint,
+                headers=headers,
+                json=payload,
+            ) as response:
+                if response.status_code in (401, 403):
+                    return _failed(source_url, "auth")
+                if response.status_code == 429:
+                    return _failed(source_url, "rate_limited")
+                if response.status_code >= 500:
+                    return _failed(source_url, "upstream_5xx")
+                if response.status_code >= 400:
+                    return _failed(source_url, f"http_{response.status_code}")
+                raw_body = await _read_response_bytes(response)
     except asyncio.CancelledError:
         raise
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, TimeoutError):
         return _failed(source_url, "timeout")
     except httpx.RequestError:
         return _failed(source_url, "network")

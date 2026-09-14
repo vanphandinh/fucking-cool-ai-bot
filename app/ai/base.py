@@ -14,10 +14,6 @@ import httpx
 from .capabilities import ProviderCapabilities
 from .health import ProviderHealth
 
-_IMAGE_DATA_URL_RE = re.compile(
-    r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=_-]+",
-    flags=re.IGNORECASE,
-)
 _TOOL_MARKUP_HINT_RE = re.compile(
     r"</?(?:tool_call|arg_key|arg_value)>|<\s*/?\s*[|｜]\s*/?dsml[|｜]",
     flags=re.IGNORECASE,
@@ -29,6 +25,9 @@ _TEXT_TOOL_CALL_RE = re.compile(
 _TEXT_TOOL_ARG_RE = re.compile(
     r"<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>",
     flags=re.IGNORECASE | re.DOTALL,
+)
+_SAFE_PROVIDER_HTTP_ERROR_RE = re.compile(
+    r"^(?P<provider>[^:\n]{1,100}) HTTP (?P<status>[1-5][0-9]{2})(?::.*)?$"
 )
 _ASSISTANT_REPLAY_FIELDS = ("reasoning_details", "reasoning", "reasoning_content")
 _AI_CONNECT_TIMEOUT_SEC = 8.0
@@ -42,13 +41,6 @@ class TransportFailureKind(str, Enum):
     READ_TIMEOUT = "read_timeout"
     WRITE_TIMEOUT = "write_timeout"
     POOL_TIMEOUT = "pool_timeout"
-
-
-def _safe_error_excerpt(value: object, limit: int) -> str:
-    """Redact image payloads before provider responses can reach logs/status."""
-    text = value if isinstance(value, str) else str(value)
-    redacted = _IMAGE_DATA_URL_RE.sub("data:image/[redacted];base64,[redacted]", text)
-    return redacted[:limit]
 
 
 def _contains_internal_tool_markup(value: object) -> bool:
@@ -86,6 +78,14 @@ def _transport_error_detail(exc: httpx.HTTPError, read_timeout: float) -> str:
     return ": ".join(parts)
 
 
+def _safe_provider_error_message(message: str) -> str:
+    """Strip raw HTTP response payloads while retaining provider/status metadata."""
+    match = _SAFE_PROVIDER_HTTP_ERROR_RE.fullmatch(message)
+    if match is None:
+        return message
+    return f"{match.group('provider')} HTTP {match.group('status')}"
+
+
 class ProviderError(Exception):
     def __init__(
         self,
@@ -98,7 +98,7 @@ class ProviderError(Exception):
         transient: bool = True,
         transport_kind: TransportFailureKind | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(_safe_provider_error_message(message))
         self.unsupported_tools = unsupported_tools
         self.retry_without_tools = retry_without_tools
         self.status_code = status_code
@@ -327,7 +327,6 @@ class OpenAICompatProvider:
             ) from exc
 
         if resp.status_code >= 400:
-            body = _safe_error_excerpt(resp.text, 500)
             error_message = resp.text
             generation_error = False
             failed_generation_has_markup = False
@@ -368,7 +367,7 @@ class OpenAICompatProvider:
                     retry_after = None
             transient = resp.status_code == 429 or resp.status_code >= 500
             raise ProviderError(
-                f"{self.name} HTTP {resp.status_code}: {body}",
+                f"{self.name} HTTP {resp.status_code}",
                 unsupported_tools=unsupported,
                 retry_without_tools=(
                     tool_error and not unsupported and not failed_generation_has_markup
@@ -380,19 +379,13 @@ class OpenAICompatProvider:
         try:
             data = resp.json()
         except json.JSONDecodeError as exc:
-            raise ProviderError(
-                f"{self.name}: phản hồi không phải JSON: {_safe_error_excerpt(resp.text, 200)}"
-            ) from exc
+            raise ProviderError(f"{self.name}: phản hồi không phải JSON") from exc
         try:
             msg = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError(
-                f"{self.name}: phản hồi thiếu choices: {_safe_error_excerpt(data, 200)}"
-            ) from exc
+            raise ProviderError(f"{self.name}: phản hồi thiếu choices") from exc
         if not isinstance(msg, dict):
-            raise ProviderError(
-                f"{self.name}: message không phải object: {_safe_error_excerpt(msg, 200)}"
-            )
+            raise ProviderError(f"{self.name}: message không phải object")
         content = _normalize_content(msg.get("content"))
         tool_calls = _parse_structured_tool_calls(
             msg,

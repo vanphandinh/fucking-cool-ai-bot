@@ -262,6 +262,7 @@ async def read_x_url(
     mode: str,
     timeout: float,
     client: httpx.AsyncClient | None = None,
+    *, operations=None, budget=None,
 ) -> XReadResult | None:
     """Resolve an X status via free structured sources within one total deadline."""
     if mode not in ("auto", "x_thread"):
@@ -269,6 +270,29 @@ async def read_x_url(
     deadline = max(1.0, min(float(timeout), 12.0))
     own_client = client is None
     http = client or httpx.AsyncClient(timeout=deadline, follow_redirects=False)
+    if operations is not None:
+        from ..core.job_operations import OperationBudget
+        active_budget = budget or OperationBudget(deadline)
+        attempts = [("X", lambda: _fetch_fxtwitter(target, mode, http))]
+        if mode == "x_thread":
+            attempts.append(("X focal post", lambda: _fetch_fxtwitter(target, "auto", http)))
+        attempts.append(("X oEmbed", lambda: _fetch_oembed(target, http)))
+        try:
+            for label, factory in attempts:
+                try:
+                    result = await operations.run(label, factory, timeout_sec=deadline,
+                                                  budget=active_budget)
+                    if label == "X focal post":
+                        return XReadResult(
+                            "Full thread unavailable; focal post only.\n" + result.text,
+                            result.backend, result.canonical_url, False)
+                    return result
+                except (XFetchError, httpx.HTTPError, ValueError, TimeoutError):
+                    pass
+            return None
+        finally:
+            if own_client:
+                await http.aclose()
     try:
         try:
             async with asyncio.timeout(deadline):

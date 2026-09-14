@@ -92,8 +92,9 @@ async def _resolve_all(host: str) -> list[str]:
                 out.append(key)
         return out
 
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _res)
+    from ..core.thread_work import run_bounded_thread
+
+    return await run_bounded_thread(_res)
 
 
 class SSRFCheckBackend(httpcore.AsyncNetworkBackend):
@@ -356,17 +357,23 @@ def _build_client(timeout: float) -> httpx.AsyncClient:
 
 
 async def read_page(
-    url: str, timeout: float = 30.0, client: httpx.AsyncClient | None = None
+    url: str, timeout: float = 30.0, client: httpx.AsyncClient | None = None,
+    *, operations=None, budget=None,
 ) -> str:
     """Bound the whole read, including DNS, redirects and the Jina fallback."""
     try:
+        if operations is not None:
+            from ..core.job_operations import OperationBudget
+            return await _read_page(url, timeout, client, operations,
+                                    budget or OperationBudget(timeout))
         async with asyncio.timeout(timeout):
             return await _read_page(url, timeout, client)
     except TimeoutError:
         return "Không tải được trang: quá thời gian cho phép."
 
 
-async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None) -> str:
+async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
+                     operations=None, budget=None) -> str:
     """Trả về văn bản rút gọn của trang (<= MAX_CHARS) hoặc lý do không tải được.
 
     ``client`` chỉ dành cho kiểm thử (chèn transport giả); bình thường để None.
@@ -377,10 +384,16 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None)
 
     own_client = client is None
     http = client or _build_client(timeout)
+    async def fetch(target, label):
+        if operations is None:
+            return await _fetch_limited(http, target)
+        return await operations.run(label, lambda: _fetch_limited(http, target),
+                                    timeout_sec=timeout, budget=budget)
+
     try:
         # 1) Jina Reader — không cần key, trả text sạch (Jina tự tải hộ nên an toàn)
         try:
-            result = await _fetch_limited(http, f"https://r.jina.ai/{url}")
+            result = await fetch(f"https://r.jina.ai/{url}", "Jina")
             text = result.body.decode("utf-8", errors="replace").strip()
             if text:
                 return text[:MAX_CHARS]
@@ -391,7 +404,7 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None)
 
         # 2) Fallback: tải HTML trực tiếp và parse văn bản
         try:
-            result = await _fetch_limited(http, url)
+            result = await fetch(url, "Đọc trang trực tiếp")
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             return f"Không tải được trang: {exc}"
         except Exception as exc:  # noqa: BLE001 — không để lỗi mạng lạ sập tool

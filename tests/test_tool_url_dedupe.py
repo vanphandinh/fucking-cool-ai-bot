@@ -66,7 +66,7 @@ class ToolUrlDedupeTests(unittest.IsolatedAsyncioTestCase):
         release = asyncio.Event()
         calls = 0
 
-        async def read_url(url, settings, mode):
+        async def read_url(url, settings, mode, *, operations=None):
             nonlocal calls
             calls += 1
             started.set()
@@ -83,11 +83,11 @@ class ToolUrlDedupeTests(unittest.IsolatedAsyncioTestCase):
                 return await Orchestrator(Settings(_env_file=None), router).ask("đọc nguồn")
 
         task = asyncio.create_task(run_ask())
-        await started.wait()
+        await asyncio.wait_for(started.wait(), timeout=.2)
         await asyncio.sleep(0)
         self.assertEqual(calls, 1)
         release.set()
-        answer = await task
+        answer = await asyncio.wait_for(task, timeout=.2)
 
         self.assertEqual(calls, 1)
         self.assertEqual(router.outputs[0], router.outputs[1])
