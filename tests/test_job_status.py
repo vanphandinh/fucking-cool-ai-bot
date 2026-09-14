@@ -68,6 +68,9 @@ class _SuccessBot:
     async def edit_message_text(self, **kwargs):
         return None
 
+    async def delete_message(self, **kwargs):
+        return None
+
 
 class _RecordingBot:
     def __init__(self):
