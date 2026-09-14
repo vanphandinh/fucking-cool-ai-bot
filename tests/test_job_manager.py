@@ -154,6 +154,121 @@ class JobManagerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await self.manager.stop(job_id, 99, -100, 101), "stopped")
 
+    async def test_shutdown_queued_prevents_execute_start(self):
+        settings = Settings(_env_file=None)
+        prepare_entered = asyncio.Event()
+        body_started = asyncio.Event()
+
+        async def prepare(operations):
+            prepare_entered.set()
+            await asyncio.Event().wait()
+
+        async def execute(record, operations):
+            body_started.set()
+            return "answer"
+
+        self.manager = JobManager(settings, execute)
+        job_id = await self.manager.submit(
+            JobSubmission(
+                "a",
+                None,
+                10,
+                -100,
+                None,
+                1,
+                101,
+                [],
+                prepare_request=prepare,
+            )
+        )
+        await prepare_entered.wait()
+        self.assertEqual(self.manager.snapshot(job_id).state, "QUEUED")
+
+        await self.manager.shutdown()
+
+        self.assertFalse(body_started.is_set())
+        self.assertEqual(self.manager.snapshot(job_id).state, "CANCELLED")
+        self.assertEqual(self.manager.owned_task_count, 0)
+
+    async def test_shutdown_running_releases_operation_capacity(self):
+        settings = Settings(_env_file=None, question_max_inflight_operations=1)
+        operation_entered = asyncio.Event()
+
+        async def execute(record, operations):
+            async def blocked():
+                operation_entered.set()
+                await asyncio.Event().wait()
+
+            await operations.run("work", blocked, timeout_sec=10)
+            return "answer"
+
+        self.manager = JobManager(settings, execute)
+        job_id = await self.manager.submit(
+            JobSubmission("a", None, 10, -100, None, 1, 101, [])
+        )
+        await operation_entered.wait()
+        snapshot = self.manager.snapshot(job_id)
+        self.assertEqual(snapshot.state, "RUNNING")
+        self.assertEqual(snapshot.active_operations, 1)
+
+        await self.manager.shutdown()
+
+        snapshot = self.manager.snapshot(job_id)
+        self.assertEqual(snapshot.state, "CANCELLED")
+        self.assertEqual(snapshot.active_operations, 0)
+        self.assertEqual(self.manager.owned_task_count, 0)
+
+    async def test_shutdown_awaiting_consent_wakes_waiter_without_renewal(self):
+        settings = Settings(
+            _env_file=None,
+            question_renewal_interval_sec=60,
+            question_max_inflight_operations=1,
+        )
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        before_waiter = asyncio.Event()
+        second_started = asyncio.Event()
+
+        async def execute(record, operations):
+            async def first():
+                first_entered.set()
+                await release_first.wait()
+                return "first"
+
+            async def second():
+                second_started.set()
+                return "second"
+
+            await operations.run("first", first, timeout_sec=10)
+            before_waiter.set()
+            await operations.run("second", second, timeout_sec=10)
+            return "answer"
+
+        self.manager = JobManager(settings, execute)
+        job_id = await self.manager.submit(
+            JobSubmission("a", None, 10, -100, None, 1, 101, [])
+        )
+        await first_entered.wait()
+        record = self.manager.get(job_id)
+        record.control.remaining = 0
+        self.assertTrue(await record.control.expire_if_due())
+        self.assertEqual(self.manager.snapshot(job_id).state, "AWAITING_CONSENT")
+
+        release_first.set()
+        await before_waiter.wait()
+        await asyncio.sleep(0)
+        self.assertEqual(self.manager.snapshot(job_id).state, "AWAITING_CONSENT")
+        self.assertFalse(second_started.is_set())
+
+        await self.manager.shutdown()
+
+        snapshot = self.manager.snapshot(job_id)
+        self.assertEqual(snapshot.state, "CANCELLED")
+        self.assertEqual(snapshot.renewals, 0)
+        self.assertEqual(snapshot.active_operations, 0)
+        self.assertFalse(second_started.is_set())
+        self.assertEqual(self.manager.owned_task_count, 0)
+
     async def test_shutdown_leaves_no_owned_tasks(self):
         settings = Settings(_env_file=None)
         started = asyncio.Event()
