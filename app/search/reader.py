@@ -92,8 +92,9 @@ async def _resolve_all(host: str) -> list[str]:
                 out.append(key)
         return out
 
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _res)
+    from ..core.thread_work import run_bounded_thread
+
+    return await run_bounded_thread(_res)
 
 
 class SSRFCheckBackend(httpcore.AsyncNetworkBackend):
