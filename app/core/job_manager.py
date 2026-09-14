@@ -18,6 +18,10 @@ class JobCapacityError(RuntimeError):
     pass
 
 
+class UserFacingJobError(RuntimeError):
+    """Expected job failure whose short message is safe to show in status UI."""
+
+
 @dataclass(frozen=True)
 class JobSubmission:
     question: str
@@ -97,7 +101,11 @@ class JobManager:
 
     @property
     def owned_task_count(self) -> int:
-        count = sum(1 for record in self._jobs.values() if record.task and not record.task.done())
+        count = sum(
+            1
+            for record in self._jobs.values()
+            if record.task is not None and not record.task.done()
+        )
         if self._monitor is not None and not self._monitor.done():
             count += 1
         return count
@@ -123,7 +131,7 @@ class JobManager:
             active_operations=control.active_operations,
             created_at=record.created_at,
             active_duration=control.active_duration,
-            result_ready=record.result is not None,
+            result_ready=record.result is not None or record.delivered,
             error=record.error,
         )
 
@@ -144,10 +152,16 @@ class JobManager:
                 return existing
             if not self._accepting:
                 raise JobCapacityError("job manager is shutting down")
-            active = [r for r in self._jobs.values() if r.control.state not in TERMINAL]
+            active = [
+                record
+                for record in self._jobs.values()
+                if record.control.state not in TERMINAL
+            ]
             if len(active) >= self.settings.question_max_pending_jobs:
                 raise JobCapacityError("too many pending jobs")
-            owner_active = sum(r.submission.owner_id == submission.owner_id for r in active)
+            owner_active = sum(
+                record.submission.owner_id == submission.owner_id for record in active
+            )
             if owner_active >= self.settings.question_max_jobs_per_user:
                 raise JobCapacityError("too many jobs for this user")
 
@@ -168,32 +182,51 @@ class JobManager:
             record.operations = operations
             self._jobs[job_id] = record
             self._by_message[key] = job_id
-            record.task = asyncio.create_task(self._run(record), name=f"question-job:{job_id}")
+            record.task = asyncio.create_task(
+                self._run(record),
+                name=f"question-job:{job_id}",
+            )
+            self._emit(record, ("state", "QUEUED"))
             if self._monitor is None or self._monitor.done():
-                self._monitor = asyncio.create_task(self._monitor_loop(), name="question-job-monitor")
+                self._monitor = asyncio.create_task(
+                    self._monitor_loop(),
+                    name="question-job-monitor",
+                )
             return job_id
 
     async def _run(self, record: JobRecord) -> None:
         try:
-            if record.submission.prepare_request is not None:
-                record.prepared_request = await record.submission.prepare_request(record.operations)
+            prepare = record.submission.prepare_request
+            if prepare is not None:
+                record.prepared_request = await prepare(record.operations)
+                record.submission = replace(record.submission, prepare_request=None)
             result = await self.execute(record, record.operations)
             record.result = result
             if not await record.control.begin_delivery():
                 return
+            self._emit(record, ("state", "DELIVERING"))
             if self.deliver is not None:
                 await self.deliver(record, result)
             record.delivered = True
             await record.control.finish("COMPLETED")
+            self._emit(record, ("state", "COMPLETED"))
         except (JobStopped, asyncio.CancelledError):
             if record.control.state not in TERMINAL and record.control.state != "DELIVERING":
                 await record.control.stop()
             if record.control.state != "CANCELLED" and record.control.state != "DELIVERING":
                 await record.control.finish("CANCELLED")
-        except Exception as exc:  # noqa: BLE001 - terminal manager boundary
-            record.error = f"{type(exc).__name__}: {exc}"[:500]
+            if record.control.state == "CANCELLED":
+                self._emit(record, ("state", "CANCELLED"))
+        except UserFacingJobError as exc:
+            record.error = str(exc)[:500]
             if record.control.state not in TERMINAL:
                 await record.control.finish("FAILED")
+            self._emit(record, ("state", "FAILED"))
+        except Exception as exc:  # noqa: BLE001 - terminal manager boundary
+            record.error = "Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé."
+            if record.control.state not in TERMINAL:
+                await record.control.finish("FAILED")
+            self._emit(record, ("state", "FAILED", type(exc).__name__))
         finally:
             record.prepared_request = None
             await self._remember_terminal(record)
@@ -210,7 +243,6 @@ class JobManager:
                     key = (old.submission.chat_id, old.submission.request_message_id)
                     if self._by_message.get(key) == old_id:
                         self._by_message.pop(key, None)
-            # Keep only small terminal metadata/result marker. Media/preparation are already dropped.
             if record.delivered:
                 record.result = None
 
@@ -219,6 +251,22 @@ class JobManager:
         if record is None or record.task is None:
             return
         await asyncio.gather(record.task, return_exceptions=True)
+
+    async def set_status_message_id(
+        self,
+        job_id: str,
+        expected_message_id: int,
+        new_message_id: int,
+    ) -> bool:
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None or record.submission.status_message_id != expected_message_id:
+                return False
+            record.submission = replace(
+                record.submission,
+                status_message_id=new_message_id,
+            )
+            return True
 
     def _authorized_target(
         self,
@@ -229,7 +277,10 @@ class JobManager:
         *,
         stop: bool,
     ) -> bool:
-        if record.submission.chat_id != chat_id or record.submission.status_message_id != status_message_id:
+        if (
+            record.submission.chat_id != chat_id
+            or record.submission.status_message_id != status_message_id
+        ):
             return False
         if actor_id == record.submission.owner_id:
             return True
@@ -249,6 +300,7 @@ class JobManager:
         if not self._authorized_target(record, actor_id, chat_id, status_message_id, stop=False):
             return "forbidden"
         if await record.control.renew(generation):
+            self._emit(record, ("renewal_accepted", record.control.generation))
             return "renewed"
         return "stale"
 
@@ -266,6 +318,7 @@ class JobManager:
             return "forbidden"
         if not await record.control.stop():
             return "terminal"
+        self._emit(record, ("state", "CANCELLED"))
         if record.task is not None and record.task is not asyncio.current_task():
             record.task.cancel()
             await asyncio.gather(record.task, return_exceptions=True)
@@ -280,7 +333,10 @@ class JobManager:
                     if record.control.state == "RUNNING":
                         expired = await record.control.expire_if_due()
                         if expired:
-                            self._emit(record, ("renewal_requested", record.control.generation))
+                            self._emit(
+                                record,
+                                ("renewal_requested", record.control.generation),
+                            )
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
             raise
@@ -296,6 +352,7 @@ class JobManager:
         for record in tuple(self._jobs.values()):
             if record.control.state not in TERMINAL and record.control.state != "DELIVERING":
                 await record.control.stop()
+                self._emit(record, ("state", "CANCELLED"))
         for task in tasks:
             task.cancel()
         if tasks:
