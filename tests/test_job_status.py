@@ -70,6 +70,19 @@ class _BlockingReplacementBot(_ReplacementBot):
         return SimpleNamespace(message_id=202)
 
 
+class _RetryReplacementBot(_ReplacementBot):
+    def __init__(self, events):
+        super().__init__(events)
+        self.send_count = 0
+
+    async def send_message(self, **kwargs):
+        self.send_count += 1
+        self.events.append(("send", kwargs.get("reply_markup")))
+        if self.send_count == 1:
+            raise RuntimeError("temporary telegram failure")
+        return SimpleNamespace(message_id=202)
+
+
 class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _snapshot(*, state="RUNNING"):
@@ -126,6 +139,23 @@ class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(bot.send_count, 1)
         self.assertEqual(bot.send_cancelled, 0)
+        self.assertEqual(manager.snapshot(snapshot.job_id).status_message_id, 202)
+        markup_events = [event for event in events if event[0] == "markup"]
+        self.assertEqual(len(markup_events), 1)
+        self.assertIsNotNone(markup_events[0][2])
+
+    async def test_failed_replacement_send_is_retryable(self):
+        events = []
+        snapshot = self._snapshot(state="AWAITING_CONSENT")
+        manager = _ReplacementManager(snapshot, events)
+        bot = _RetryReplacementBot(events)
+        settings = Settings(_env_file=None)
+        presenter = JobStatusPresenter(bot, settings, manager)
+
+        await presenter.refresh(snapshot.job_id, force=True)
+        await presenter.refresh(snapshot.job_id, force=True)
+
+        self.assertEqual(bot.send_count, 2)
         self.assertEqual(manager.snapshot(snapshot.job_id).status_message_id, 202)
         markup_events = [event for event in events if event[0] == "markup"]
         self.assertEqual(len(markup_events), 1)
