@@ -35,7 +35,7 @@ class _AlwaysFailStatusBot:
     def __init__(self):
         self.attempts = 0
 
-    async def edit_message_text(self, **kwargs):
+    async def delete_message(self, **kwargs):
         self.attempts += 1
         raise RuntimeError("telegram unavailable")
 
