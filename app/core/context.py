@@ -22,6 +22,21 @@ class ChatMemory:
             return
         self._store[conversation_key].append({"role": role, "content": content[:4000]})
 
+    def push_exchange(
+        self,
+        conversation_key: ConversationKey,
+        user_content: str,
+        assistant_content: str,
+    ) -> None:
+        """Commit one delivered exchange without an await point between its halves."""
+        user = (user_content or "").strip()
+        assistant = (assistant_content or "").strip()
+        if not user or not assistant:
+            return
+        entries = self._store[conversation_key]
+        entries.append({"role": "user", "content": user[:4000]})
+        entries.append({"role": "assistant", "content": assistant[:4000]})
+
     def history_for(
         self,
         conversation_key: ConversationKey,
@@ -33,7 +48,6 @@ class ChatMemory:
         if limit <= 0:
             return []
         entries = list(self._store.get(conversation_key, []))
-        # Tối đa `limit` cặp -> 2*limit bản ghi
         if len(entries) > limit * 2:
             entries = entries[-(limit * 2) :]
-        return entries
+        return [dict(entry) for entry in entries]
