@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from ..config import Settings
+from ..core.job_operations import OperationBudget
 from .resilience import BackendKey, FailureKind
 from .runtime import get_search_runtime
 
@@ -92,10 +93,12 @@ async def _attempt(
     query: str,
     settings: Settings,
     limit: int,
-    deadline: float,
+    deadline: float | None,
     configured_timeout: float,
     call: Callable[[str, Settings, int], Awaitable[list[dict]]],
     attempted: set[str],
+    operations=None,
+    budget: OperationBudget | None = None,
 ) -> tuple[bool, list[dict], Exception | None]:
     if name in attempted:
         return False, [], RuntimeError(f"backend {name} already attempted")
@@ -106,15 +109,27 @@ async def _attempt(
     if not runtime.breaker.allow_request(key):
         return False, [], None
 
-    remaining = deadline - asyncio.get_running_loop().time()
-    if remaining <= 0:
-        exc = asyncio.TimeoutError("search total deadline exhausted")
-        runtime.breaker.record_failure(key, FailureKind.TIMEOUT, str(exc))
-        return True, [], exc
+    if operations is None:
+        assert deadline is not None
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            exc = asyncio.TimeoutError("search total deadline exhausted")
+            runtime.breaker.record_failure(key, FailureKind.TIMEOUT, str(exc))
+            return True, [], exc
+        timeout = min(configured_timeout, remaining)
+    else:
+        timeout = configured_timeout
 
-    timeout = min(configured_timeout, remaining)
     try:
-        results = await asyncio.wait_for(call(query, settings, limit), timeout=timeout)
+        if operations is None:
+            results = await asyncio.wait_for(call(query, settings, limit), timeout=timeout)
+        else:
+            results = await operations.run(
+                f"{name} {kind} search",
+                lambda: call(query, settings, limit),
+                timeout_sec=timeout,
+                budget=budget,
+            )
         if not isinstance(results, list):
             raise RuntimeError(f"backend {name} returned non-list results")
     except asyncio.CancelledError:
@@ -138,6 +153,7 @@ async def route_auto(
     result_url_key: str,
     searx_call: Callable[[str, Settings, int], Awaitable[list[dict]]] | None,
     ddgs_call: Callable[[str, Settings, int], Awaitable[list[dict]]],
+    operations=None,
 ) -> list[dict]:
     runtime = get_search_runtime(settings)
     normalized = _normalize_query(query)
@@ -153,7 +169,10 @@ async def route_auto(
             return second_fresh[:limit]
 
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + settings.search_total_timeout_sec
+        deadline = None if operations is not None else loop.time() + settings.search_total_timeout_sec
+        operation_budget = (
+            OperationBudget(settings.search_total_timeout_sec) if operations is not None else None
+        )
         attempted: set[str] = set()
         merged: list[dict] = []
         had_successful_backend = False
@@ -175,6 +194,8 @@ async def route_auto(
                 configured_timeout=settings.searxng_timeout_sec,
                 call=searx_call,
                 attempted=attempted,
+                operations=operations,
+                budget=operation_budget,
             )
             if attempted_now and error is None:
                 had_successful_backend = True
@@ -202,6 +223,8 @@ async def route_auto(
                 configured_timeout=settings.ddgs_timeout_sec,
                 call=ddgs_call,
                 attempted=attempted,
+                operations=operations,
+                budget=operation_budget,
             )
             if attempted_now and error is None:
                 had_successful_backend = True
@@ -229,6 +252,11 @@ async def route_auto(
         reason = ", ".join(failures) if failures else "all search backends unavailable"
         raise RoutedSearchError(reason)
 
+    # A controlled job cannot safely share one executing coroutine with another
+    # owner's consent state. Cache remains shared, but live singleflight ownership
+    # is bypassed while renewable controls are active.
+    if operations is not None:
+        return await execute()
     return await runtime.singleflight.run(cache_key, execute)
 
 
