@@ -134,6 +134,9 @@ class QuestionProcessor:
             memory_text,
             telegram_html_to_plain(answer.text),
         )
+        # Primary answer + success accounting + memory are the completion boundary.
+        # Everything below is best-effort enrichment and must never cause replay.
+        record.delivery_committed = True
 
         try:
             if getattr(answer, "images", None):
