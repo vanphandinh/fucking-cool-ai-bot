@@ -249,6 +249,23 @@ class JobStatusPresenter:
             if snapshot is None:
                 return
             state = self._states.setdefault(job_id, _PresenterState())
+            if snapshot.state == "COMPLETED":
+                try:
+                    await self.bot.delete_message(
+                        chat_id=snapshot.chat_id,
+                        message_id=snapshot.status_message_id,
+                    )
+                except TelegramRetryAfter as exc:
+                    self._schedule_retry(job_id, retry_after=exc.retry_after)
+                    return
+                except TelegramBadRequest as exc:
+                    if not self._is_missing_message(exc):
+                        return
+                except Exception:  # noqa: BLE001 - Telegram cleanup failure is retryable
+                    self._schedule_retry(job_id)
+                    return
+                self._reset_retry(state)
+                return
             text, markup = render_job_status(
                 snapshot,
                 renewal_sec=self.settings.question_renewal_interval_sec,
@@ -320,6 +337,7 @@ class JobStatusPresenter:
             marker in text
             for marker in (
                 "message to edit not found",
+                "message to delete not found",
                 "message not found",
                 "message_id_invalid",
             )
