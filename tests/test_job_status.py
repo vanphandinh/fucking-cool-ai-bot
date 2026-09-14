@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
@@ -49,17 +50,37 @@ class _ReplacementBot:
         )
 
 
+class _BlockingReplacementBot(_ReplacementBot):
+    def __init__(self, events, send_entered, release_send):
+        super().__init__(events)
+        self.send_entered = send_entered
+        self.release_send = release_send
+        self.send_count = 0
+        self.send_cancelled = 0
+
+    async def send_message(self, **kwargs):
+        self.send_count += 1
+        self.events.append(("send", kwargs.get("reply_markup")))
+        self.send_entered.set()
+        try:
+            await self.release_send.wait()
+        except asyncio.CancelledError:
+            self.send_cancelled += 1
+            raise
+        return SimpleNamespace(message_id=202)
+
+
 class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_replacement_owns_message_before_controls_become_clickable(self):
-        events = []
-        snapshot = JobSnapshot(
+    @staticmethod
+    def _snapshot(*, state="RUNNING"):
+        return JobSnapshot(
             job_id="abcd1234",
             owner_id=10,
             chat_id=-100,
             topic_id=7,
             request_message_id=1,
             status_message_id=101,
-            state="RUNNING",
+            state=state,
             generation=0,
             renewals=0,
             active_operations=1,
@@ -68,6 +89,10 @@ class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
             result_ready=False,
             error=None,
         )
+
+    async def test_replacement_owns_message_before_controls_become_clickable(self):
+        events = []
+        snapshot = self._snapshot()
         manager = _ReplacementManager(snapshot, events)
         bot = _ReplacementBot(events)
         settings = Settings(_env_file=None)
@@ -80,6 +105,31 @@ class JobStatusPresenterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[2][0:2], ("markup", 202))
         self.assertIsNotNone(events[2][2])
         self.assertEqual(manager.snapshot(snapshot.job_id).status_message_id, 202)
+
+    async def test_force_refresh_does_not_cancel_active_replacement(self):
+        events = []
+        send_entered = asyncio.Event()
+        release_send = asyncio.Event()
+        snapshot = self._snapshot(state="AWAITING_CONSENT")
+        manager = _ReplacementManager(snapshot, events)
+        bot = _BlockingReplacementBot(events, send_entered, release_send)
+        settings = Settings(_env_file=None)
+        presenter = JobStatusPresenter(bot, settings, manager)
+
+        presenter.enqueue(snapshot.job_id, force=True)
+        await asyncio.wait_for(send_entered.wait(), timeout=1)
+
+        presenter.enqueue(snapshot.job_id, force=True)
+        release_send.set()
+        while presenter._tasks:
+            await asyncio.gather(*tuple(presenter._tasks), return_exceptions=True)
+
+        self.assertEqual(bot.send_count, 1)
+        self.assertEqual(bot.send_cancelled, 0)
+        self.assertEqual(manager.snapshot(snapshot.job_id).status_message_id, 202)
+        markup_events = [event for event in events if event[0] == "markup"]
+        self.assertEqual(len(markup_events), 1)
+        self.assertIsNotNone(markup_events[0][2])
 
 
 if __name__ == "__main__":
