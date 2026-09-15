@@ -12,12 +12,15 @@ def make_chainnode_provider(
     settings: Settings,
     *,
     name: str = "chainnode",
+    vision: bool = False,
 ) -> OpenAICompatProvider:
-    model = str(settings.chainnode_text_model or "").strip()
+    model = str(
+        settings.chainnode_vision_model if vision else settings.chainnode_text_model
+    ).strip()
+    setting_name = "CHAINNODE_VISION_MODEL" if vision else "CHAINNODE_TEXT_MODEL"
     if not model:
-        raise ValueError(
-            "CHAINNODE_TEXT_MODEL là bắt buộc khi khởi tạo Chainnode provider"
-        )
+        raise ValueError(f"{setting_name} là bắt buộc khi khởi tạo Chainnode provider")
+
     return OpenAICompatProvider(
         name=name,
         base_url=settings.chainnode_base_url,
@@ -25,9 +28,9 @@ def make_chainnode_provider(
         model=model,
         timeout=settings.chainnode_request_timeout_sec,
         capabilities=ProviderCapabilities(
-            route="text",
-            supports_vision=False,
-            max_images=0,
+            route="vision" if vision else "text",
+            supports_vision=vision,
+            max_images=1 if vision else 0,
         ),
         explicit_stream=False,
     )
@@ -36,6 +39,14 @@ def make_chainnode_provider(
 def build_chainnode_provider_slots(settings: Settings) -> list[AIProvider]:
     if not settings.chainnode_api_key:
         return []
-    if "chainnode" not in settings.text_provider_order_list:
-        return []
-    return [make_chainnode_provider(settings)]
+
+    slots: list[AIProvider] = []
+    if "chainnode" in settings.text_provider_order_list and settings.chainnode_text_model:
+        slots.append(make_chainnode_provider(settings))
+    if (
+        settings.vision_enabled
+        and "chainnode" in settings.vision_provider_order_list
+        and settings.chainnode_vision_model
+    ):
+        slots.append(make_chainnode_provider(settings, vision=True))
+    return slots
