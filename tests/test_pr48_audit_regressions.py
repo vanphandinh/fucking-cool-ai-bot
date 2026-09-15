@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -220,6 +221,24 @@ class SearchFailurePrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
             error = image_service._image_search_error("ddgs", RuntimeError(secret_payload))
         self.assertNotIn(secret_payload, "\n".join(caught.output))
         self.assertNotIn(secret_payload, str(error))
+
+
+class DependencyLoggingPrivacyRegressionTests(unittest.TestCase):
+    def test_http_request_loggers_are_suppressed_below_warning(self):
+        from app.main import _configure_logging
+
+        httpx_logger = logging.getLogger("httpx")
+        httpcore_logger = logging.getLogger("httpcore")
+        original_httpx_level = httpx_logger.level
+        original_httpcore_level = httpcore_logger.level
+        try:
+            with patch("app.main.logging.basicConfig"):
+                _configure_logging(Settings(_env_file=None, log_level="INFO"))
+            self.assertGreaterEqual(httpx_logger.getEffectiveLevel(), logging.WARNING)
+            self.assertGreaterEqual(httpcore_logger.getEffectiveLevel(), logging.WARNING)
+        finally:
+            httpx_logger.setLevel(original_httpx_level)
+            httpcore_logger.setLevel(original_httpcore_level)
 
 
 class JobBoundaryLoggingRegressionTests(unittest.IsolatedAsyncioTestCase):
