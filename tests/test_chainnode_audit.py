@@ -21,9 +21,11 @@ PROBE_PATH = ROOT / "scripts" / "probe_chainnode.py"
 CHAINNODE_FILES = (
     ROOT / "app" / "ai" / "chainnode.py",
     ROOT / "scripts" / "probe_chainnode.py",
+    ROOT / "scripts" / "probe_chainnode_vision.py",
     ROOT / ".env.example",
 )
 QUALIFIED_MODEL = "cl/deepseek/deepseek-v4-flash"
+VISION_MODEL = "cl/cline-free/muse-spark-1.3-contributor"
 
 
 class ChainnodeCliAuditTests(unittest.TestCase):
@@ -316,6 +318,83 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             providers["bai"].health.consecutive_transient_failures,
             0,
         )
+
+    async def test_chainnode_vision_503_falls_back_to_bai_vision(self) -> None:
+        router = build_provider_router(
+            Settings(
+                _env_file=None,
+                chainnode_api_key="chainnode-secret",
+                chainnode_vision_model=VISION_MODEL,
+                bai_api_key="bai-secret",
+                text_provider_order="bai",
+                vision_provider_order="chainnode,bai",
+            )
+        )
+        providers = {
+            (provider.name, provider.capabilities.route): provider
+            for provider in router.providers
+        }
+        for provider in providers.values():
+            await provider.aclose()
+
+        def chainnode_failure(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                503,
+                json={"error": {"message": "temporary vision outage"}},
+                request=request,
+            )
+
+        def bai_success(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "vision fallback ok",
+                            }
+                        }
+                    ]
+                },
+                request=request,
+            )
+
+        providers[("chainnode", "vision")]._client = httpx.AsyncClient(
+            base_url="https://dn.chainno.de/v1/",
+            transport=httpx.MockTransport(chainnode_failure),
+        )
+        providers[("bai", "vision")]._client = httpx.AsyncClient(
+            base_url="https://api.b.ai/v1/",
+            transport=httpx.MockTransport(bai_success),
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this image"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,aGVsbG8="},
+                    },
+                ],
+            }
+        ]
+        try:
+            result = await router.complete(
+                messages,
+                None,
+                _noop_tool,
+                requires_vision=True,
+                image_count=1,
+            )
+        finally:
+            for provider in providers.values():
+                await provider.aclose()
+
+        self.assertEqual(result.provider, "bai")
+        self.assertEqual(result.content, "vision fallback ok")
+        self.assertEqual(result.fallbacks, ("bai",))
 
 
 def _provider():

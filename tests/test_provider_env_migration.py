@@ -19,6 +19,7 @@ class ProviderEnvMigrationTests(unittest.TestCase):
         self.assertIn("CHAINNODE_API_KEY=", template)
         self.assertIn("CHAINNODE_BASE_URL=https://dn.chainno.de/v1", template)
         self.assertIn("CHAINNODE_TEXT_MODEL=\n", template)
+        self.assertIn("CHAINNODE_VISION_MODEL=\n", template)
         self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", template)
         self.assertIn("TEXT_PROVIDER_ORDER=bai", template)
         self.assertIn("VISION_PROVIDER_ORDER=bai", template)
@@ -55,6 +56,20 @@ class ProviderEnvMigrationTests(unittest.TestCase):
         self.assertNotIn(
             "provider production duy nhất đang được register hiện tại", bai_guide
         )
+
+    def test_chainnode_docs_describe_split_live_routes(self) -> None:
+        guide = (ROOT / "docs" / "CHAINNODE.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash",
+            guide,
+        )
+        self.assertIn(
+            "CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor",
+            guide,
+        )
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,bai", guide)
+        self.assertIn("VISION_PROVIDER_ORDER=chainnode,bai", guide)
+        self.assertNotIn("Chainnode is text-only in this integration", guide)
 
     def test_sync_preserves_orders_and_removes_deleted_provider_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -104,6 +119,44 @@ class ProviderEnvMigrationTests(unittest.TestCase):
             "CLOUDFLARE_API_TOKEN",
         ):
             self.assertNotIn(removed, rendered)
+
+    def test_sync_adds_chainnode_vision_model_without_overwriting_live_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=\n"
+                "CHAINNODE_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=bai\n"
+                "VISION_PROVIDER_ORDER=bai\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "CHAINNODE_API_KEY=real-chainnode-secret\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "TEXT_PROVIDER_ORDER=chainnode,bai\n"
+                "VISION_PROVIDER_ORDER=bai\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT)],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CHAINNODE_API_KEY=real-chainnode-secret", rendered)
+        self.assertIn("CHAINNODE_VISION_MODEL=", rendered)
+        self.assertIn(
+            "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash",
+            rendered,
+        )
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,bai", rendered)
+        self.assertIn("VISION_PROVIDER_ORDER=bai", rendered)
 
 
 if __name__ == "__main__":

@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     chainnode_api_key: str = ""
     chainnode_base_url: str = "https://dn.chainno.de/v1"
     chainnode_text_model: str = ""
+    chainnode_vision_model: str = ""
     chainnode_request_timeout_sec: float = Field(
         default=60.0,
         gt=0,
@@ -190,6 +191,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CHAINNODE_TEXT_MODEL là bắt buộc khi Chainnode được bật "
                 "trong TEXT_PROVIDER_ORDER"
+            )
+
+        if (
+            self.vision_enabled
+            and self.chainnode_api_key.strip()
+            and "chainnode" in self.vision_provider_order_list
+            and not self.chainnode_vision_model.strip()
+        ):
+            raise ValueError(
+                "CHAINNODE_VISION_MODEL là bắt buộc khi Chainnode được bật "
+                "trong VISION_PROVIDER_ORDER"
             )
 
         if (
