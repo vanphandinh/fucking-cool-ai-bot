@@ -28,6 +28,19 @@ from .search.runtime import close_search_runtimes
 
 logger = logging.getLogger(__name__)
 POLLING_UPDATES = ["message", "my_chat_member", "callback_query"]
+_SENSITIVE_REQUEST_LOGGERS = ("httpx", "httpcore")
+
+
+def _configure_logging(settings: Settings) -> None:
+    logging.basicConfig(
+        level=settings.log_level.upper(),
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
+    # httpx/httpcore log complete request URLs at INFO, including query strings.
+    # Keep application INFO logs while preventing user/model-derived query data
+    # (for example SearXNG's `q=` parameter) from being written to logs.
+    for logger_name in _SENSITIVE_REQUEST_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 async def _close_providers(provider_router) -> None:
@@ -46,10 +59,7 @@ async def _shutdown_question_controls(manager, presenter) -> None:
 
 
 async def _amain(settings: Settings) -> int:
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-    )
+    _configure_logging(settings)
 
     if not settings.bot_token:
         logger.error("Thiếu BOT_TOKEN trong .env — bot không thể chạy.")
