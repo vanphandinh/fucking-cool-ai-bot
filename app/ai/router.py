@@ -462,11 +462,7 @@ class AIProviderRouter:
                 identity,
                 expected_generations=health_snapshot.scoped_generations,
             )
-            _flush_all_pending_health_errors(
-                candidates,
-                state,
-                exclude_family=identity.family,
-            )
+            _flush_all_pending_health_errors(candidates, state)
             return CompletionResult(
                 text,
                 identity.family,
