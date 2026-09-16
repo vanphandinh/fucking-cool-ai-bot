@@ -19,6 +19,9 @@ class Stats:
         self.questions_today = 0
         self.searches = 0
         self.fallback_count = 0
+        self.target_rotation_count = 0
+        self.model_rotation_count = 0
+        self.credential_failover_count = 0
         self._day = _today_vn()
         self.by_provider: Counter[str] = Counter()
         self.last_provider: str | None = None
@@ -40,6 +43,17 @@ class Stats:
 
     def record_fallbacks(self, fallbacks: tuple[str, ...]) -> None:
         self.fallback_count += len(fallbacks)
+
+    def record_target_recovery(
+        self,
+        *,
+        target_rotations: int = 0,
+        model_rotations: int = 0,
+        credential_failovers: int = 0,
+    ) -> None:
+        self.target_rotation_count += max(0, int(target_rotations))
+        self.model_rotation_count += max(0, int(model_rotations))
+        self.credential_failover_count += max(0, int(credential_failovers))
 
     def record_search(self) -> None:
         self.searches += 1
