@@ -97,7 +97,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("model-b", "chainnode", ()))
+        self.assertEqual((result.content, result.provider, result.fallbacks), ("model-b", "chainnode", ()))
+        self.assertEqual(result.target_rotations, 1)
+        self.assertEqual(result.model_rotations, 1)
+        self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(len(model_a.calls), 1)
         self.assertEqual(len(model_b.calls), 1)
         self.assertEqual(xkiro.calls, [])
@@ -126,7 +129,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("fallback", "xkiro", ("xkiro",)))
+        self.assertEqual((result.content, result.provider, result.fallbacks), ("fallback", "xkiro", ("xkiro",)))
+        self.assertEqual(result.target_rotations, 1)
+        self.assertEqual(result.model_rotations, 1)
+        self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(len(a.calls), 1)
         self.assertEqual(len(b.calls), 1)
         self.assertEqual(len(xkiro.calls), 1)
@@ -160,7 +166,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("same-model-key2", "xkiro", ()))
+        self.assertEqual((result.content, result.provider, result.fallbacks), ("same-model-key2", "xkiro", ()))
+        self.assertEqual(result.target_rotations, 1)
+        self.assertEqual(result.model_rotations, 0)
+        self.assertEqual(result.credential_failovers, 1)
         self.assertEqual(len(key1.calls), 1)
         self.assertEqual(len(key2.calls), 1)
         self.assertEqual(model_b_key1.calls, [])
@@ -361,7 +370,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), [fetch_url_tool()], execute)
 
-        self.assertEqual(result, CompletionResult("final", "chainnode", ()))
+        self.assertEqual((result.content, result.provider, result.fallbacks), ("final", "chainnode", ()))
+        self.assertEqual(result.target_rotations, 1)
+        self.assertEqual(result.model_rotations, 1)
+        self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(tool_invocations, 1)
         self.assertIn("PORTABLE-EVIDENCE", repr(b.calls[0][0]))
         self.assertNotIn("PRIVATE-A", repr(b.calls[0][0]))
