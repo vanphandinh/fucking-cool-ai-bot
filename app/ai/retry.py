@@ -70,7 +70,10 @@ class RequestRetryState:
         slot.total_transport_failures += 1
         if target_id is not None:
             incident = slot.pending_health_incidents.get(target_id)
-            if incident is None:
+            if (
+                incident is None
+                or incident.health_barrier_generation != health_barrier_generation
+            ):
                 slot.pending_health_incidents[target_id] = DeferredHealthIncident(
                     target_id=target_id,
                     error=error,
