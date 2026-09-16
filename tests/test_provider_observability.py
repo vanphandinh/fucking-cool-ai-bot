@@ -6,16 +6,18 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.ai.base import ChatResponse
+from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError
 from app.ai.recovery import HealthEffect, HealthScope
 from app.ai.router import AIProviderRouter, CompletionResult
 from app.ai.target import provider_target_identity
 from app.bot.handlers import _provider_status_lines, _vision_limit_message
 from app.bot.question_runner import QuestionProcessor
 from app.config import Settings
+from app.core.job_manager import UserFacingJobError
 from app.core.orchestrator import Orchestrator
+from app.core.request import UserRequest
 from app.core.stats import Stats
-from tests.provider_fakes import ScriptedProvider
+from tests.provider_fakes import ScriptedProvider, noop_tool
 
 
 class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
@@ -96,6 +98,68 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats.model_rotation_count, 2)
         self.assertEqual(stats.credential_failover_count, 1)
         self.assertTrue(record.delivery_committed)
+
+    async def test_terminal_provider_failure_carries_target_recovery_counters(self) -> None:
+        first = ScriptedProvider(
+            "chainnode",
+            [ProviderError("quota-a", status_code=429, transient=True)],
+        )
+        first.model = "m1"
+        first.credential_id = "c1"
+        first.target_id = "chainnode:text:m1:c1"
+        second = ScriptedProvider(
+            "chainnode",
+            [ProviderError("quota-b", status_code=429, transient=True)],
+        )
+        second.model = "m2"
+        second.credential_id = "c1"
+        second.target_id = "chainnode:text:m2:c1"
+        router = AIProviderRouter(
+            [first, second],
+            text_provider_order=("chainnode",),
+            vision_provider_order=(),
+        )
+
+        with self.assertRaises(AllProvidersFailed) as caught:
+            await router.complete([{"role": "user", "content": "hello"}], None, noop_tool)
+
+        exc = caught.exception
+        self.assertEqual(exc.target_rotations, 1)
+        self.assertEqual(exc.model_rotations, 1)
+        self.assertEqual(exc.credential_failovers, 0)
+
+    async def test_question_processor_records_target_recovery_on_all_providers_failed(self) -> None:
+        stats = Stats()
+        orchestrator = SimpleNamespace(
+            ask=AsyncMock(
+                side_effect=AllProvidersFailed(
+                    "failed",
+                    fallbacks=("xkiro",),
+                    target_rotations=3,
+                    model_rotations=2,
+                    credential_failovers=1,
+                )
+            )
+        )
+        processor = QuestionProcessor(
+            bot=SimpleNamespace(),
+            settings=Settings(_env_file=None),
+            orchestrator=orchestrator,
+            memory=SimpleNamespace(),
+            stats=stats,
+        )
+        record = SimpleNamespace(
+            prepared_request=UserRequest(text="hello"),
+            submission=SimpleNamespace(history=[]),
+        )
+
+        with self.assertRaises(UserFacingJobError):
+            await processor.execute(record, operations=None)
+
+        self.assertEqual(stats.fallback_count, 1)
+        self.assertEqual(stats.target_rotation_count, 3)
+        self.assertEqual(stats.model_rotation_count, 2)
+        self.assertEqual(stats.credential_failover_count, 1)
 
     async def test_status_labels_are_provider_generic_and_show_target_recovery(self) -> None:
         provider = ScriptedProvider("fake", [ChatResponse(content="ok")])
