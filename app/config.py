@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+_MAX_AI_PROVIDER_TARGETS = 64
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -263,6 +264,26 @@ class Settings(BaseSettings):
             raise ValueError(
                 "XKIRO_VISION_MODELS/XKIRO_VISION_MODEL là bắt buộc khi xKiro được bật "
                 "trong VISION_PROVIDER_ORDER"
+            )
+
+        target_count = 0
+        if self.chainnode_api_key.strip():
+            if "chainnode" in self.text_provider_order_list:
+                target_count += len(self.chainnode_text_models_list)
+            if self.vision_enabled and "chainnode" in self.vision_provider_order_list:
+                target_count += len(self.chainnode_vision_models_list)
+
+        xkiro_key_count = len(self.xkiro_api_keys_list)
+        if xkiro_key_count:
+            if "xkiro" in self.text_provider_order_list:
+                target_count += xkiro_key_count * len(self.xkiro_text_models_list)
+            if self.vision_enabled and "xkiro" in self.vision_provider_order_list:
+                target_count += xkiro_key_count * len(self.xkiro_vision_models_list)
+
+        if target_count > _MAX_AI_PROVIDER_TARGETS:
+            raise ValueError(
+                f"AI provider target pool expands to {target_count} enabled targets; "
+                f"maximum is {_MAX_AI_PROVIDER_TARGETS}"
             )
 
         if (
