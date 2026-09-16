@@ -1,0 +1,188 @@
+"""Deterministic stale-success concurrency regressions for provider health."""
+
+from __future__ import annotations
+
+import asyncio
+import unittest
+
+from app.ai.base import ChatResponse, ProviderError
+from app.ai.recovery import HealthScope
+from app.ai.router import AIProviderRouter
+from app.ai.target import provider_target_identity
+from tests.provider_fakes import ScriptedProvider, noop_tool
+
+
+class _BlockingRateLimitProvider(ScriptedProvider):
+    """First call blocks and succeeds; second call fails with HTTP 429."""
+
+    def __init__(
+        self,
+        family: str,
+        *,
+        model: str,
+        credential_id: str,
+    ) -> None:
+        super().__init__(family, [])
+        self.model = model
+        self.credential_id = credential_id
+        self.target_id = f"{family}:text:{model}:{credential_id}"
+        self.first_started = asyncio.Event()
+        self.release_first = asyncio.Event()
+        self.call_count = 0
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> ChatResponse:
+        self.calls.append((messages, tools))
+        self.call_count += 1
+        if self.call_count == 1:
+            self.first_started.set()
+            await self.release_first.wait()
+            return ChatResponse(content="older-success")
+        if self.call_count == 2:
+            raise ProviderError(
+                "rate limited",
+                status_code=429,
+                retry_after=120.0,
+                transient=True,
+            )
+        return ChatResponse(content="stale-target-selected")
+
+
+def _target(
+    provider: ScriptedProvider,
+    *,
+    model: str,
+    credential_id: str,
+) -> ScriptedProvider:
+    provider.model = model
+    provider.credential_id = credential_id
+    provider.target_id = f"{provider.name}:text:{model}:{credential_id}"
+    return provider
+
+
+def _messages() -> list[dict]:
+    return [{"role": "user", "content": "hello"}]
+
+
+class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_xkiro_older_success_cannot_clear_newer_credential_cooldown(self) -> None:
+        raced = _BlockingRateLimitProvider(
+            "xkiro",
+            model="model-a",
+            credential_id="cred-1",
+        )
+        sibling_key = _target(
+            ScriptedProvider(
+                "xkiro",
+                [
+                    ChatResponse(content="b-sibling"),
+                    ChatResponse(content="c-sibling"),
+                ],
+            ),
+            model="model-a",
+            credential_id="cred-2",
+        )
+        same_key_other_model = _target(
+            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            model="model-b",
+            credential_id="cred-1",
+        )
+        router = AIProviderRouter(
+            [raced, sibling_key, same_key_other_model],
+            text_provider_order=("xkiro",),
+            vision_provider_order=(),
+        )
+        raced_identity = provider_target_identity(raced)
+
+        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        await raced.first_started.wait()
+
+        request_b = await router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_b.content, "b-sibling")
+        credential_health = router.scoped_health.health(
+            HealthScope.CREDENTIAL,
+            raced_identity,
+        )
+        self.assertFalse(credential_health.available())
+        self.assertFalse(raced.health.available())
+
+        raced.release_first.set()
+        request_a_result = await request_a
+        self.assertEqual(request_a_result.content, "older-success")
+
+        self.assertFalse(
+            credential_health.available(),
+            "older success must not erase the newer xKiro credential cooldown",
+        )
+        self.assertFalse(
+            raced.health.available(),
+            "older success must not erase newer adapter-local cooldown state",
+        )
+
+        request_c = await router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_c.content, "c-sibling")
+        self.assertEqual(raced.call_count, 2)
+        self.assertEqual(len(same_key_other_model.calls), 0)
+
+    async def test_chainnode_older_success_cannot_clear_newer_model_cooldown(self) -> None:
+        raced = _BlockingRateLimitProvider(
+            "chainnode",
+            model="model-a",
+            credential_id="cred-1",
+        )
+        same_model_other_key = _target(
+            ScriptedProvider("chainnode", [ChatResponse(content="must-not-run")]),
+            model="model-a",
+            credential_id="cred-2",
+        )
+        sibling_model = _target(
+            ScriptedProvider(
+                "chainnode",
+                [
+                    ChatResponse(content="b-sibling"),
+                    ChatResponse(content="c-sibling"),
+                ],
+            ),
+            model="model-b",
+            credential_id="cred-1",
+        )
+        router = AIProviderRouter(
+            [raced, same_model_other_key, sibling_model],
+            text_provider_order=("chainnode",),
+            vision_provider_order=(),
+        )
+        raced_identity = provider_target_identity(raced)
+
+        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        await raced.first_started.wait()
+
+        request_b = await router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_b.content, "b-sibling")
+        model_health = router.scoped_health.health(HealthScope.MODEL, raced_identity)
+        self.assertFalse(model_health.available())
+        self.assertFalse(raced.health.available())
+
+        raced.release_first.set()
+        request_a_result = await request_a
+        self.assertEqual(request_a_result.content, "older-success")
+
+        self.assertFalse(
+            model_health.available(),
+            "older success must not erase the newer Chainnode model cooldown",
+        )
+        self.assertFalse(
+            raced.health.available(),
+            "older success must not erase newer adapter-local cooldown state",
+        )
+
+        request_c = await router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_c.content, "c-sibling")
+        self.assertEqual(raced.call_count, 2)
+        self.assertEqual(len(same_model_other_key.calls), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
