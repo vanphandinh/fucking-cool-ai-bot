@@ -5,7 +5,12 @@ from __future__ import annotations
 import unittest
 
 from app.ai.base import ProviderError
-from app.ai.recovery import HealthScope, RecoveryAction, classify_recovery
+from app.ai.recovery import (
+    HealthEffect,
+    HealthScope,
+    RecoveryAction,
+    classify_recovery,
+)
 from app.ai.target import ProviderTargetIdentity
 
 
@@ -27,6 +32,7 @@ class ProviderRecoveryPolicyTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
         self.assertEqual(decision.health_scope, HealthScope.MODEL)
+        self.assertEqual(decision.health_effect, HealthEffect.COOLDOWN)
 
     def test_xkiro_429_is_credential_scoped_rotation(self) -> None:
         decision = classify_recovery(
@@ -35,6 +41,7 @@ class ProviderRecoveryPolicyTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
         self.assertEqual(decision.health_scope, HealthScope.CREDENTIAL)
+        self.assertEqual(decision.health_effect, HealthEffect.COOLDOWN)
 
     def test_auth_and_account_failures_are_credential_scoped(self) -> None:
         for status in (401, 402):
@@ -45,17 +52,35 @@ class ProviderRecoveryPolicyTests(unittest.TestCase):
                 )
                 self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
                 self.assertEqual(decision.health_scope, HealthScope.CREDENTIAL)
+                self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
 
-    def test_model_not_found_is_model_scoped(self) -> None:
+    def test_xkiro_403_is_entitlement_scoped_disable(self) -> None:
+        decision = classify_recovery(
+            identity("xkiro"),
+            ProviderError("entitlement", status_code=403, transient=False),
+        )
+
+        self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
+        self.assertEqual(decision.health_scope, HealthScope.ENTITLEMENT)
+        self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
+
+    def test_model_not_found_is_model_scoped_disable(self) -> None:
         decision = classify_recovery(
             identity("chainnode"),
             ProviderError("model", status_code=404, transient=False),
         )
         self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
         self.assertEqual(decision.health_scope, HealthScope.MODEL)
+        self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
 
-    def test_403_and_5xx_fallback_family_without_pool_spray(self) -> None:
-        for status in (403, 500, 502, 503):
+    def test_chainnode_403_and_5xx_fallback_family_without_pool_spray(self) -> None:
+        cases = (
+            (403, HealthEffect.DISABLE),
+            (500, HealthEffect.TRANSIENT),
+            (502, HealthEffect.TRANSIENT),
+            (503, HealthEffect.TRANSIENT),
+        )
+        for status, effect in cases:
             with self.subTest(status=status):
                 decision = classify_recovery(
                     identity("chainnode"),
@@ -63,6 +88,7 @@ class ProviderRecoveryPolicyTests(unittest.TestCase):
                 )
                 self.assertEqual(decision.action, RecoveryAction.FALLBACK_FAMILY)
                 self.assertEqual(decision.health_scope, HealthScope.FAMILY)
+                self.assertEqual(decision.health_effect, effect)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.ai.recovery import HealthScope
+from app.ai.recovery import HealthEffect, HealthScope
 from app.ai.scoped_health import ScopedHealthRegistry
 from app.ai.target import ProviderTargetIdentity
 
@@ -44,19 +44,37 @@ class ScopedProviderHealthTests(unittest.TestCase):
         self.assertFalse(registry.available(vision_key1))
         self.assertTrue(registry.available(text_key2))
 
-    def test_model_429_blocks_same_model_but_not_sibling_model(self) -> None:
+    def test_entitlement_disable_is_route_independent_but_model_and_key_specific(self) -> None:
+        registry = ScopedHealthRegistry()
+        text_a_key1 = target(route="text", model="model-a", credential_id="cred-1")
+        vision_a_key1 = target(route="vision", model="model-a", credential_id="cred-1")
+        text_a_key2 = target(route="text", model="model-a", credential_id="cred-2")
+        text_b_key1 = target(route="text", model="model-b", credential_id="cred-1")
+
+        registry.record_effect(
+            HealthScope.ENTITLEMENT,
+            text_a_key1,
+            "not entitled",
+            effect=HealthEffect.DISABLE,
+        )
+
+        self.assertFalse(registry.available(text_a_key1))
+        self.assertFalse(registry.available(vision_a_key1))
+        self.assertTrue(registry.available(text_a_key2))
+        self.assertTrue(registry.available(text_b_key1))
+
+    def test_model_cooldown_blocks_same_model_but_not_sibling_model(self) -> None:
         registry = ScopedHealthRegistry()
         model_a_key1 = target(model="model-a", credential_id="cred-1")
         model_a_key2 = target(model="model-a", credential_id="cred-2")
         model_b = target(model="model-b", credential_id="cred-1")
 
-        registry.record_error(
+        registry.record_effect(
             HealthScope.MODEL,
             model_a_key1,
             "quota",
-            status_code=429,
+            effect=HealthEffect.COOLDOWN,
             retry_after=120.0,
-            transient=True,
         )
 
         self.assertFalse(registry.available(model_a_key1))
