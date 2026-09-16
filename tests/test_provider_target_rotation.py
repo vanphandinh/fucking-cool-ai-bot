@@ -73,6 +73,12 @@ def _tool_call(*, private: str = "PRIVATE-A") -> ChatResponse:
     )
 
 
+def _transport_error(message: str, kind: str) -> ProviderError:
+    error = ProviderError(message, transient=True)
+    error.transport_kind = kind
+    return error
+
+
 class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_chainnode_429_rotates_model_without_provider_fallback(self) -> None:
         model_a = _target(
@@ -142,6 +148,43 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(a.calls), 1)
         self.assertEqual(len(b.calls), 1)
         self.assertEqual(len(xkiro.calls), 1)
+
+    async def test_transport_then_429_then_sibling_transport_flushes_correct_target(self) -> None:
+        first = _target(
+            ScriptedProvider(
+                "chainnode",
+                [
+                    _transport_error("connect-timeout", "connect_timeout"),
+                    ProviderError("rate-limit", status_code=429, retry_after=120, transient=True),
+                ],
+            ),
+            model="m1",
+            target_id="chainnode:text:m1:c1",
+        )
+        sibling = _target(
+            ScriptedProvider(
+                "chainnode",
+                [_transport_error("read-timeout", "read_timeout")],
+            ),
+            model="m2",
+            target_id="chainnode:text:m2:c1",
+        )
+        fallback = _target(
+            ScriptedProvider("xkiro", [ChatResponse(content="fallback")]),
+            model="m1",
+            target_id="xkiro:text:m1:c1",
+        )
+        router = _router([first, sibling, fallback])
+
+        result = await router.complete(_messages(), None, noop_tool)
+
+        self.assertEqual(result.content, "fallback")
+        self.assertEqual(result.provider, "xkiro")
+        self.assertGreater(first.health.cooldown_seconds(), 0)
+        self.assertEqual(first.health.last_error, "rate-limit")
+        self.assertEqual(sibling.health.consecutive_transient_failures, 1)
+        self.assertIn("read-timeout", sibling.health.last_error or "")
+        self.assertEqual(len(fallback.calls), 1)
 
     async def test_xkiro_429_rotates_credential_before_model(self) -> None:
         key1 = _target(
