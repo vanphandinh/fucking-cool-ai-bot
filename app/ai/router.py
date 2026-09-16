@@ -36,6 +36,13 @@ logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
 _MAX_PARALLEL_TOOL_CALLS = 2
+_HEALTH_SCOPES = (
+    HealthScope.FAMILY,
+    HealthScope.CREDENTIAL,
+    HealthScope.MODEL,
+    HealthScope.ENTITLEMENT,
+    HealthScope.TARGET,
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,12 @@ class CompletionResult:
     target_rotations: int = 0
     model_rotations: int = 0
     credential_failovers: int = 0
+
+
+@dataclass(frozen=True)
+class _HealthGenerationSnapshot:
+    adapter_generation: int | None
+    scoped_generations: tuple[int, ...]
 
 
 @dataclass
@@ -76,6 +89,7 @@ class _RequestState:
     budget: _ToolBudget
     retry: RequestRetryState
     unsupported_tool_models: set[tuple[str, str]]
+    successful_health_snapshot: _HealthGenerationSnapshot | None
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -97,10 +111,14 @@ def _health_generation(provider: object) -> int | None:
     return health.generation
 
 
-def _record_adapter_success(provider: object) -> None:
+def _record_adapter_success(
+    provider: object,
+    *,
+    expected_generation: int | None,
+) -> None:
     health = getattr(provider, "health", None)
-    if health is not None:
-        health.record_success()
+    if health is not None and expected_generation is not None:
+        health.record_success_if_generation(expected_generation)
 
 
 def _record_adapter_error(provider: object, error: ProviderError) -> None:
@@ -301,15 +319,35 @@ class AIProviderRouter:
             for sibling_identity in (provider_target_identity(candidate),)
         )
 
-    def _record_scoped_success(self, identity: ProviderTargetIdentity) -> None:
-        for scope in (
-            HealthScope.FAMILY,
-            HealthScope.CREDENTIAL,
-            HealthScope.MODEL,
-            HealthScope.ENTITLEMENT,
-            HealthScope.TARGET,
+    def _health_snapshot(
+        self,
+        provider: AIProvider,
+        identity: ProviderTargetIdentity,
+    ) -> _HealthGenerationSnapshot:
+        return _HealthGenerationSnapshot(
+            adapter_generation=_health_generation(provider),
+            scoped_generations=tuple(
+                self.scoped_health.generation(scope, identity)
+                for scope in _HEALTH_SCOPES
+            ),
+        )
+
+    def _record_scoped_success(
+        self,
+        identity: ProviderTargetIdentity,
+        *,
+        expected_generations: tuple[int, ...],
+    ) -> None:
+        for scope, expected_generation in zip(
+            _HEALTH_SCOPES,
+            expected_generations,
+            strict=True,
         ):
-            self.scoped_health.record_success(scope, identity)
+            self.scoped_health.record_success_if_generation(
+                scope,
+                identity,
+                expected_generation=expected_generation,
+            )
 
     async def complete(
         self,
@@ -337,6 +375,7 @@ class AIProviderRouter:
             budget=_ToolBudget(),
             retry=RequestRetryState(self.retry_policy),
             unsupported_tool_models=set(),
+            successful_health_snapshot=None,
         )
         fallbacks: list[str] = []
         last_error: ProviderError | None = None
@@ -418,8 +457,17 @@ class AIProviderRouter:
                 cursor = (index + 1) % len(candidates)
                 continue
 
-            _record_adapter_success(provider)
-            self._record_scoped_success(identity)
+            health_snapshot = state.successful_health_snapshot
+            if health_snapshot is None:
+                raise RuntimeError("successful provider attempt missing health snapshot")
+            _record_adapter_success(
+                provider,
+                expected_generation=health_snapshot.adapter_generation,
+            )
+            self._record_scoped_success(
+                identity,
+                expected_generations=health_snapshot.scoped_generations,
+            )
             _flush_all_pending_health_errors(
                 candidates,
                 state,
@@ -514,6 +562,7 @@ class AIProviderRouter:
     ) -> ChatResponse:
         identity = provider_target_identity(provider)
         while True:
+            health_snapshot = self._health_snapshot(provider, identity)
             try:
                 try:
                     if operations is None:
@@ -563,6 +612,7 @@ class AIProviderRouter:
                 continue
             else:
                 state.retry.record_chat_success(identity.family)
+                state.successful_health_snapshot = health_snapshot
                 return response
 
     async def _complete_with_provider(
