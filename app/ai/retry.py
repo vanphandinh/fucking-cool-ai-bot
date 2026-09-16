@@ -17,14 +17,21 @@ class ProviderRetryPolicy:
 
 
 @dataclass
+class DeferredHealthIncident:
+    target_id: str
+    error: ProviderError
+    health_barrier_generation: int | None
+
+
+@dataclass
 class ProviderAttemptState:
     """Transport state shared by every target in one provider family."""
 
     consecutive_transport_failures: int = 0
     total_transport_failures: int = 0
-    pending_health_error: ProviderError | None = None
-    pending_health_generation: int | None = None
-    pending_health_target_id: str | None = None
+    pending_health_incidents: dict[str, DeferredHealthIncident] = field(
+        default_factory=dict
+    )
     blocked_for_request: bool = False
     same_provider_retry_consumed: bool = False
 
@@ -55,16 +62,22 @@ class RequestRetryState:
         family: str,
         error: ProviderError,
         *,
-        health_generation: int | None = None,
+        health_barrier_generation: int | None = None,
         target_id: str | None = None,
     ) -> None:
         slot = self.family_state(family)
         slot.consecutive_transport_failures += 1
         slot.total_transport_failures += 1
-        if slot.pending_health_error is None:
-            slot.pending_health_generation = health_generation
-            slot.pending_health_target_id = target_id
-        slot.pending_health_error = error
+        if target_id is not None:
+            incident = slot.pending_health_incidents.get(target_id)
+            if incident is None:
+                slot.pending_health_incidents[target_id] = DeferredHealthIncident(
+                    target_id=target_id,
+                    error=error,
+                    health_barrier_generation=health_barrier_generation,
+                )
+            else:
+                incident.error = error
         self.total_transport_failures += 1
         if (
             slot.consecutive_transport_failures >= self.policy.max_consecutive_failures
@@ -72,12 +85,19 @@ class RequestRetryState:
         ):
             slot.blocked_for_request = True
 
-    def record_chat_success(self, family: str) -> None:
+    def discard_pending_health_incident(self, family: str, target_id: str) -> None:
+        self.family_state(family).pending_health_incidents.pop(target_id, None)
+
+    def pending_health_incidents(self, family: str) -> tuple[DeferredHealthIncident, ...]:
+        return tuple(self.family_state(family).pending_health_incidents.values())
+
+    def record_chat_success(self, family: str, *, target_id: str | None = None) -> None:
         slot = self.family_state(family)
         slot.consecutive_transport_failures = 0
-        slot.pending_health_error = None
-        slot.pending_health_generation = None
-        slot.pending_health_target_id = None
+        if target_id is None:
+            slot.pending_health_incidents.clear()
+        else:
+            slot.pending_health_incidents.pop(target_id, None)
 
     def block_family(self, family: str) -> None:
         self.family_state(family).blocked_for_request = True
