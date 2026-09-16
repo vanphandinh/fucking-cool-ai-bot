@@ -435,6 +435,11 @@ async def _handle_question(
                     return
                 except AllProvidersFailed as exc:
                     stats.record_fallbacks(exc.fallbacks)
+                    stats.record_target_recovery(
+                        target_rotations=getattr(exc, "target_rotations", 0),
+                        model_rotations=getattr(exc, "model_rotations", 0),
+                        credential_failovers=getattr(exc, "credential_failovers", 0),
+                    )
                     stats.record_error(str(exc))
                     logger.error("AI providers không thể hoàn tất request: %s", exc)
                     await message.reply(_ALL_PROVIDERS_FAILED_TEXT)
