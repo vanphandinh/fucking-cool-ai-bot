@@ -105,9 +105,36 @@ class ProviderRetryStateTests(unittest.TestCase):
         )
 
         incidents = self.state.pending_health_incidents("chainnode")
-        self.assertEqual({incident.target_id for incident in incidents}, {"target-a", "target-b"})
+        self.assertEqual(
+            {incident.target_id for incident in incidents},
+            {"target-a", "target-b"},
+        )
 
-    def test_same_target_transport_retries_share_one_pending_incident(self) -> None:
+    def test_same_target_failures_in_same_generation_share_incident(self) -> None:
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("connect_timeout"),
+            health_barrier_generation=7,
+            target_id="target-a",
+        )
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("read_timeout"),
+            health_barrier_generation=7,
+            target_id="target-a",
+        )
+
+        slot = self.state.family_state("chainnode")
+        incidents = self.state.pending_health_incidents("chainnode")
+        self.assertEqual(slot.total_transport_failures, 2)
+        self.assertEqual(self.state.total_transport_failures, 2)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0].health_barrier_generation, 7)
+        self.assertIn("read_timeout", str(incidents[0].error))
+
+    def test_same_target_failure_after_new_direct_generation_refreshes_barrier(
+        self,
+    ) -> None:
         self.state.record_transport_failure(
             "chainnode",
             transport_error("connect_timeout"),
@@ -121,12 +148,9 @@ class ProviderRetryStateTests(unittest.TestCase):
             target_id="target-a",
         )
 
-        slot = self.state.family_state("chainnode")
         incidents = self.state.pending_health_incidents("chainnode")
-        self.assertEqual(slot.total_transport_failures, 2)
-        self.assertEqual(self.state.total_transport_failures, 2)
         self.assertEqual(len(incidents), 1)
-        self.assertEqual(incidents[0].health_barrier_generation, 7)
+        self.assertEqual(incidents[0].health_barrier_generation, 8)
         self.assertIn("read_timeout", str(incidents[0].error))
 
     def test_discarding_one_target_incident_preserves_sibling_incident(self) -> None:

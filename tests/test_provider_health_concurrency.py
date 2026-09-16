@@ -78,6 +78,43 @@ class _BlockingSuccessThenTransportProvider(ScriptedProvider):
         return ChatResponse(content="unexpected-primary-success")
 
 
+class _RepeatedTransportAroundDirectSuccessProvider(ScriptedProvider):
+    """Two request-A transport failures straddle request-B direct success."""
+
+    def __init__(self, family: str) -> None:
+        super().__init__(family, [])
+        self.second_started = asyncio.Event()
+        self.release_second = asyncio.Event()
+        self.call_count = 0
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> ChatResponse:
+        self.calls.append((messages, tools))
+        self.call_count += 1
+        if self.call_count == 1:
+            error = ProviderError(
+                "transport failure before direct success",
+                transient=True,
+            )
+            error.transport_kind = "connect_timeout"
+            raise error
+        if self.call_count == 2:
+            self.second_started.set()
+            await self.release_second.wait()
+            error = ProviderError(
+                "transport failure after direct success",
+                transient=True,
+            )
+            error.transport_kind = "read_timeout"
+            raise error
+        if self.call_count == 3:
+            return ChatResponse(content="newer-direct-success")
+        return ChatResponse(content="unexpected-primary-success")
+
+
 def _target(
     provider: ScriptedProvider,
     *,
@@ -236,6 +273,40 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(primary.health.consecutive_transient_failures, 1)
         self.assertIsNotNone(primary.health.last_error)
+
+    async def test_failure_after_new_direct_generation_refreshes_deferred_barrier(
+        self,
+    ) -> None:
+        primary = _RepeatedTransportAroundDirectSuccessProvider("a")
+        fallback = ScriptedProvider("b", [ChatResponse(content="fallback-success")])
+        request_a_router = AIProviderRouter(
+            [primary, fallback],
+            text_provider_order=("a", "b"),
+            vision_provider_order=(),
+        )
+        request_b_router = AIProviderRouter(
+            [primary],
+            text_provider_order=("a",),
+            vision_provider_order=(),
+        )
+
+        request_a = asyncio.create_task(
+            request_a_router.complete(_messages(), None, noop_tool)
+        )
+        await primary.second_started.wait()
+
+        request_b = await request_b_router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_b.content, "newer-direct-success")
+        self.assertEqual(primary.health.deferred_barrier_generation, 1)
+        self.assertEqual(primary.health.consecutive_transient_failures, 0)
+
+        primary.release_second.set()
+        request_a_result = await request_a
+        self.assertEqual(request_a_result.content, "fallback-success")
+
+        self.assertEqual(primary.call_count, 3)
+        self.assertEqual(primary.health.consecutive_transient_failures, 1)
+        self.assertIn("after direct success", primary.health.last_error or "")
 
 
 if __name__ == "__main__":
