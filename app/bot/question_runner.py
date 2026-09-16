@@ -98,6 +98,13 @@ class QuestionProcessor:
             raise UserFacingJobError(_NO_CAPABLE_PROVIDER_TEXT) from exc
         except AllProvidersFailed as exc:
             self.stats.record_fallbacks(exc.fallbacks)
+            record_target_recovery = getattr(self.stats, "record_target_recovery", None)
+            if callable(record_target_recovery):
+                record_target_recovery(
+                    target_rotations=getattr(exc, "target_rotations", 0),
+                    model_rotations=getattr(exc, "model_rotations", 0),
+                    credential_failovers=getattr(exc, "credential_failovers", 0),
+                )
             self.stats.record_error(type(exc).__name__)
             raise UserFacingJobError(_ALL_PROVIDERS_FAILED_TEXT) from exc
         except asyncio.CancelledError:
