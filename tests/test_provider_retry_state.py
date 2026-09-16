@@ -79,16 +79,68 @@ class ProviderRetryStateTests(unittest.TestCase):
 
     def test_success_clears_pending_health_error_for_only_that_provider(self) -> None:
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout")
+            "chainnode", transport_error("read_timeout"), target_id="chain-target"
         )
-        self.state.record_transport_failure("xkiro", transport_error("read_timeout"))
+        self.state.record_transport_failure(
+            "xkiro", transport_error("read_timeout"), target_id="xkiro-target"
+        )
 
         self.state.record_chat_success("chainnode")
 
-        self.assertIsNone(
-            self.state.provider_state("chainnode").pending_health_error
+        self.assertEqual(self.state.pending_health_incidents("chainnode"), ())
+        self.assertEqual(len(self.state.pending_health_incidents("xkiro")), 1)
+
+    def test_pending_health_incidents_are_keyed_by_target(self) -> None:
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("connect_timeout"),
+            health_barrier_generation=3,
+            target_id="target-a",
         )
-        self.assertIsNotNone(self.state.provider_state("xkiro").pending_health_error)
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("read_timeout"),
+            health_barrier_generation=4,
+            target_id="target-b",
+        )
+
+        incidents = self.state.pending_health_incidents("chainnode")
+        self.assertEqual({incident.target_id for incident in incidents}, {"target-a", "target-b"})
+
+    def test_same_target_transport_retries_share_one_pending_incident(self) -> None:
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("connect_timeout"),
+            health_barrier_generation=7,
+            target_id="target-a",
+        )
+        self.state.record_transport_failure(
+            "chainnode",
+            transport_error("read_timeout"),
+            health_barrier_generation=8,
+            target_id="target-a",
+        )
+
+        slot = self.state.family_state("chainnode")
+        incidents = self.state.pending_health_incidents("chainnode")
+        self.assertEqual(slot.total_transport_failures, 2)
+        self.assertEqual(self.state.total_transport_failures, 2)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0].health_barrier_generation, 7)
+        self.assertIn("read_timeout", str(incidents[0].error))
+
+    def test_discarding_one_target_incident_preserves_sibling_incident(self) -> None:
+        self.state.record_transport_failure(
+            "chainnode", transport_error("connect_timeout"), target_id="target-a"
+        )
+        self.state.record_transport_failure(
+            "chainnode", transport_error("read_timeout"), target_id="target-b"
+        )
+
+        self.state.discard_pending_health_incident("chainnode", "target-a")
+
+        incidents = self.state.pending_health_incidents("chainnode")
+        self.assertEqual([incident.target_id for incident in incidents], ["target-b"])
 
     def test_retryable_classification_is_narrow(self) -> None:
         for kind in ("connect_error", "connect_timeout", "read_timeout"):
