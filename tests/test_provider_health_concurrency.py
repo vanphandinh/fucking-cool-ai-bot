@@ -51,6 +51,33 @@ class _BlockingRateLimitProvider(ScriptedProvider):
         return ChatResponse(content="stale-target-selected")
 
 
+class _BlockingSuccessThenTransportProvider(ScriptedProvider):
+    """First call blocks and succeeds; second observes a transport failure."""
+
+    def __init__(self, family: str) -> None:
+        super().__init__(family, [])
+        self.first_started = asyncio.Event()
+        self.release_first = asyncio.Event()
+        self.call_count = 0
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> ChatResponse:
+        self.calls.append((messages, tools))
+        self.call_count += 1
+        if self.call_count == 1:
+            self.first_started.set()
+            await self.release_first.wait()
+            return ChatResponse(content="older-success")
+        if self.call_count == 2:
+            error = ProviderError("transport failure: read_timeout", transient=True)
+            error.transport_kind = "read_timeout"
+            raise error
+        return ChatResponse(content="unexpected-primary-success")
+
+
 def _target(
     provider: ScriptedProvider,
     *,
@@ -182,6 +209,33 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request_c.content, "c-sibling")
         self.assertEqual(raced.call_count, 2)
         self.assertEqual(len(same_model_other_key.calls), 0)
+
+    async def test_older_success_cannot_erase_newer_deferred_transport_failure(self) -> None:
+        primary = _BlockingSuccessThenTransportProvider("a")
+        fallback = ScriptedProvider("b", [ChatResponse(content="fallback-success")])
+        first_router = AIProviderRouter(
+            [primary, fallback],
+            text_provider_order=("a", "b"),
+        )
+        second_router = AIProviderRouter(
+            [primary, fallback],
+            text_provider_order=("a", "b"),
+        )
+
+        request_a = asyncio.create_task(first_router.complete(_messages(), None, noop_tool))
+        await primary.first_started.wait()
+
+        request_b = await second_router.complete(_messages(), None, noop_tool)
+        self.assertEqual(request_b.content, "fallback-success")
+        self.assertEqual(primary.health.consecutive_transient_failures, 1)
+        self.assertIsNotNone(primary.health.last_error)
+
+        primary.release_first.set()
+        request_a_result = await request_a
+        self.assertEqual(request_a_result.content, "older-success")
+
+        self.assertEqual(primary.health.consecutive_transient_failures, 1)
+        self.assertIsNotNone(primary.health.last_error)
 
 
 if __name__ == "__main__":
