@@ -32,6 +32,10 @@ class ProviderTargetIdentity:
     def model_key(self) -> tuple[str, str]:
         return (self.family, self.model)
 
+    @property
+    def entitlement_key(self) -> tuple[str, str, str]:
+        return (self.family, self.model, self.credential_id)
+
 
 def provider_target_identity(provider: object) -> ProviderTargetIdentity:
     """Return a safe identity for an adapter, including legacy single targets."""

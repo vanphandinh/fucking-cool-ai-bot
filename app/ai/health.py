@@ -24,6 +24,49 @@ class ProviderHealth:
         self.last_error = None
         self.cooldown_until = 0.0
 
+    def record_disabled(self, message: str) -> None:
+        """Explicitly disable this health cell without inventing an HTTP status."""
+
+        self.generation += 1
+        self.last_error = (message or "")[:300]
+        self.disabled = True
+
+    def record_cooldown(
+        self,
+        message: str,
+        *,
+        retry_after: float | None = None,
+    ) -> None:
+        """Explicitly cool down this health cell without inventing an HTTP status."""
+
+        self.generation += 1
+        self.last_error = (message or "")[:300]
+        self.cooldown_until = time.monotonic() + max(
+            0.0, retry_after if retry_after is not None else 60.0
+        )
+
+    def record_transient_error(self, message: str) -> None:
+        """Record a generic transient health failure using existing bounded semantics."""
+
+        self.generation += 1
+        self._apply_error(
+            message,
+            status_code=None,
+            retry_after=None,
+            transient=True,
+        )
+
+    def record_observation(self, message: str) -> None:
+        """Record diagnostic state without changing availability."""
+
+        self.generation += 1
+        self._apply_error(
+            message,
+            status_code=None,
+            retry_after=None,
+            transient=False,
+        )
+
     def record_error(
         self,
         message: str,

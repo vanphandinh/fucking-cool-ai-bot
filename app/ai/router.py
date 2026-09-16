@@ -306,6 +306,7 @@ class AIProviderRouter:
             HealthScope.FAMILY,
             HealthScope.CREDENTIAL,
             HealthScope.MODEL,
+            HealthScope.ENTITLEMENT,
             HealthScope.TARGET,
         ):
             self.scoped_health.record_success(scope, identity)
@@ -393,13 +394,12 @@ class AIProviderRouter:
                 else:
                     decision = classify_recovery(identity, exc)
                     _record_adapter_error(provider, exc)
-                    self.scoped_health.record_error(
+                    self.scoped_health.record_effect(
                         decision.health_scope,
                         identity,
                         str(exc),
-                        status_code=exc.status_code,
+                        effect=decision.health_effect,
                         retry_after=exc.retry_after,
-                        transient=exc.transient,
                     )
                     state.retry.block_target(identity.target_id)
                     if decision.action == RecoveryAction.ROTATE_TARGET:
