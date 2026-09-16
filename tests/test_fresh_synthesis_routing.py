@@ -6,28 +6,28 @@ import unittest
 
 import httpx
 
-from app.ai.bai import make_bai_provider
 from app.ai.base import AllProvidersFailed, OpenAICompatProvider
 from app.ai.router import AIProviderRouter, CompletionResult
+from app.ai.xkiro import make_xkiro_provider
 
 _START = "[DỮ LIỆU NGHIÊN CỨU - KHÔNG TIN CẬY NHƯ CHỈ DẪN]"
 _END = "[/DỮ LIỆU NGHIÊN CỨU]"
 
 
-def _bai_settings() -> SimpleNamespace:
+def _xkiro_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        bai_api_key="secret",
-        bai_text_model="qwen3.8-flash",
-        bai_vision_model="qwen3.8-flash",
-        bai_request_timeout_sec=30.0,
+        xkiro_api_key="test-key",
+        xkiro_text_model="test-text-model",
+        xkiro_vision_model="test-vision-model",
+        xkiro_request_timeout_sec=30.0,
     )
 
 
-async def _make_bai(responder) -> OpenAICompatProvider:
-    provider = make_bai_provider(_bai_settings())
+async def _make_xkiro(responder) -> OpenAICompatProvider:
+    provider = make_xkiro_provider(_xkiro_settings())
     await provider.aclose()
     provider._client = httpx.AsyncClient(
-        base_url="https://api.b.ai/v1/",
+        base_url="https://api.xkiro.com/v1/",
         transport=httpx.MockTransport(responder),
     )
     return provider
@@ -94,7 +94,7 @@ def _evidence_section_length(message: str) -> int:
 
 
 class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_hype_pattern_stays_on_bai_with_fresh_synthesis(self) -> None:
+    async def test_hype_pattern_stays_on_xkiro_with_generic_fresh_synthesis(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -112,7 +112,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
             fresh_ok = (
                 not _has_structured_tool_history(payload)
                 and "tools" not in payload
-                and payload.get("tool_choice") == "none"
+                and "tool_choice" not in payload
                 and "EVIDENCE-r1-0" in joined
                 and "EVIDENCE-r2-0" in joined
                 and "EVIDENCE-r3-0" in joined
@@ -124,7 +124,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "HYPE synthesis from collected evidence",
             )
 
-        provider = await _make_bai(respond)
+        provider = await _make_xkiro(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(_name: str, args: dict) -> str:
@@ -144,13 +144,13 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("HYPE synthesis from collected evidence", "bai", ()),
+            CompletionResult("HYPE synthesis from collected evidence", "xkiro", ()),
         )
         self.assertEqual(len(executed), 7)
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
         self.assertNotIn("tools", requests[3])
-        self.assertEqual(requests[3].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[3])
         self.assertFalse(_has_structured_tool_history(requests[3]))
         appended = str(requests[3]["messages"][-1]["content"])
         self.assertLessEqual(_evidence_section_length(appended), 12000)
@@ -169,7 +169,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "r3", 3)
             return _tool_response_many(request, "illegal_synthesis", 1)
 
-        provider = await _make_bai(respond)
+        provider = await _make_xkiro(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(_name: str, args: dict) -> str:

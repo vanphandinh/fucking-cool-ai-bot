@@ -24,7 +24,7 @@ CHAINNODE_FILES = (
     ROOT / "scripts" / "probe_chainnode_vision.py",
     ROOT / ".env.example",
 )
-QUALIFIED_MODEL = "cl/deepseek/deepseek-v4-flash"
+QUALIFIED_MODEL = "cl/cline-free/deepseek-v4.1-flash"
 VISION_MODEL = "cl/cline-free/muse-spark-1.3-contributor"
 
 
@@ -170,10 +170,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         await provider.aclose()
 
         def respond(request: httpx.Request) -> httpx.Response:
-            content = (
-                "<｜DSML｜function_calls>internal"
-                "</｜DSML｜function_calls>"
-            )
+            content = "<｜DSML｜function_calls>internal</｜DSML｜function_calls>"
             return httpx.Response(
                 200,
                 json={
@@ -242,23 +239,22 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 )
                 try:
                     with self.assertRaises(ProviderError) as ctx:
-                        await provider.chat(
-                            [{"role": "user", "content": "hi"}]
-                        )
+                        await provider.chat([{"role": "user", "content": "hi"}])
                 finally:
                     await provider.aclose()
                 self.assertEqual(ctx.exception.status_code, status)
                 self.assertEqual(ctx.exception.transient, transient)
                 self.assertEqual(ctx.exception.retry_after, retry_after)
 
-    async def test_chainnode_503_falls_back_to_bai_without_shared_health(self) -> None:
+    async def test_chainnode_503_falls_back_to_xkiro_without_shared_health(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="chainnode-secret",
+                chainnode_api_key="test-chainnode-key",
                 chainnode_text_model=QUALIFIED_MODEL,
-                bai_api_key="bai-secret",
-                text_provider_order="chainnode,bai",
+                xkiro_api_key="test-xkiro-key",
+                xkiro_text_model="test-xkiro-text",
+                text_provider_order="chainnode,xkiro",
                 vision_enabled=False,
             )
         )
@@ -273,17 +269,12 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        def bai_success(request: httpx.Request) -> httpx.Response:
+        def xkiro_success(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 200,
                 json={
                     "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "ok",
-                            }
-                        }
+                        {"message": {"role": "assistant", "content": "ok"}}
                     ]
                 },
                 request=request,
@@ -293,9 +284,9 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             base_url="https://dn.chainno.de/v1/",
             transport=httpx.MockTransport(chainnode_failure),
         )
-        providers["bai"]._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/",
-            transport=httpx.MockTransport(bai_success),
+        providers["xkiro"]._client = httpx.AsyncClient(
+            base_url="https://api.xkiro.com/v1/",
+            transport=httpx.MockTransport(xkiro_success),
         )
         try:
             result = await router.complete(
@@ -307,27 +298,26 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             for provider in providers.values():
                 await provider.aclose()
 
-        self.assertEqual(result.provider, "bai")
+        self.assertEqual(result.provider, "xkiro")
         self.assertEqual(result.content, "ok")
-        self.assertEqual(result.fallbacks, ("bai",))
+        self.assertEqual(result.fallbacks, ("xkiro",))
         self.assertEqual(
             providers["chainnode"].health.consecutive_transient_failures,
             1,
         )
-        self.assertEqual(
-            providers["bai"].health.consecutive_transient_failures,
-            0,
-        )
+        self.assertEqual(providers["xkiro"].health.consecutive_transient_failures, 0)
 
-    async def test_chainnode_vision_503_falls_back_to_bai_vision(self) -> None:
+    async def test_chainnode_vision_503_falls_back_to_xkiro_vision(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="chainnode-secret",
+                chainnode_api_key="test-chainnode-key",
                 chainnode_vision_model=VISION_MODEL,
-                bai_api_key="bai-secret",
-                text_provider_order="bai",
-                vision_provider_order="chainnode,bai",
+                xkiro_api_key="test-xkiro-key",
+                xkiro_text_model="test-xkiro-text",
+                xkiro_vision_model="test-xkiro-vision",
+                text_provider_order="xkiro",
+                vision_provider_order="chainnode,xkiro",
             )
         )
         providers = {
@@ -344,7 +334,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        def bai_success(request: httpx.Request) -> httpx.Response:
+        def xkiro_success(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 200,
                 json={
@@ -364,9 +354,9 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             base_url="https://dn.chainno.de/v1/",
             transport=httpx.MockTransport(chainnode_failure),
         )
-        providers[("bai", "vision")]._client = httpx.AsyncClient(
-            base_url="https://api.b.ai/v1/",
-            transport=httpx.MockTransport(bai_success),
+        providers[("xkiro", "vision")]._client = httpx.AsyncClient(
+            base_url="https://api.xkiro.com/v1/",
+            transport=httpx.MockTransport(xkiro_success),
         )
         messages = [
             {
@@ -392,15 +382,15 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             for provider in providers.values():
                 await provider.aclose()
 
-        self.assertEqual(result.provider, "bai")
+        self.assertEqual(result.provider, "xkiro")
         self.assertEqual(result.content, "vision fallback ok")
-        self.assertEqual(result.fallbacks, ("bai",))
+        self.assertEqual(result.fallbacks, ("xkiro",))
 
 
 def _provider():
     return chainnode.make_chainnode_provider(
         SimpleNamespace(
-            chainnode_api_key="secret",
+            chainnode_api_key="test-key",
             chainnode_base_url="https://dn.chainno.de/v1",
             chainnode_text_model=QUALIFIED_MODEL,
             chainnode_request_timeout_sec=30.0,

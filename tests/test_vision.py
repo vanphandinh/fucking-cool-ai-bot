@@ -128,37 +128,47 @@ class HealthTests(unittest.TestCase):
 
 
 class VisionConfigTests(unittest.TestCase):
+    def _xkiro_settings(self, **overrides) -> Settings:
+        values = {
+            "xkiro_api_key": "test-key",
+            "xkiro_text_model": "test-text-model",
+            "xkiro_vision_model": "test-vision-model",
+        }
+        values.update(overrides)
+        return Settings(_env_file=None, **values)
+
     def test_defaults_and_disable_switch(self) -> None:
-        router = build_provider_router(Settings(_env_file=None, bai_api_key="x"))
+        router = build_provider_router(self._xkiro_settings())
         try:
-            self.assertEqual(router.configured_provider_names(True), ("bai",))
+            self.assertEqual(router.configured_provider_names(True), ("xkiro",))
             self.assertEqual(router.max_supported_images(), 1)
         finally:
             asyncio.run(_close_router(router))
 
-        disabled = build_provider_router(
-            Settings(_env_file=None, bai_api_key="x", vision_enabled=False)
-        )
+        disabled = build_provider_router(self._xkiro_settings(vision_enabled=False))
         try:
             self.assertEqual(disabled.configured_provider_names(True), ())
             self.assertEqual(disabled.max_supported_images(), 0)
         finally:
             asyncio.run(_close_router(disabled))
 
-    def test_missing_bai_key_has_no_vision_provider(self) -> None:
+    def test_missing_xkiro_key_has_no_vision_provider(self) -> None:
         router = build_provider_router(Settings(_env_file=None))
         self.assertEqual(router.configured_provider_names(True), ())
         self.assertEqual(router.max_supported_images(), 0)
 
-    def test_current_bai_vision_route_rejects_two_images(self) -> None:
-        router = build_provider_router(Settings(_env_file=None, bai_api_key="x"))
+    def test_current_xkiro_vision_route_rejects_two_images(self) -> None:
+        router = build_provider_router(self._xkiro_settings())
         try:
             self.assertEqual(
-                [p.name for p in router.capable_providers(
-                    requires_vision=True,
-                    image_count=1,
-                )],
-                ["bai"],
+                [
+                    p.name
+                    for p in router.capable_providers(
+                        requires_vision=True,
+                        image_count=1,
+                    )
+                ],
+                ["xkiro"],
             )
             self.assertEqual(
                 router.capable_providers(requires_vision=True, image_count=2),
@@ -178,7 +188,9 @@ class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 json={"error": {"message": f"invalid image data:image/png;base64,{secret}"}},
             )
 
-        provider = OpenAICompatProvider("vision", "https://example.org/v1", "fake", "fake")
+        provider = OpenAICompatProvider(
+            "vision", "https://example.org/v1", "test-key", "test-model"
+        )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)

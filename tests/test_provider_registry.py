@@ -7,12 +7,12 @@ import unittest
 from unittest.mock import patch
 
 from app.ai.base import ChatResponse
-from app.ai.bai import build_bai_provider_slots
 from app.ai.capabilities import ProviderCapabilities
 from app.ai.health import ProviderHealth
 from app.ai.provider import AIProvider
-from app.ai.registry import build_registered_providers
+from app.ai.registry import PROVIDER_FACTORIES, build_registered_providers
 from app.ai.router import AIProviderRouter, build_provider_router
+from app.ai.xkiro import build_xkiro_provider_slots
 from app.config import Settings
 
 
@@ -73,12 +73,20 @@ class ProviderContractTests(unittest.TestCase):
                 )
         self.assertEqual(calls, 0)
 
-    def test_bai_family_factory_returns_text_and_vision_slots_under_same_key(self) -> None:
-        slots = build_bai_provider_slots(
-            Settings(_env_file=None, bai_api_key="secret")
+    def test_registry_contains_only_chainnode_and_xkiro(self) -> None:
+        self.assertEqual(tuple(PROVIDER_FACTORIES), ("chainnode", "xkiro"))
+
+    def test_xkiro_family_factory_returns_text_and_vision_slots_under_same_key(self) -> None:
+        slots = build_xkiro_provider_slots(
+            Settings(
+                _env_file=None,
+                xkiro_api_key="test-key",
+                xkiro_text_model="test-text-model",
+                xkiro_vision_model="test-vision-model",
+            )
         )
         try:
-            self.assertEqual([slot.name for slot in slots], ["bai", "bai"])
+            self.assertEqual([slot.name for slot in slots], ["xkiro", "xkiro"])
             self.assertEqual(
                 [slot.capabilities.route for slot in slots],
                 ["text", "vision"],
@@ -89,19 +97,19 @@ class ProviderContractTests(unittest.TestCase):
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_provider_orders_default_to_bai(self) -> None:
+    def test_provider_orders_default_to_chainnode_then_xkiro(self) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.text_provider_order_list, ["bai"])
-        self.assertEqual(settings.vision_provider_order_list, ["bai"])
+        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
 
     def test_orders_normalize_and_preserve_first_occurrence(self) -> None:
         settings = Settings(
             _env_file=None,
-            text_provider_order=" Foo,bai,foo,BAR ",
-            vision_provider_order="bar,BAI,bar",
+            text_provider_order=" Foo,xkiro,foo,BAR ",
+            vision_provider_order="bar,XKIRO,bar",
         )
-        self.assertEqual(settings.text_provider_order_list, ["foo", "bai", "bar"])
-        self.assertEqual(settings.vision_provider_order_list, ["bar", "bai"])
+        self.assertEqual(settings.text_provider_order_list, ["foo", "xkiro", "bar"])
+        self.assertEqual(settings.vision_provider_order_list, ["bar", "xkiro"])
 
     def test_text_and_vision_orders_route_independently(self) -> None:
         providers: list[AIProvider] = [
@@ -120,15 +128,29 @@ class ProviderOrderTests(unittest.TestCase):
         self.assertEqual([provider.name for provider in text], ["first", "second"])
         self.assertEqual([provider.name for provider in vision], ["second", "first"])
 
-    def test_production_router_is_bai_only_but_order_aware(self) -> None:
+    def test_production_router_keeps_chainnode_primary_and_xkiro_fallback(self) -> None:
         router = build_provider_router(
-            Settings(_env_file=None, bai_api_key="secret")
+            Settings(
+                _env_file=None,
+                chainnode_api_key="test-chainnode-key",
+                chainnode_text_model="test-chainnode-text",
+                chainnode_vision_model="test-chainnode-vision",
+                xkiro_api_key="test-xkiro-key",
+                xkiro_text_model="test-xkiro-text",
+                xkiro_vision_model="test-xkiro-vision",
+            )
         )
         try:
-            self.assertEqual(router.provider_order(False), ("bai",))
-            self.assertEqual(router.provider_order(True), ("bai",))
-            self.assertEqual(router.configured_provider_names(False), ("bai",))
-            self.assertEqual(router.configured_provider_names(True), ("bai",))
+            self.assertEqual(router.provider_order(False), ("chainnode", "xkiro"))
+            self.assertEqual(router.provider_order(True), ("chainnode", "xkiro"))
+            self.assertEqual(
+                router.configured_provider_names(False),
+                ("chainnode", "xkiro"),
+            )
+            self.assertEqual(
+                router.configured_provider_names(True),
+                ("chainnode", "xkiro"),
+            )
             self.assertEqual(router.max_supported_images(), 1)
         finally:
             asyncio.run(_close_router(router))

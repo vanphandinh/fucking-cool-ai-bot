@@ -1,4 +1,4 @@
-"""Regression coverage for B.AI tool-loop recovery and synthesis."""
+"""Regression coverage for generic tool-loop recovery and fresh synthesis."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ import unittest
 
 import httpx
 
-from app.ai.bai import make_bai_provider
 from app.ai.base import AllProvidersFailed
 from app.ai.router import AIProviderRouter, CompletionResult
+from app.ai.xkiro import make_xkiro_provider
 
 
-class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_plain_retry_explicitly_forces_tool_choice_none(self) -> None:
+class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_plain_retry_omits_tools_and_tool_choice(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
             return _text_response(request, "done")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         try:
@@ -34,10 +34,10 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.content, "done")
         self.assertEqual(len(requests), 1)
-        self.assertEqual(requests[0].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[0])
         self.assertNotIn("tools", requests[0])
 
-    async def test_router_recovers_from_tool_budget_with_fresh_bai_pass(self) -> None:
+    async def test_router_recovers_from_tool_budget_with_fresh_xkiro_pass(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -52,7 +52,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 for message in payload["messages"]
             )
             valid = (
-                payload.get("tool_choice") == "none"
+                "tool_choice" not in payload
                 and "tools" not in payload
                 and not structured
                 and "fetched content" in serialized
@@ -65,7 +65,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 )
             return _text_response(request, "recovered from tool result")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
@@ -85,12 +85,12 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("recovered from tool result", "bai", ()),
+            CompletionResult("recovered from tool result", "xkiro", ()),
         )
         self.assertEqual(executed, ["fetch_url"])
         self.assertEqual(len(requests), 2)
 
-    async def test_round_budget_switches_next_bai_turn_to_synthesis_only(self) -> None:
+    async def test_round_budget_switches_next_xkiro_turn_to_synthesis_only(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -100,7 +100,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response(request, f"call_{len(requests)}")
             return _text_response(request, "synthesized")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
@@ -118,21 +118,21 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, CompletionResult("synthesized", "bai", ()))
+        self.assertEqual(result, CompletionResult("synthesized", "xkiro", ()))
         self.assertEqual(executed, ["fetch_url"] * 3)
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
         self.assertNotIn("tools", requests[3])
-        self.assertEqual(requests[3].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[3])
 
-    async def test_local_tool_policy_failure_does_not_cool_down_bai_vision(self) -> None:
+    async def test_local_tool_policy_failure_does_not_cool_down_xkiro_vision(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
             return _tool_response(request, f"call_{len(requests)}")
 
-        provider = _make_bai_vision()
+        provider = _make_xkiro_vision()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
@@ -156,19 +156,19 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 2)
         self.assertIn("tools", requests[0])
         self.assertNotIn("tools", requests[1])
-        self.assertEqual(requests[1].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[1])
         self.assertTrue(provider.health.available())
         self.assertEqual(provider.health.consecutive_transient_failures, 0)
 
-    async def test_bai_synthesis_tool_call_ends_without_same_provider_retry(self) -> None:
+    async def test_xkiro_synthesis_tool_call_ends_without_same_provider_retry(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
-            return _tool_response(request, f"bai_call_{len(requests)}")
+            return _tool_response(request, f"xkiro_call_{len(requests)}")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
@@ -192,7 +192,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
         self.assertNotIn("tools", requests[3])
-        self.assertEqual(requests[3].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[3])
         self.assertTrue(provider.health.available())
         self.assertEqual(provider.health.consecutive_transient_failures, 0)
 
@@ -206,7 +206,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "call", 8)
             return _text_response(request, "eight-call synthesis")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
@@ -226,11 +226,12 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("eight-call synthesis", "bai", ()),
+            CompletionResult("eight-call synthesis", "xkiro", ()),
         )
         self.assertEqual(executed, ["fetch_url"] * 8)
         self.assertEqual(len(requests), 2)
         self.assertNotIn("tools", requests[1])
+        self.assertNotIn("tool_choice", requests[1])
 
     async def test_oversized_tool_batch_is_suppressed_before_synthesis(self) -> None:
         requests: list[dict] = []
@@ -242,7 +243,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "oversized", 9)
             return _text_response(request, "synthesized without overflow")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
@@ -262,10 +263,12 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("synthesized without overflow", "bai", ()),
+            CompletionResult("synthesized without overflow", "xkiro", ()),
         )
         self.assertEqual(executed, [])
         self.assertEqual(len(requests), 2)
+        self.assertNotIn("tools", requests[1])
+        self.assertNotIn("tool_choice", requests[1])
 
     async def test_zero_round_budget_never_sends_tool_schema(self) -> None:
         requests: list[dict] = []
@@ -274,7 +277,7 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return _text_response(request, "plain only")
 
-        provider = _make_bai()
+        provider = _make_xkiro()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=0)
@@ -291,32 +294,32 @@ class BaiNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, CompletionResult("plain only", "bai", ()))
+        self.assertEqual(result, CompletionResult("plain only", "xkiro", ()))
         self.assertEqual(len(requests), 1)
         self.assertNotIn("tools", requests[0])
-        self.assertEqual(requests[0].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", requests[0])
 
 
-def _bai_settings() -> SimpleNamespace:
+def _xkiro_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        bai_api_key="secret",
-        bai_text_model="qwen3.8-flash",
-        bai_vision_model="qwen3.8-flash",
-        bai_request_timeout_sec=30.0,
+        xkiro_api_key="test-key",
+        xkiro_text_model="test-text-model",
+        xkiro_vision_model="test-vision-model",
+        xkiro_request_timeout_sec=30.0,
     )
 
 
-def _make_bai():
-    return make_bai_provider(_bai_settings())
+def _make_xkiro():
+    return make_xkiro_provider(_xkiro_settings())
 
 
-def _make_bai_vision():
-    return make_bai_provider(_bai_settings(), name="bai_vision", vision=True)
+def _make_xkiro_vision():
+    return make_xkiro_provider(_xkiro_settings(), name="xkiro", vision=True)
 
 
 def _mock_client(responder) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url="https://api.b.ai/v1/",
+        base_url="https://api.xkiro.com/v1/",
         transport=httpx.MockTransport(responder),
     )
 

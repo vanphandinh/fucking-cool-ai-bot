@@ -291,7 +291,6 @@ class OpenAICompatProvider:
         self.supports_tools = True
         self.capabilities = capabilities or ProviderCapabilities()
         self.health = ProviderHealth()
-        self.force_tool_choice_none_when_no_tools = False
         self.explicit_stream = explicit_stream
         self._request_timeout = timeout
         headers = {"Authorization": f"Bearer {api_key}"}
@@ -313,8 +312,6 @@ class OpenAICompatProvider:
             payload["stream"] = self.explicit_stream
         if tools and self.supports_tools:
             payload["tools"] = tools
-        elif self.force_tool_choice_none_when_no_tools:
-            payload["tool_choice"] = "none"
 
         try:
             resp = await self._client.post("chat/completions", json=payload)

@@ -14,149 +14,388 @@ SCRIPT = ROOT / "scripts" / "sync_env.py"
 
 
 class ProviderEnvMigrationTests(unittest.TestCase):
-    def test_repo_template_keeps_generic_provider_orders(self) -> None:
+    def _run(self, directory: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_repo_template_uses_chainnode_primary_and_xkiro_fallback(self) -> None:
         template = (ROOT / ".env.example").read_text(encoding="utf-8")
         self.assertIn("CHAINNODE_API_KEY=", template)
         self.assertIn("CHAINNODE_BASE_URL=https://dn.chainno.de/v1", template)
-        self.assertIn("CHAINNODE_TEXT_MODEL=\n", template)
-        self.assertIn("CHAINNODE_VISION_MODEL=\n", template)
-        self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", template)
-        self.assertIn("TEXT_PROVIDER_ORDER=bai", template)
-        self.assertIn("VISION_PROVIDER_ORDER=bai", template)
-
-    def test_runtime_docs_match_ai_timeout_defaults(self) -> None:
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        bai_guide = (ROOT / "docs" / "BAI_INTEGRATION.md").read_text(
-            encoding="utf-8"
-        )
-        chainnode_guide = (ROOT / "docs" / "CHAINNODE.md").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("BAI_REQUEST_TIMEOUT_SEC=60.0", readme)
-        self.assertIn("BAI_REQUEST_TIMEOUT_SEC=60.0", bai_guide)
-        self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", chainnode_guide)
-        self.assertIn("read timeout", readme)
-        self.assertIn("read timeout", bai_guide)
-        self.assertIn("read timeout", chainnode_guide)
-
-    def test_current_docs_acknowledge_registered_chainnode_provider(self) -> None:
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
-        bai_guide = (ROOT / "docs" / "BAI_INTEGRATION.md").read_text(
-            encoding="utf-8"
-        )
-        env_guide = (ROOT / "docs" / "ENV_SYNC.md").read_text(encoding="utf-8")
-
-        self.assertIn("docs/CHAINNODE.md", readme)
-        self.assertIn("CHAINNODE.md", docs_index)
-        self.assertIn("Chainnode", bai_guide)
-        self.assertIn("CHAINNODE_API_KEY", env_guide)
-        self.assertNotIn("Production AI registry hiện chỉ register B.AI", docs_index)
-        self.assertNotIn(
-            "provider production duy nhất đang được register hiện tại", bai_guide
-        )
-
-    def test_chainnode_docs_describe_split_live_routes(self) -> None:
-        guide = (ROOT / "docs" / "CHAINNODE.md").read_text(encoding="utf-8")
         self.assertIn(
             "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash",
-            guide,
+            template,
         )
         self.assertIn(
             "CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor",
-            guide,
+            template,
         )
-        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,bai", guide)
-        self.assertIn("VISION_PROVIDER_ORDER=chainnode,bai", guide)
-        self.assertNotIn("Chainnode is text-only in this integration", guide)
-
-    def test_sync_preserves_orders_and_removes_deleted_provider_credentials(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            (directory / ".env.example").write_text(
-                "BAI_API_KEY=\n"
-                "BAI_TEXT_MODEL=qwen3.8-flash\n"
-                "BAI_VISION_MODEL=qwen3.8-flash\n"
-                "TEXT_PROVIDER_ORDER=bai\n"
-                "VISION_PROVIDER_ORDER=bai\n"
-                "SEARCH_BACKEND=auto\n",
-                encoding="utf-8",
-            )
-            (directory / ".env").write_text(
-                "BAI_API_KEY=real-bai-secret\n"
-                "BAI_TEXT_MODEL=mimo-v2.5\n"
-                "BAI_VISION_MODEL=qwen3.8-flash\n"
-                "TEXT_PROVIDER_ORDER=bai,gemini\n"
-                "VISION_PROVIDER_ORDER=bai,groq\n"
-                "GEMINI_API_KEY=remove-gemini\n"
-                "GROQ_API_KEY=remove-groq\n"
-                "OPENROUTER_API_KEY=remove-openrouter\n"
-                "CLOUDFLARE_API_TOKEN=remove-cloudflare\n"
-                "SEARCH_BACKEND=searxng\n",
-                encoding="utf-8",
-            )
-
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT)],
-                cwd=directory,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            rendered = (directory / ".env").read_text(encoding="utf-8")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("BAI_API_KEY=real-bai-secret", rendered)
-        self.assertIn("BAI_TEXT_MODEL=mimo-v2.5", rendered)
-        self.assertIn("TEXT_PROVIDER_ORDER=bai,gemini", rendered)
-        self.assertIn("VISION_PROVIDER_ORDER=bai,groq", rendered)
-        self.assertIn("SEARCH_BACKEND=searxng", rendered)
+        self.assertIn("CHAINNODE_REQUEST_TIMEOUT_SEC=60.0", template)
+        self.assertIn("XKIRO_API_KEY=", template)
+        self.assertIn("XKIRO_TEXT_MODEL=\n", template)
+        self.assertIn("XKIRO_VISION_MODEL=\n", template)
+        self.assertIn("XKIRO_REQUEST_TIMEOUT_SEC=60.0", template)
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,xkiro", template)
+        self.assertIn("VISION_PROVIDER_ORDER=chainnode,xkiro", template)
         for removed in (
-            "GEMINI_API_KEY",
-            "GROQ_API_KEY",
-            "OPENROUTER_API_KEY",
-            "CLOUDFLARE_API_TOKEN",
+            "BAI_API_KEY",
+            "BAI_TEXT_MODEL",
+            "BAI_VISION_MODEL",
+            "BAI_REQUEST_TIMEOUT_SEC",
         ):
-            self.assertNotIn(removed, rendered)
+            self.assertNotIn(removed, template)
 
-    def test_sync_adds_chainnode_vision_model_without_overwriting_live_values(self) -> None:
+    def test_sync_migrates_legacy_orders_and_removes_bai_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             (directory / ".env.example").write_text(
                 "CHAINNODE_API_KEY=\n"
-                "CHAINNODE_TEXT_MODEL=\n"
-                "CHAINNODE_VISION_MODEL=\n"
-                "TEXT_PROVIDER_ORDER=bai\n"
-                "VISION_PROVIDER_ORDER=bai\n",
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n"
+                "SEARCH_BACKEND=auto\n",
                 encoding="utf-8",
             )
             (directory / ".env").write_text(
-                "CHAINNODE_API_KEY=real-chainnode-secret\n"
-                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
-                "TEXT_PROVIDER_ORDER=chainnode,bai\n"
-                "VISION_PROVIDER_ORDER=bai\n",
+                "CHAINNODE_API_KEY=chainnode-existing\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text-existing\n"
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=xkiro-text-existing\n"
+                "XKIRO_VISION_MODEL=xkiro-vision-existing\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "BAI_TEXT_MODEL=legacy-text\n"
+                "BAI_VISION_MODEL=legacy-vision\n"
+                "BAI_REQUEST_TIMEOUT_SEC=17\n"
+                "TEXT_PROVIDER_ORDER=bai,chainnode,custom\n"
+                "VISION_PROVIDER_ORDER=chainnode,bai\n"
+                "SEARCH_BACKEND=searxng\n",
                 encoding="utf-8",
             )
 
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT)],
-                cwd=directory,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            result = self._run(directory)
             rendered = (directory / ".env").read_text(encoding="utf-8")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("CHAINNODE_API_KEY=real-chainnode-secret", rendered)
-        self.assertIn("CHAINNODE_VISION_MODEL=", rendered)
-        self.assertIn(
-            "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash",
+        self.assertIn("CHAINNODE_API_KEY=chainnode-existing", rendered)
+        self.assertIn("CHAINNODE_TEXT_MODEL=chainnode-text-existing", rendered)
+        self.assertIn("XKIRO_API_KEY=xkiro-existing", rendered)
+        self.assertIn("XKIRO_TEXT_MODEL=xkiro-text-existing", rendered)
+        self.assertIn("XKIRO_VISION_MODEL=xkiro-vision-existing", rendered)
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,xkiro,custom", rendered)
+        self.assertIn("VISION_PROVIDER_ORDER=chainnode,xkiro", rendered)
+        self.assertIn("SEARCH_BACKEND=searxng", rendered)
+        self.assertNotIn("legacy-bai-value", rendered)
+        self.assertNotIn("BAI_", rendered)
+
+    def test_sync_migrates_quoted_and_commented_legacy_orders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "CHAINNODE_API_KEY=chainnode-existing\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text-existing\n"
+                'TEXT_PROVIDER_ORDER="bai,chainnode"\n'
+                "VISION_PROVIDER_ORDER='bai' # legacy quoted value\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,xkiro", rendered)
+        self.assertIn("VISION_PROVIDER_ORDER=chainnode,xkiro", rendered)
+        self.assertNotIn("'bai'", rendered)
+        self.assertNotIn('"bai,chainnode"', rendered)
+
+    def test_sync_rejects_unclosed_provider_order_quote_without_touching_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            original = (
+                "CHAINNODE_API_KEY=chainnode-existing\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text-existing\n"
+                'TEXT_PROVIDER_ORDER="bai,chainnode\n'
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("provider order", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_does_not_invent_xkiro_credentials_from_bai(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "CHAINNODE_API_KEY=chainnode-existing\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text-existing\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "BAI_TEXT_MODEL=legacy-text\n"
+                "TEXT_PROVIDER_ORDER=bai\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CHAINNODE_API_KEY=chainnode-existing", rendered)
+        self.assertIn("CHAINNODE_TEXT_MODEL=chainnode-text-existing", rendered)
+        self.assertIn("XKIRO_API_KEY=\n", rendered)
+        self.assertIn("XKIRO_TEXT_MODEL=\n", rendered)
+        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,xkiro", rendered)
+        self.assertNotIn("legacy-bai-value", rendered)
+        self.assertNotIn("legacy-text", rendered)
+
+    def test_sync_refuses_bai_only_retirement_without_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            original = (
+                "BAI_API_KEY=legacy-bai-value\n"
+                "BAI_TEXT_MODEL=legacy-text\n"
+                "TEXT_PROVIDER_ORDER=bai\n"
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement text provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_refuses_bai_retirement_when_legacy_model_used_runtime_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            original = (
+                "BAI_API_KEY=legacy-bai-value\n"
+                "TEXT_PROVIDER_ORDER=bai\n"
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement text provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_refuses_legacy_default_text_order_without_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            original = "BAI_API_KEY=legacy-bai-value\n"
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement text provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_treats_quoted_empty_commented_replacement_keys_as_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=xkiro-text\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            original = (
+                'CHAINNODE_API_KEY="" # intentionally empty\n'
+                "CHAINNODE_TEXT_MODEL=chainnode-text\n"
+                "XKIRO_API_KEY='' # intentionally empty\n"
+                "XKIRO_TEXT_MODEL=xkiro-text\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "BAI_TEXT_MODEL=legacy-text\n"
+                "TEXT_PROVIDER_ORDER=bai\n"
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement text provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_refuses_enabled_legacy_vision_retirement_without_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text\n"
+                "CHAINNODE_VISION_MODEL=chainnode-vision\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_ENABLED=1\n",
+                encoding="utf-8",
+            )
+            original = (
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=xkiro-text-existing\n"
+                "XKIRO_VISION_MODEL=\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "TEXT_PROVIDER_ORDER=bai\n"
+                "VISION_PROVIDER_ORDER=bai\n"
+                "VISION_ENABLED=1\n"
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement vision provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_refuses_legacy_default_vision_order_without_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text\n"
+                "CHAINNODE_VISION_MODEL=chainnode-vision\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_ENABLED=1\n",
+                encoding="utf-8",
+            )
+            original = (
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=xkiro-text-existing\n"
+                "XKIRO_VISION_MODEL=\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+            )
+            env_path = directory / ".env"
+            env_path.write_text(original, encoding="utf-8")
+
+            result = self._run(directory)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement vision provider", result.stderr.lower())
+            self.assertEqual(env_path.read_text(encoding="utf-8"), original)
+
+    def test_sync_allows_legacy_vision_retirement_when_vision_is_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-text\n"
+                "CHAINNODE_VISION_MODEL=chainnode-vision\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_ENABLED=1\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=xkiro-text-existing\n"
+                "XKIRO_VISION_MODEL=\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "VISION_ENABLED=0\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("VISION_ENABLED=0", rendered)
+        self.assertIn("VISION_PROVIDER_ORDER=chainnode,xkiro", rendered)
+
+    def test_chainnode_only_custom_order_is_not_expanded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "TEXT_PROVIDER_ORDER=chainnode\n"
+                "VISION_PROVIDER_ORDER=chainnode\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+            rendered = (directory / ".env").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
             rendered,
+            "TEXT_PROVIDER_ORDER=chainnode\nVISION_PROVIDER_ORDER=chainnode\n",
         )
-        self.assertIn("TEXT_PROVIDER_ORDER=chainnode,bai", rendered)
-        self.assertIn("VISION_PROVIDER_ORDER=bai", rendered)
 
 
 if __name__ == "__main__":

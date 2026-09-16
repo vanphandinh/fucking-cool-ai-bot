@@ -61,10 +61,10 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = OpenAICompatProvider(
-            "bai-test",
+            "xkiro-test",
             "https://example.org/v1",
-            "fake",
-            "fake",
+            "test-key",
+            "test-model",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -209,7 +209,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
 
         async def slow_answer(**kwargs):
             await asyncio.sleep(0.08)
-            return Answer(text="late answer", provider="bai")
+            return Answer(text="late answer", provider="xkiro")
 
         settings = Settings(_env_file=None, question_timeout_sec=0.02)
         await _handle_question(
@@ -244,7 +244,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(send_chat_action=AsyncMock()),
             reply=AsyncMock(),
         )
-        answer = Answer("answer", "bai")
+        answer = Answer("answer", "xkiro")
         orchestrator = SimpleNamespace(ask=AsyncMock(return_value=answer))
         task = asyncio.create_task(
             _handle_question(
@@ -271,13 +271,11 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_missing_bai_text_backend_fails_before_bot_creation(self):
+    async def test_missing_configured_text_backend_fails_before_bot_creation(self):
         from app import main
 
         with patch.object(main, "Bot") as bot_cls:
-            code = await main._amain(
-                Settings(_env_file=None, bot_token="123:test")
-            )
+            code = await main._amain(Settings(_env_file=None, bot_token="123:test"))
         self.assertEqual(code, 1)
         bot_cls.assert_not_called()
 
@@ -291,7 +289,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="bai", aclose=AsyncMock())
+        provider = SimpleNamespace(name="xkiro", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -302,7 +300,13 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main.Dispatcher, "start_polling", new=AsyncMock()),
         ):
             code = await main._amain(
-                Settings(_env_file=None, bot_token="123:test", bai_api_key="k")
+                Settings(
+                    _env_file=None,
+                    bot_token="123:test",
+                    xkiro_api_key="test-key",
+                    xkiro_text_model="test-text-model",
+                    vision_enabled=False,
+                )
             )
         self.assertEqual(code, 0)
         drop_pending = bot.delete_webhook.call_args.kwargs.get("drop_pending_updates", False)
@@ -316,7 +320,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             get_me=AsyncMock(side_effect=RuntimeError("startup failed")),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="bai", aclose=AsyncMock())
+        provider = SimpleNamespace(name="xkiro", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -330,7 +334,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     Settings(
                         _env_file=None,
                         bot_token="123:test",
-                        bai_api_key="k",
+                        xkiro_api_key="test-key",
+                        xkiro_text_model="test-text-model",
+                        vision_enabled=False,
                     )
                 )
         bot.session.close.assert_awaited_once()
@@ -365,7 +371,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="bai", aclose=close_provider)
+        provider = SimpleNamespace(name="xkiro", aclose=close_provider)
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -378,7 +384,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(
                 _env_file=None,
                 bot_token="123:test",
-                bai_api_key="k",
+                xkiro_api_key="test-key",
+                xkiro_text_model="test-text-model",
+                vision_enabled=False,
             )
             await main._amain(settings)
         self.assertEqual(events, ["handler stopped", "provider closed"])

@@ -81,14 +81,14 @@ class ProviderRetryStateTests(unittest.TestCase):
         self.state.record_transport_failure(
             "chainnode", transport_error("read_timeout")
         )
-        self.state.record_transport_failure("bai", transport_error("read_timeout"))
+        self.state.record_transport_failure("xkiro", transport_error("read_timeout"))
 
         self.state.record_chat_success("chainnode")
 
         self.assertIsNone(
             self.state.provider_state("chainnode").pending_health_error
         )
-        self.assertIsNotNone(self.state.provider_state("bai").pending_health_error)
+        self.assertIsNotNone(self.state.provider_state("xkiro").pending_health_error)
 
     def test_retryable_classification_is_narrow(self) -> None:
         for kind in ("connect_error", "connect_timeout", "read_timeout"):

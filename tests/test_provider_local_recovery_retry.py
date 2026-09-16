@@ -21,14 +21,14 @@ class ProviderLocalRecoveryRetryTests(unittest.IsolatedAsyncioTestCase):
         timeout_error = ProviderError("connect timeout", transient=True)
         timeout_error.transport_kind = "connect_timeout"
         provider = ScriptedProvider(
-            "bai",
+            "xkiro",
             [
                 protocol_error,
                 timeout_error,
                 ChatResponse(content="recovered"),
             ],
         )
-        router = AIProviderRouter([provider], text_provider_order=("bai",))
+        router = AIProviderRouter([provider], text_provider_order=("xkiro",))
 
         result = await router.complete(
             [{"role": "user", "content": "hello"}],
