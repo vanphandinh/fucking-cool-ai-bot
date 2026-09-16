@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import unittest
 
+from pydantic import ValidationError
+
 from app.ai.base import AllProvidersFailed, ProviderError
 from app.ai.router import AIProviderRouter
 from app.ai.target import provider_target_identity
@@ -37,6 +39,28 @@ class ProviderTargetIdentitySecurityTests(unittest.TestCase):
         finally:
             for slot in slots:
                 asyncio.run(slot.aclose())
+
+
+class SettingsSecretHygieneTests(unittest.TestCase):
+    def test_validation_error_hides_canonical_xkiro_credentials(self) -> None:
+        secrets = (
+            "".join(("A1", "!x")),
+            "".join(("B2", "!y")),
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            Settings(
+                _env_file=None,
+                xkiro_api_keys=",".join(secrets),
+                xkiro_text_models="",
+                text_provider_order="xkiro",
+                vision_enabled=False,
+            )
+
+        rendered = str(ctx.exception)
+        if any(secret in rendered for secret in secrets):
+            self.fail("validation error exposed raw xKiro credential input")
+        self.assertIn("XKIRO_TEXT_MODELS/XKIRO_TEXT_MODEL", rendered)
 
 
 class ProviderTargetDiagnosticSecurityTests(unittest.IsolatedAsyncioTestCase):
