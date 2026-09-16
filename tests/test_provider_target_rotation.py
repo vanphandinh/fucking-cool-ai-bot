@@ -97,7 +97,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual((result.content, result.provider, result.fallbacks), ("model-b", "chainnode", ()))
+        self.assertEqual(
+            (result.content, result.provider, result.fallbacks),
+            ("model-b", "chainnode", ()),
+        )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
@@ -129,7 +132,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual((result.content, result.provider, result.fallbacks), ("fallback", "xkiro", ("xkiro",)))
+        self.assertEqual(
+            (result.content, result.provider, result.fallbacks),
+            ("fallback", "xkiro", ("xkiro",)),
+        )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
@@ -166,7 +172,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual((result.content, result.provider, result.fallbacks), ("same-model-key2", "xkiro", ()))
+        self.assertEqual(
+            (result.content, result.provider, result.fallbacks),
+            ("same-model-key2", "xkiro", ()),
+        )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 0)
         self.assertEqual(result.credential_failovers, 1)
@@ -370,7 +379,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), [fetch_url_tool()], execute)
 
-        self.assertEqual((result.content, result.provider, result.fallbacks), ("final", "chainnode", ()))
+        self.assertEqual(
+            (result.content, result.provider, result.fallbacks),
+            ("final", "chainnode", ()),
+        )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
