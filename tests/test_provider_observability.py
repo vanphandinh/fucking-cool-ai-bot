@@ -7,7 +7,9 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from app.ai.base import ChatResponse
+from app.ai.recovery import HealthEffect, HealthScope
 from app.ai.router import AIProviderRouter, CompletionResult
+from app.ai.target import provider_target_identity
 from app.bot.handlers import _provider_status_lines, _vision_limit_message
 from app.bot.question_runner import QuestionProcessor
 from app.config import Settings
@@ -114,6 +116,34 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Fallbacks: 0", lines)
         self.assertIn("Target rotations: 3 (models=2, credentials=1)", lines)
         self.assertNotIn("B.AI text", lines)
+
+    async def test_status_reports_scoped_target_unavailability_without_secrets(self) -> None:
+        denied = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        denied.model = "model-a"
+        denied.credential_id = "cred-1"
+        denied.target_id = "xkiro:text:m1:c1"
+        denied.api_key = "RAW-SECRET-MUST-NOT-LEAK"
+        sibling = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        sibling.model = "model-a"
+        sibling.credential_id = "cred-2"
+        sibling.target_id = "xkiro:text:m1:c2"
+        router = AIProviderRouter(
+            [denied, sibling],
+            text_provider_order=("xkiro",),
+            vision_provider_order=(),
+        )
+        router.scoped_health.record_effect(
+            HealthScope.ENTITLEMENT,
+            provider_target_identity(denied),
+            "entitlement denied for RAW-SECRET-MUST-NOT-LEAK",
+            effect=HealthEffect.DISABLE,
+        )
+
+        lines = "\n".join(_provider_status_lines(router, Stats()))
+
+        self.assertIn("xkiro:text:m1:c1=scoped-disabled", lines)
+        self.assertNotIn("xkiro:text:m1:c2=", lines)
+        self.assertNotIn("RAW-SECRET-MUST-NOT-LEAK", lines)
 
 
 class FallbackStatsTests(unittest.TestCase):
