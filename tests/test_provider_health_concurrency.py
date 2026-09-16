@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.ai.base import ChatResponse, ProviderError
+from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError
 from app.ai.recovery import HealthScope
 from app.ai.router import AIProviderRouter
 from app.ai.target import provider_target_identity
@@ -113,6 +113,29 @@ class _RepeatedTransportAroundDirectSuccessProvider(ScriptedProvider):
         if self.call_count == 3:
             return ChatResponse(content="newer-direct-success")
         return ChatResponse(content="unexpected-primary-success")
+
+
+class _BlockingFailureProvider(ScriptedProvider):
+    """Pause one request so a concurrent scoped-health event can interleave."""
+
+    def __init__(self, family: str) -> None:
+        super().__init__(family, [])
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> ChatResponse:
+        self.calls.append((messages, tools))
+        self.started.set()
+        await self.release.wait()
+        raise ProviderError(
+            "bridge unavailable",
+            status_code=503,
+            transient=True,
+        )
 
 
 def _target(
@@ -307,6 +330,79 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(primary.call_count, 3)
         self.assertEqual(primary.health.consecutive_transient_failures, 1)
         self.assertIn("after direct success", primary.health.last_error or "")
+
+    async def test_same_family_success_flushes_sibling_deferred_incident(self) -> None:
+        first_error = ProviderError("target-one read timeout", transient=True)
+        first_error.transport_kind = "read_timeout"
+        target_one = _target(
+            ScriptedProvider("chainnode", [first_error]),
+            model="model-a",
+            credential_id="cred-1",
+        )
+        target_two = _target(
+            ScriptedProvider("chainnode", [ChatResponse(content="sibling-success")]),
+            model="model-b",
+            credential_id="cred-1",
+        )
+        vision_same_model = _target(
+            ScriptedProvider(
+                "chainnode",
+                [
+                    ProviderError(
+                        "concurrent model cooldown",
+                        status_code=429,
+                        retry_after=120.0,
+                        transient=True,
+                    )
+                ],
+                route="vision",
+                max_images=1,
+            ),
+            model="model-a",
+            credential_id="cred-1",
+        )
+        vision_same_model.target_id = "chainnode:vision:model-a:cred-1"
+        bridge = _target(
+            _BlockingFailureProvider("bridge"),
+            model="bridge-model",
+            credential_id="cred-1",
+        )
+        router = AIProviderRouter(
+            [target_one, target_two, vision_same_model, bridge],
+            text_provider_order=("chainnode", "bridge"),
+            vision_provider_order=("chainnode",),
+        )
+
+        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        await bridge.started.wait()
+
+        with self.assertRaises(AllProvidersFailed):
+            await router.complete(
+                _messages(),
+                None,
+                noop_tool,
+                requires_vision=True,
+                image_count=1,
+            )
+        model_health = router.scoped_health.health(
+            HealthScope.MODEL,
+            provider_target_identity(target_one),
+        )
+        self.assertFalse(model_health.available())
+        self.assertEqual(target_one.health.consecutive_transient_failures, 0)
+        self.assertIsNone(target_one.health.last_error)
+
+        bridge.release.set()
+        result = await request_a
+
+        self.assertEqual(result.content, "sibling-success")
+        self.assertEqual(result.provider, "chainnode")
+        self.assertEqual(len(target_one.calls), 1)
+        self.assertEqual(len(target_two.calls), 1)
+        self.assertEqual(len(vision_same_model.calls), 1)
+        self.assertEqual(len(bridge.calls), 1)
+        self.assertEqual(target_one.health.consecutive_transient_failures, 1)
+        self.assertIn("target-one read timeout", target_one.health.last_error or "")
 
 
 if __name__ == "__main__":
