@@ -95,17 +95,24 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats.credential_failover_count, 1)
         self.assertTrue(record.delivery_committed)
 
-    async def test_status_labels_are_provider_generic(self) -> None:
+    async def test_status_labels_are_provider_generic_and_show_target_recovery(self) -> None:
         provider = ScriptedProvider("fake", [ChatResponse(content="ok")])
         router = AIProviderRouter(
             [provider],
             text_provider_order=("fake",),
             vision_provider_order=(),
         )
-        lines = "\n".join(_provider_status_lines(router, Stats()))
+        stats = Stats()
+        stats.record_target_recovery(
+            target_rotations=3,
+            model_rotations=2,
+            credential_failovers=1,
+        )
+        lines = "\n".join(_provider_status_lines(router, stats))
         self.assertIn("Text providers: fake", lines)
         self.assertIn("Vision providers: disabled", lines)
         self.assertIn("Fallbacks: 0", lines)
+        self.assertIn("Target rotations: 3 (models=2, credentials=1)", lines)
         self.assertNotIn("B.AI text", lines)
 
 
