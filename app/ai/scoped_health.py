@@ -136,14 +136,14 @@ class ScopedHealthRegistry:
         identity: ProviderTargetIdentity,
         message: str,
         *,
-        expected_generation: int,
+        expected_barrier_generation: int,
         status_code: int | None = None,
         retry_after: float | None = None,
         transient: bool = True,
     ) -> bool:
         return self.health(scope, identity).record_deferred_error(
             message,
-            expected_generation=expected_generation,
+            expected_barrier_generation=expected_barrier_generation,
             status_code=status_code,
             retry_after=retry_after,
             transient=transient,
