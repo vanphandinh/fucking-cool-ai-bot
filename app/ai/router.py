@@ -61,6 +61,10 @@ class _HealthGenerationSnapshot:
     scoped_generations: tuple[int, ...]
 
 
+class _TargetBecameUnavailable(Exception):
+    """Signal scheduler rotation when shared health changes before a network call."""
+
+
 @dataclass
 class _ToolBudget:
     calls: int = 0
@@ -412,6 +416,9 @@ class AIProviderRouter:
                     candidates=candidates,
                     operations=operations,
                 )
+            except _TargetBecameUnavailable:
+                cursor = (index + 1) % len(candidates)
+                continue
             except ProviderError as exc:
                 last_error = exc
                 if is_cyclic_retryable_transport(exc):
@@ -557,16 +564,23 @@ class AIProviderRouter:
         operations=None,
     ) -> ChatResponse:
         identity = provider_target_identity(provider)
-        while True:
+
+        async def send_once() -> tuple[ChatResponse, _HealthGenerationSnapshot]:
+            if not self._candidate_eligible(provider, state):
+                raise _TargetBecameUnavailable
             health_snapshot = self._health_snapshot(provider, identity)
+            response = await provider.chat(messages, tools)
+            return response, health_snapshot
+
+        while True:
             try:
                 try:
                     if operations is None:
-                        response = await provider.chat(messages, tools)
+                        response, health_snapshot = await send_once()
                     else:
-                        response = await operations.run(
+                        response, health_snapshot = await operations.run(
                             f"AI {provider.name}",
-                            lambda: provider.chat(messages, tools),
+                            send_once,
                             timeout_sec=operations.ai_timeout,
                         )
                 except TimeoutError:
