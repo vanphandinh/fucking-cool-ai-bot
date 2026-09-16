@@ -29,7 +29,7 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.bai_request_timeout_sec, 60.0)
+        self.assertEqual(settings.xkiro_request_timeout_sec, 60.0)
         self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
 
     async def test_connect_error_is_classified_without_adapter_retry(self) -> None:
@@ -116,7 +116,7 @@ def _provider(*, timeout: float) -> OpenAICompatProvider:
     return OpenAICompatProvider(
         name="test",
         base_url="https://example.test/v1",
-        api_key="secret",
+        api_key="test-key",
         model="test-model",
         timeout=timeout,
     )

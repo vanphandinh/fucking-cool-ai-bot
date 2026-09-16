@@ -14,6 +14,10 @@ def make_chainnode_provider(
     name: str = "chainnode",
     vision: bool = False,
 ) -> OpenAICompatProvider:
+    api_key = str(settings.chainnode_api_key or "").strip()
+    if not api_key:
+        raise ValueError("CHAINNODE_API_KEY là bắt buộc khi khởi tạo Chainnode provider")
+
     model = str(
         settings.chainnode_vision_model if vision else settings.chainnode_text_model
     ).strip()
@@ -24,7 +28,7 @@ def make_chainnode_provider(
     return OpenAICompatProvider(
         name=name,
         base_url=settings.chainnode_base_url,
-        api_key=settings.chainnode_api_key,
+        api_key=api_key,
         model=model,
         timeout=settings.chainnode_request_timeout_sec,
         capabilities=ProviderCapabilities(
@@ -37,7 +41,7 @@ def make_chainnode_provider(
 
 
 def build_chainnode_provider_slots(settings: Settings) -> list[AIProvider]:
-    if not settings.chainnode_api_key:
+    if not str(settings.chainnode_api_key or "").strip():
         return []
 
     slots: list[AIProvider] = []

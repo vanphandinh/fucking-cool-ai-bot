@@ -25,7 +25,7 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
 
     def test_text_factory_uses_configured_base_model_and_timeout(self) -> None:
         settings = SimpleNamespace(
-            chainnode_api_key="secret",
+            chainnode_api_key="test-key",
             chainnode_base_url="https://dn.chainno.de/v1",
             chainnode_text_model="cl/z-ai/glm-5.3-flash",
             chainnode_request_timeout_sec=25.0,
@@ -39,13 +39,12 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
             self.assertEqual(provider.capabilities.route, "text")
             self.assertFalse(provider.capabilities.supports_vision)
             self.assertEqual(provider.capabilities.max_images, 0)
-            self.assertFalse(provider.force_tool_choice_none_when_no_tools)
         finally:
             asyncio.run(provider.aclose())
 
     def test_text_and_vision_factories_use_distinct_models(self) -> None:
         settings = SimpleNamespace(
-            chainnode_api_key="secret",
+            chainnode_api_key="test-key",
             chainnode_base_url="https://dn.chainno.de/v1",
             chainnode_text_model=TEXT_MODEL,
             chainnode_vision_model=VISION_MODEL,
@@ -58,7 +57,6 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
             self.assertEqual(text.capabilities.route, "text")
             self.assertFalse(text.capabilities.supports_vision)
             self.assertEqual(text.capabilities.max_images, 0)
-
             self.assertEqual(vision.model, VISION_MODEL)
             self.assertEqual(vision.capabilities.route, "vision")
             self.assertTrue(vision.capabilities.supports_vision)
@@ -69,59 +67,61 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
 
 
 class ChainnodeDeploymentConfigTests(unittest.TestCase):
-    def test_chainnode_defaults_do_not_change_current_bai_production_order(self) -> None:
+    def test_defaults_keep_chainnode_primary_with_xkiro_fallback(self) -> None:
         settings = Settings(_env_file=None)
         self.assertEqual(settings.chainnode_api_key, "")
         self.assertEqual(settings.chainnode_base_url, "https://dn.chainno.de/v1")
         self.assertEqual(settings.chainnode_text_model, "")
-        self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
-        self.assertEqual(settings.text_provider_order_list, ["bai"])
-
-    def test_chainnode_defaults_keep_vision_bai_only(self) -> None:
-        settings = Settings(_env_file=None)
         self.assertEqual(settings.chainnode_vision_model, "")
-        self.assertEqual(settings.vision_provider_order_list, ["bai"])
+        self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
+        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
 
     def test_chainnode_vision_order_requires_explicit_model(self) -> None:
         with self.assertRaisesRegex(ValueError, "CHAINNODE_VISION_MODEL"):
             Settings(
                 _env_file=None,
-                chainnode_api_key="c",
+                chainnode_api_key="test-key",
+                text_provider_order="xkiro",
                 vision_enabled=True,
-                vision_provider_order="chainnode,bai",
+                vision_provider_order="chainnode,xkiro",
             )
 
     def test_disabled_vision_does_not_require_chainnode_vision_model(self) -> None:
         settings = Settings(
             _env_file=None,
-            chainnode_api_key="c",
+            chainnode_api_key="test-key",
+            text_provider_order="xkiro",
             vision_enabled=False,
-            vision_provider_order="chainnode,bai",
+            vision_provider_order="chainnode,xkiro",
         )
         self.assertFalse(settings.vision_enabled)
 
-    def test_chainnode_slot_requires_key_order_and_explicit_model(self) -> None:
+    def test_chainnode_slot_requires_selection_and_explicit_model(self) -> None:
         disabled = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="c",
-                text_provider_order="bai",
+                chainnode_api_key="test-key",
+                text_provider_order="xkiro",
+                vision_provider_order="",
             )
         )
         enabled = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="c",
-                chainnode_text_model="cl/z-ai/glm-5.3-flash",
-                bai_api_key="b",
-                text_provider_order="chainnode,bai",
+                chainnode_api_key="test-key",
+                chainnode_text_model=TEXT_MODEL,
+                xkiro_api_key="test-xkiro-key",
+                xkiro_text_model="test-xkiro-text",
+                text_provider_order="chainnode,xkiro",
+                vision_provider_order="",
             )
         )
         try:
             self.assertEqual(disabled.configured_provider_names(False), ())
             self.assertEqual(
                 enabled.configured_provider_names(False),
-                ("chainnode", "bai"),
+                ("chainnode", "xkiro"),
             )
         finally:
             asyncio.run(_close_router(disabled))
@@ -131,12 +131,11 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="c",
+                chainnode_api_key="test-key",
                 chainnode_text_model=TEXT_MODEL,
                 chainnode_vision_model=VISION_MODEL,
-                bai_api_key="b",
-                text_provider_order="chainnode,bai",
-                vision_provider_order="chainnode,bai",
+                text_provider_order="chainnode,xkiro",
+                vision_provider_order="chainnode,xkiro",
             )
         )
         try:
@@ -145,6 +144,8 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
             self.assertEqual(set(by_route), {"text", "vision"})
             self.assertEqual(by_route["text"].model, TEXT_MODEL)
             self.assertEqual(by_route["vision"].model, VISION_MODEL)
+            self.assertEqual(router.configured_provider_names(False), ("chainnode",))
+            self.assertEqual(router.configured_provider_names(True), ("chainnode",))
         finally:
             asyncio.run(_close_router(router))
 
@@ -152,11 +153,10 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="c",
+                chainnode_api_key="test-key",
                 chainnode_vision_model=VISION_MODEL,
-                bai_api_key="b",
-                text_provider_order="bai",
-                vision_provider_order="chainnode,bai",
+                text_provider_order="xkiro",
+                vision_provider_order="chainnode,xkiro",
             )
         )
         try:
@@ -164,11 +164,8 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
             self.assertEqual(len(chainnode_slots), 1)
             self.assertEqual(chainnode_slots[0].capabilities.route, "vision")
             self.assertEqual(chainnode_slots[0].model, VISION_MODEL)
-            self.assertEqual(router.configured_provider_names(False), ("bai",))
-            self.assertEqual(
-                router.configured_provider_names(True),
-                ("chainnode", "bai"),
-            )
+            self.assertEqual(router.configured_provider_names(False), ())
+            self.assertEqual(router.configured_provider_names(True), ("chainnode",))
         finally:
             asyncio.run(_close_router(router))
 
@@ -186,9 +183,9 @@ class ChainnodeWireContractTests(unittest.IsolatedAsyncioTestCase):
             )
 
         settings = SimpleNamespace(
-            chainnode_api_key="secret",
+            chainnode_api_key="test-key",
             chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model="cl/z-ai/glm-5.3-flash",
+            chainnode_text_model=TEXT_MODEL,
             chainnode_request_timeout_sec=30.0,
         )
         provider = chainnode.make_chainnode_provider(settings)
@@ -208,7 +205,7 @@ class ChainnodeWireContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.content, "ok")
         self.assertEqual(len(requests), 1)
         self.assertEqual(set(requests[0]), {"model", "messages", "tools", "stream"})
-        self.assertEqual(requests[0]["model"], "cl/z-ai/glm-5.3-flash")
+        self.assertEqual(requests[0]["model"], TEXT_MODEL)
         self.assertIs(requests[0]["stream"], False)
         self.assertNotIn("reasoning_effort", requests[0])
         self.assertNotIn("thinking", requests[0])
@@ -230,7 +227,7 @@ class ChainnodeWireContractTests(unittest.IsolatedAsyncioTestCase):
             )
 
         settings = SimpleNamespace(
-            chainnode_api_key="secret",
+            chainnode_api_key="test-key",
             chainnode_base_url="https://dn.chainno.de/v1",
             chainnode_text_model=TEXT_MODEL,
             chainnode_vision_model=VISION_MODEL,

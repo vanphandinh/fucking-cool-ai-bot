@@ -50,9 +50,6 @@ class Settings(BaseSettings):
     learn_group_id_mode: bool = False
 
     # Provider-specific AI credentials/models. Routing order stays provider-agnostic.
-    bai_api_key: str = ""
-    bai_text_model: str = "qwen3.8-flash"
-    bai_request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     chainnode_api_key: str = ""
     chainnode_base_url: str = "https://dn.chainno.de/v1"
     chainnode_text_model: str = ""
@@ -62,7 +59,15 @@ class Settings(BaseSettings):
         gt=0,
         allow_inf_nan=False,
     )
-    text_provider_order: str = "bai"
+    xkiro_api_key: str = ""
+    xkiro_text_model: str = ""
+    xkiro_vision_model: str = ""
+    xkiro_request_timeout_sec: float = Field(
+        default=60.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
+    text_provider_order: str = "chainnode,xkiro"
     provider_retry_max_consecutive_failures: int = Field(
         default=2,
         ge=1,
@@ -96,8 +101,7 @@ class Settings(BaseSettings):
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
-    bai_vision_model: str = "qwen3.8-flash"
-    vision_provider_order: str = "bai"
+    vision_provider_order: str = "chainnode,xkiro"
     max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
@@ -205,6 +209,27 @@ class Settings(BaseSettings):
             )
 
         if (
+            self.xkiro_api_key.strip()
+            and "xkiro" in self.text_provider_order_list
+            and not self.xkiro_text_model.strip()
+        ):
+            raise ValueError(
+                "XKIRO_TEXT_MODEL là bắt buộc khi xKiro được bật "
+                "trong TEXT_PROVIDER_ORDER"
+            )
+
+        if (
+            self.vision_enabled
+            and self.xkiro_api_key.strip()
+            and "xkiro" in self.vision_provider_order_list
+            and not self.xkiro_vision_model.strip()
+        ):
+            raise ValueError(
+                "XKIRO_VISION_MODEL là bắt buộc khi xKiro được bật "
+                "trong VISION_PROVIDER_ORDER"
+            )
+
+        if (
             self.provider_retry_max_failures_per_provider
             < self.provider_retry_max_consecutive_failures
         ):
@@ -241,8 +266,11 @@ class Settings(BaseSettings):
             and bool(self.crawl4ai_url.strip())
             and bool(self.crawl4ai_api_token.strip())
         )
-        if (not self.question_controls_enabled and crawl4ai_active
-                and self.crawl4ai_timeout_sec >= self.question_timeout_sec):
+        if (
+            not self.question_controls_enabled
+            and crawl4ai_active
+            and self.crawl4ai_timeout_sec >= self.question_timeout_sec
+        ):
             raise ValueError("CRAWL4AI_TIMEOUT_SEC phải nhỏ hơn QUESTION_TIMEOUT_SEC")
         return self
 

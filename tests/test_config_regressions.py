@@ -18,6 +18,47 @@ class ConfigRegressionTests(unittest.TestCase):
         self.assertTrue(hasattr(settings, "bot_username_clean"))
         self.assertEqual(settings.bot_username_clean, "mybot")
 
+    def test_provider_defaults_make_chainnode_primary_and_xkiro_fallback(self) -> None:
+        settings = Settings(_env_file=None)
+
+        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.xkiro_api_key, "")
+        self.assertEqual(settings.xkiro_text_model, "")
+        self.assertEqual(settings.xkiro_vision_model, "")
+        self.assertEqual(settings.xkiro_request_timeout_sec, 60.0)
+
+    def test_xkiro_text_order_requires_explicit_model_when_key_is_configured(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "XKIRO_TEXT_MODEL"):
+            Settings(
+                _env_file=None,
+                xkiro_api_key="test-key",
+                text_provider_order="chainnode,xkiro",
+                xkiro_text_model="",
+            )
+
+    def test_xkiro_vision_order_requires_explicit_model_when_enabled(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "XKIRO_VISION_MODEL"):
+            Settings(
+                _env_file=None,
+                xkiro_api_key="test-key",
+                text_provider_order="chainnode",
+                vision_enabled=True,
+                vision_provider_order="chainnode,xkiro",
+                xkiro_vision_model="",
+            )
+
+    def test_disabled_vision_does_not_require_xkiro_vision_model(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            xkiro_api_key="test-key",
+            text_provider_order="chainnode",
+            vision_enabled=False,
+            vision_provider_order="chainnode,xkiro",
+            xkiro_vision_model="",
+        )
+        self.assertFalse(settings.vision_enabled)
+
     def test_provider_retry_defaults(self) -> None:
         settings = Settings(_env_file=None)
 
@@ -107,23 +148,29 @@ class ConfigRegressionTests(unittest.TestCase):
                     Settings(_env_file=None, **values)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class JobConfigTests(unittest.TestCase):
     def test_controls_defaults_and_validation(self):
         s = Settings(_env_file=None)
         self.assertFalse(s.question_controls_enabled)
         self.assertEqual(s.question_renewal_interval_sec, 180)
-        for kw in ({'question_renewal_interval_sec': float('nan')},
-                   {'question_max_inflight_operations': 17},
-                   {'question_max_pending_jobs': 1, 'question_max_jobs_per_user': 2},
-                   {'question_progress_interval_sec': 180},
-                   {'tool_call_total_timeout_sec': 1}):
+        for kw in (
+            {"question_renewal_interval_sec": float("nan")},
+            {"question_max_inflight_operations": 17},
+            {"question_max_pending_jobs": 1, "question_max_jobs_per_user": 2},
+            {"question_progress_interval_sec": 180},
+            {"tool_call_total_timeout_sec": 1},
+        ):
             with self.subTest(kw=kw), self.assertRaises(ValidationError):
                 Settings(_env_file=None, **kw)
 
     def test_controlled_mode_independent_of_legacy_timeout(self):
-        Settings(_env_file=None, question_controls_enabled=True,
-                 question_timeout_sec=1, crawl4ai_api_token='test')
+        Settings(
+            _env_file=None,
+            question_controls_enabled=True,
+            question_timeout_sec=1,
+            crawl4ai_api_token="test-token",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

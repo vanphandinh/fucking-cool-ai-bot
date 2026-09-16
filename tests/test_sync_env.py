@@ -38,7 +38,7 @@ class SyncEnvTests(unittest.TestCase):
             (directory / ".env").write_text(
                 textwrap.dedent(
                     """\
-                    KEEP=real-secret
+                    KEEP=existing-value
                     OLD=remove-me
                     EMPTY=keep-empty-override
                     """
@@ -54,34 +54,80 @@ class SyncEnvTests(unittest.TestCase):
                 textwrap.dedent(
                     """\
                     # section
-                    KEEP=real-secret
+                    KEEP=existing-value
                     NEW=example-new
                     EMPTY=keep-empty-override
                     """
                 ),
             )
 
-    def test_bai_only_sync_preserves_bai_and_removes_external_ai_provider_keys(self):
+    def test_legacy_bai_orders_migrate_to_chainnode_then_xkiro(self):
+        cases = {
+            "bai": "chainnode,xkiro",
+            "chainnode,bai": "chainnode,xkiro",
+            "bai,chainnode": "chainnode,xkiro",
+            "chainnode,bai,foo": "chainnode,xkiro,foo",
+            "foo,bai,chainnode,foo": "chainnode,xkiro,foo",
+        }
+        for key in ("TEXT_PROVIDER_ORDER", "VISION_PROVIDER_ORDER"):
+            for raw, expected in cases.items():
+                with self.subTest(key=key, raw=raw):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        directory = Path(tmp)
+                        (directory / ".env.example").write_text(
+                            f"{key}=chainnode,xkiro\n",
+                            encoding="utf-8",
+                        )
+                        (directory / ".env").write_text(
+                            f"{key}={raw}\n",
+                            encoding="utf-8",
+                        )
+
+                        result = self._run(directory)
+
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(
+                            (directory / ".env").read_text(encoding="utf-8"),
+                            f"{key}={expected}\n",
+                        )
+
+    def test_provider_order_without_bai_is_preserved_exactly(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             (directory / ".env.example").write_text(
-                "BAI_API_KEY=\n"
-                "BAI_TEXT_MODEL=qwen3.8-flash\n"
-                "BAI_VISION_MODEL=qwen3.8-flash\n"
-                "SEARCH_BACKEND=auto\n",
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
                 encoding="utf-8",
             )
             (directory / ".env").write_text(
-                "BAI_API_KEY=real-bai-secret\n"
-                "BAI_TEXT_MODEL=qwen3.8-flash\n"
-                "GEMINI_API_KEY=old-gemini\n"
-                "GROQ_API_KEY=old-groq\n"
-                "OPENROUTER_API_KEY=old-openrouter\n"
-                "CLOUDFLARE_ACCOUNT_ID=old-account\n"
-                "CLOUDFLARE_API_TOKEN=old-token\n"
-                "TEXT_PROVIDER_ORDER=bai,gemini,groq,cloudflare,openrouter\n"
-                "VISION_PROVIDER_ORDER=bai,gemini\n"
-                "SEARCH_BACKEND=searxng\n",
+                "TEXT_PROVIDER_ORDER=Foo,chainnode\n",
+                encoding="utf-8",
+            )
+
+            result = self._run(directory)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (directory / ".env").read_text(encoding="utf-8"),
+                "TEXT_PROVIDER_ORDER=Foo,chainnode\n",
+            )
+
+    def test_bai_credentials_are_removed_and_never_copied_to_xkiro(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / ".env.example").write_text(
+                "CHAINNODE_API_KEY=\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-default\n"
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            (directory / ".env").write_text(
+                "CHAINNODE_API_KEY=chainnode-existing\n"
+                "CHAINNODE_TEXT_MODEL=chainnode-existing-model\n"
+                "BAI_API_KEY=legacy-bai-value\n"
+                "BAI_TEXT_MODEL=legacy-bai-model\n"
+                "TEXT_PROVIDER_ORDER=bai\n",
                 encoding="utf-8",
             )
 
@@ -89,20 +135,53 @@ class SyncEnvTests(unittest.TestCase):
             rendered = (directory / ".env").read_text(encoding="utf-8")
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("BAI_API_KEY=real-bai-secret", rendered)
-            self.assertIn("BAI_TEXT_MODEL=qwen3.8-flash", rendered)
-            self.assertIn("BAI_VISION_MODEL=qwen3.8-flash", rendered)
-            self.assertIn("SEARCH_BACKEND=searxng", rendered)
-            for removed in (
-                "GEMINI_API_KEY",
-                "GROQ_API_KEY",
-                "OPENROUTER_API_KEY",
-                "CLOUDFLARE_ACCOUNT_ID",
-                "CLOUDFLARE_API_TOKEN",
-                "TEXT_PROVIDER_ORDER",
-                "VISION_PROVIDER_ORDER",
-            ):
-                self.assertNotIn(removed, rendered)
+            self.assertIn("CHAINNODE_API_KEY=chainnode-existing", rendered)
+            self.assertIn("CHAINNODE_TEXT_MODEL=chainnode-existing-model", rendered)
+            self.assertIn("XKIRO_API_KEY=\n", rendered)
+            self.assertIn("XKIRO_TEXT_MODEL=\n", rendered)
+            self.assertIn("TEXT_PROVIDER_ORDER=chainnode,xkiro", rendered)
+            self.assertNotIn("BAI_API_KEY", rendered)
+            self.assertNotIn("BAI_TEXT_MODEL", rendered)
+            self.assertNotIn("legacy-bai-value", rendered)
+
+    def test_existing_xkiro_values_survive_migration_and_second_run_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            env_path = directory / ".env"
+            (directory / ".env.example").write_text(
+                "XKIRO_API_KEY=\n"
+                "XKIRO_TEXT_MODEL=\n"
+                "XKIRO_VISION_MODEL=\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n",
+                encoding="utf-8",
+            )
+            env_path.write_text(
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=text-existing\n"
+                "XKIRO_VISION_MODEL=vision-existing\n"
+                "TEXT_PROVIDER_ORDER=chainnode,bai\n"
+                "VISION_PROVIDER_ORDER=bai,chainnode\n",
+                encoding="utf-8",
+            )
+
+            first = self._run(directory)
+            expected = (
+                "XKIRO_API_KEY=xkiro-existing\n"
+                "XKIRO_TEXT_MODEL=text-existing\n"
+                "XKIRO_VISION_MODEL=vision-existing\n"
+                "TEXT_PROVIDER_ORDER=chainnode,xkiro\n"
+                "VISION_PROVIDER_ORDER=chainnode,xkiro\n"
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(env_path.read_text(encoding="utf-8"), expected)
+
+            fixed_ns = 1_600_000_000_000_000_000
+            os.utime(env_path, ns=(fixed_ns, fixed_ns))
+            second = self._run(directory)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(env_path.read_text(encoding="utf-8"), expected)
+            self.assertEqual(env_path.stat().st_mtime_ns, fixed_ns)
 
     def test_provider_retry_legacy_names_migrate_and_second_run_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -172,7 +251,7 @@ class SyncEnvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             (directory / ".env.example").write_text("A=1\nA=2\n", encoding="utf-8")
-            original = "A=secret\n"
+            original = "A=value\n"
             (directory / ".env").write_text(original, encoding="utf-8")
 
             result = self._run(directory)
@@ -199,7 +278,7 @@ class SyncEnvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             (directory / ".env.example").write_text("GOOD=1\nBAD LINE\n", encoding="utf-8")
-            original = "GOOD=secret\n"
+            original = "GOOD=value\n"
             (directory / ".env").write_text(original, encoding="utf-8")
 
             result = self._run(directory)
@@ -212,7 +291,7 @@ class SyncEnvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             (directory / ".env.example").write_text("GOOD=1\n", encoding="utf-8")
-            original = "GOOD=secret\nBAD LINE\n"
+            original = "GOOD=value\nBAD LINE\n"
             (directory / ".env").write_text(original, encoding="utf-8")
 
             result = self._run(directory)
@@ -224,7 +303,7 @@ class SyncEnvTests(unittest.TestCase):
     def test_second_sync_is_idempotent_and_does_not_rewrite_env(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            content = "# section\nA=secret\nB=default\n"
+            content = "# section\nA=value\nB=default\n"
             (directory / ".env.example").write_text(
                 "# section\nA=example\nB=default\n", encoding="utf-8"
             )

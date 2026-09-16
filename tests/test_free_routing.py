@@ -1,4 +1,4 @@
-"""Regression tests for current B.AI deployment defaults on the generic router."""
+"""Regression tests for Chainnode-primary and xKiro-fallback deployment defaults."""
 
 from __future__ import annotations
 
@@ -9,34 +9,62 @@ from app.ai.router import build_provider_router
 from app.config import Settings
 
 
-class BaiDeploymentDefaultsTests(unittest.TestCase):
-    def test_defaults_keep_qwen_orders_and_existing_limits(self) -> None:
+class ProviderDeploymentDefaultsTests(unittest.TestCase):
+    def test_defaults_keep_chainnode_primary_xkiro_fallback_and_existing_limits(self) -> None:
         settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.bai_text_model, "qwen3.8-flash")
-        self.assertEqual(settings.bai_vision_model, "qwen3.8-flash")
-        self.assertEqual(settings.text_provider_order_list, ["bai"])
-        self.assertEqual(settings.vision_provider_order_list, ["bai"])
+        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
         self.assertEqual(settings.max_images_per_request, 1)
         self.assertEqual(settings.max_context_turns, 6)
         self.assertEqual(settings.max_tool_rounds, 2)
 
-    def test_stale_removed_provider_credentials_are_ignored(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            bai_api_key="b",
-            gemini_api_key="legacy",
-            groq_api_key="legacy",
-            openrouter_api_key="legacy",
-            cloudflare_account_id="legacy",
-            cloudflare_api_token="legacy",
-        )
-        router = build_provider_router(settings)
+    def test_no_credentials_builds_no_active_slots_but_preserves_order(self) -> None:
+        router = build_provider_router(Settings(_env_file=None))
         try:
-            self.assertEqual(router.configured_provider_names(False), ("bai",))
-            self.assertEqual(router.configured_provider_names(True), ("bai",))
-            self.assertEqual(router.provider_order(False), ("bai",))
-            self.assertEqual(router.provider_order(True), ("bai",))
+            self.assertEqual(router.configured_provider_names(False), ())
+            self.assertEqual(router.configured_provider_names(True), ())
+            self.assertEqual(router.provider_order(False), ("chainnode", "xkiro"))
+            self.assertEqual(router.provider_order(True), ("chainnode", "xkiro"))
+        finally:
+            asyncio.run(_close_router(router))
+
+    def test_chainnode_only_credentials_activate_only_chainnode(self) -> None:
+        router = build_provider_router(
+            Settings(
+                _env_file=None,
+                chainnode_api_key="test-chainnode-key",
+                chainnode_text_model="test-chainnode-text",
+                chainnode_vision_model="test-chainnode-vision",
+            )
+        )
+        try:
+            self.assertEqual(router.configured_provider_names(False), ("chainnode",))
+            self.assertEqual(router.configured_provider_names(True), ("chainnode",))
+        finally:
+            asyncio.run(_close_router(router))
+
+    def test_both_credentials_activate_chainnode_then_xkiro(self) -> None:
+        router = build_provider_router(
+            Settings(
+                _env_file=None,
+                chainnode_api_key="test-chainnode-key",
+                chainnode_text_model="test-chainnode-text",
+                chainnode_vision_model="test-chainnode-vision",
+                xkiro_api_key="test-xkiro-key",
+                xkiro_text_model="test-xkiro-text",
+                xkiro_vision_model="test-xkiro-vision",
+            )
+        )
+        try:
+            self.assertEqual(
+                router.configured_provider_names(False),
+                ("chainnode", "xkiro"),
+            )
+            self.assertEqual(
+                router.configured_provider_names(True),
+                ("chainnode", "xkiro"),
+            )
         finally:
             asyncio.run(_close_router(router))
 

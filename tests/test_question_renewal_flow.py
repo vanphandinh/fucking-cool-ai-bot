@@ -169,8 +169,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        bai = ScriptedProvider(
-            "bai",
+        xkiro = ScriptedProvider(
+            "xkiro",
             [
                 ChatResponse(
                     tool_calls=[
@@ -203,8 +203,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         provider_router = AIProviderRouter(
-            [chainnode, bai],
-            text_provider_order=("chainnode", "bai"),
+            [chainnode, xkiro],
+            text_provider_order=("chainnode", "xkiro"),
             vision_provider_order=(),
             max_tool_rounds=4,
         )
@@ -300,7 +300,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetch_counts[url1], 1)
         self.assertEqual(fetch_counts[url2], 1)
         self.assertEqual(len(chainnode.calls), 1)
-        self.assertEqual(len(bai.calls), 4)
+        self.assertEqual(len(xkiro.calls), 4)
         self.assertEqual(final_answers, [(7, "final answer")])
 
         await self.manager.shutdown()

@@ -6,15 +6,15 @@ Synchronized repository documentation against the current runtime after:
 
 - search cancellation hardening;
 - `.env` permission hardening;
-- current generic B.AI provider framework;
+- the provider framework as it existed on 2026-09-10;
 - current search, URL reading and Telegram flows.
 
 A second pass re-checked the PR itself against `main`, canonical guides, runtime code, Docker/CI configuration and secret-file guardrails.
 
 ## Verified aligned
 
-- AI provider docs match current generic registry/capability routing model.
-- B.AI allowlist and vision capability (`max_images=1`) match the adapter.
+- AI provider docs matched the registry/capability routing model present at the time of this snapshot.
+- Provider vision capability (`max_images=1`) matched the adapter used at the time of this snapshot.
 - Vision docs match Telegram loader/application limits and capability-based routing.
 - Telegram formatting docs match HTML sanitization, UTF-16 splitting and plain-text fallback behavior.
 - Search docs match SearXNG -> DDGS bounded fallback, circuit breaker, cache and singleflight behavior.

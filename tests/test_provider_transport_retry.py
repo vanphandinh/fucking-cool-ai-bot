@@ -16,14 +16,14 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             "chainnode",
             [_transport_error("connect_error"), ChatResponse(content="recovered")],
         )
-        bai = ScriptedProvider("bai", [ChatResponse(content="unused")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 0)
+        self.assertEqual(len(xkiro.calls), 0)
         self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
 
     async def test_connect_timeout_retries_same_provider_then_recovers(self) -> None:
@@ -31,14 +31,14 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             "chainnode",
             [_transport_error("connect_timeout"), ChatResponse(content="recovered")],
         )
-        bai = ScriptedProvider("bai", [ChatResponse(content="unused")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 0)
+        self.assertEqual(len(xkiro.calls), 0)
         self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
 
     async def test_connect_timeout_exhausts_retry_then_falls_back_once(self) -> None:
@@ -46,26 +46,26 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             "chainnode",
             [_transport_error("connect_timeout"), _transport_error("connect_timeout")],
         )
-        bai = ScriptedProvider("bai", [ChatResponse(content="fallback")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="fallback")])
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("fallback", "bai", ("bai",)))
+        self.assertEqual(result, CompletionResult("fallback", "xkiro", ("xkiro",)))
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 1)
+        self.assertEqual(len(xkiro.calls), 1)
         self.assertEqual(chainnode.health.consecutive_transient_failures, 1)
 
     async def test_read_timeout_prefers_healthy_ordered_fallback(self) -> None:
         chainnode = ScriptedProvider("chainnode", [_transport_error("read_timeout")])
-        bai = ScriptedProvider("bai", [ChatResponse(content="fallback")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="fallback")])
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("fallback", "bai", ("bai",)))
+        self.assertEqual(result, CompletionResult("fallback", "xkiro", ("xkiro",)))
         self.assertEqual(len(chainnode.calls), 1)
-        self.assertEqual(len(bai.calls), 1)
+        self.assertEqual(len(xkiro.calls), 1)
 
     async def test_read_timeout_wraps_to_previous_provider_and_recovers(self) -> None:
         chainnode = ScriptedProvider(
@@ -75,76 +75,76 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
                 ChatResponse(content="recovered on wrap"),
             ],
         )
-        bai = ScriptedProvider("bai", [_transport_error("read_timeout")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [_transport_error("read_timeout")])
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(
             result,
-            CompletionResult("recovered on wrap", "chainnode", ("bai", "chainnode")),
+            CompletionResult("recovered on wrap", "chainnode", ("xkiro", "chainnode")),
         )
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 1)
+        self.assertEqual(len(xkiro.calls), 1)
 
     async def test_cyclic_read_timeouts_stop_after_bounded_failures(self) -> None:
         chainnode = ScriptedProvider(
             "chainnode",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
-        bai = ScriptedProvider(
-            "bai",
+        xkiro = ScriptedProvider(
+            "xkiro",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
-        router = _router(chainnode, bai)
+        router = _router(chainnode, xkiro)
 
         with self.assertRaises(AllProvidersFailed):
             await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 2)
+        self.assertEqual(len(xkiro.calls), 2)
         self.assertEqual(chainnode.health.consecutive_transient_failures, 1)
-        self.assertEqual(bai.health.consecutive_transient_failures, 1)
+        self.assertEqual(xkiro.health.consecutive_transient_failures, 1)
 
     async def test_read_timeout_rechecks_fallback_health_at_failure_time(self) -> None:
-        bai = ScriptedProvider("bai", [ChatResponse(content="must not be called")])
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="must not be called")])
         chainnode = _FallbackDisablingProvider(
             "chainnode",
             [_transport_error("read_timeout"), ChatResponse(content="recovered")],
-            fallback=bai,
+            fallback=xkiro,
         )
-        router = _router(chainnode, bai)
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(bai.calls, [])
+        self.assertEqual(xkiro.calls, [])
         self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
 
     async def test_read_timeout_rechecks_wrapped_alternative_health_at_failure_time(self) -> None:
         chainnode = ScriptedProvider("chainnode", [_transport_error("read_timeout")])
-        bai = _FallbackDisablingProvider(
-            "bai",
-            [_transport_error("read_timeout"), ChatResponse(content="bai recovered")],
+        xkiro = _FallbackDisablingProvider(
+            "xkiro",
+            [_transport_error("read_timeout"), ChatResponse(content="xkiro recovered")],
             fallback=chainnode,
         )
-        router = _router(chainnode, bai)
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("bai recovered", "bai", ("bai",)))
+        self.assertEqual(result, CompletionResult("xkiro recovered", "xkiro", ("xkiro",)))
         self.assertEqual(len(chainnode.calls), 1)
-        self.assertEqual(len(bai.calls), 2)
+        self.assertEqual(len(xkiro.calls), 2)
 
     async def test_existing_shared_health_failure_does_not_prevent_wrap_recovery(self) -> None:
         chainnode = ScriptedProvider(
             "chainnode",
             [_transport_error("read_timeout"), ChatResponse(content="recovered")],
         )
-        bai = ScriptedProvider("bai", [_transport_error("read_timeout")])
+        xkiro = ScriptedProvider("xkiro", [_transport_error("read_timeout")])
         chainnode.health.consecutive_transient_failures = 1
-        router = _router(chainnode, bai)
+        router = _router(chainnode, xkiro)
 
         result = await router.complete(_messages(), None, noop_tool)
 
@@ -153,17 +153,17 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
 
     async def test_read_timeout_retries_final_healthy_provider_once(self) -> None:
-        bai = ScriptedProvider(
-            "bai",
+        xkiro = ScriptedProvider(
+            "xkiro",
             [_transport_error("read_timeout"), ChatResponse(content="recovered")],
         )
-        router = AIProviderRouter([bai], text_provider_order=("bai",))
+        router = AIProviderRouter([xkiro], text_provider_order=("xkiro",))
 
         result = await router.complete(_messages(), None, noop_tool)
 
-        self.assertEqual(result, CompletionResult("recovered", "bai", ()))
-        self.assertEqual(len(bai.calls), 2)
-        self.assertEqual(bai.health.consecutive_transient_failures, 0)
+        self.assertEqual(result, CompletionResult("recovered", "xkiro", ()))
+        self.assertEqual(len(xkiro.calls), 2)
+        self.assertEqual(xkiro.health.consecutive_transient_failures, 0)
 
     async def test_non_retryable_failures_do_not_gain_cyclic_revisit(self) -> None:
         cases = (
@@ -197,14 +197,14 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         provider = ScriptedProvider(
-            "bai",
+            "xkiro",
             [
                 _tool_call(),
                 _transport_error("read_timeout"),
                 ChatResponse(content="final answer"),
             ],
         )
-        router = AIProviderRouter([provider], text_provider_order=("bai",))
+        router = AIProviderRouter([provider], text_provider_order=("xkiro",))
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -214,7 +214,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), [fetch_url_tool()], execute)
 
-        self.assertEqual(result, CompletionResult("final answer", "bai", ()))
+        self.assertEqual(result, CompletionResult("final answer", "xkiro", ()))
         self.assertEqual(tool_invocations, 1)
         self.assertEqual(len(provider.calls), 3)
         self.assertEqual(provider.calls[1], provider.calls[2])
@@ -229,8 +229,8 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
                 ChatResponse(content="final after wrap"),
             ],
         )
-        bai = ScriptedProvider("bai", [_transport_error("read_timeout")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [_transport_error("read_timeout")])
+        router = _router(chainnode, xkiro)
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -242,17 +242,17 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("final after wrap", "chainnode", ("bai", "chainnode")),
+            CompletionResult("final after wrap", "chainnode", ("xkiro", "chainnode")),
         )
         self.assertEqual(tool_invocations, 1)
         self.assertEqual(len(chainnode.calls), 3)
-        self.assertEqual(len(bai.calls), 1)
-        self.assertIn("PORTABLE-EVIDENCE", repr(bai.calls[0][0]))
+        self.assertEqual(len(xkiro.calls), 1)
+        self.assertIn("PORTABLE-EVIDENCE", repr(xkiro.calls[0][0]))
         self.assertIn("PORTABLE-EVIDENCE", repr(chainnode.calls[-1][0]))
 
     async def test_tool_chat_success_does_not_refund_same_provider_retry(self) -> None:
         provider = ScriptedProvider(
-            "bai",
+            "xkiro",
             [
                 _transport_error("connect_timeout"),
                 _tool_call(),
@@ -260,7 +260,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
                 ChatResponse(content="must not be reached"),
             ],
         )
-        router = AIProviderRouter([provider], text_provider_order=("bai",))
+        router = AIProviderRouter([provider], text_provider_order=("xkiro",))
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -276,7 +276,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_cumulative_budget_survives_tool_chat_success(self) -> None:
         provider = ScriptedProvider(
-            "bai",
+            "xkiro",
             [
                 _transport_error("connect_timeout"),
                 _tool_call(),
@@ -286,7 +286,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         )
         router = AIProviderRouter(
             [provider],
-            text_provider_order=("bai",),
+            text_provider_order=("xkiro",),
             retry_policy=ProviderRetryPolicy(
                 max_consecutive_failures=2,
                 max_failures_per_provider=2,
@@ -312,13 +312,13 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             "chainnode",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
-        bai = ScriptedProvider(
-            "bai",
+        xkiro = ScriptedProvider(
+            "xkiro",
             [_transport_error("read_timeout"), ChatResponse(content="must not run")],
         )
         router = _router(
             chainnode,
-            bai,
+            xkiro,
             retry_policy=ProviderRetryPolicy(
                 max_consecutive_failures=3,
                 max_failures_per_provider=4,
@@ -330,7 +330,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             await router.complete(_messages(), None, noop_tool)
 
         self.assertEqual(len(chainnode.calls), 2)
-        self.assertEqual(len(bai.calls), 1)
+        self.assertEqual(len(xkiro.calls), 1)
 
     async def test_healthy_alternative_drives_later_read_timeout_fallback(self) -> None:
         chainnode = ScriptedProvider(
@@ -341,8 +341,8 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
                 _transport_error("read_timeout"),
             ],
         )
-        bai = ScriptedProvider("bai", [ChatResponse(content="fallback answer")])
-        router = _router(chainnode, bai)
+        xkiro = ScriptedProvider("xkiro", [ChatResponse(content="fallback answer")])
+        router = _router(chainnode, xkiro)
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -352,11 +352,11 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
         result = await router.complete(_messages(), [fetch_url_tool()], execute)
 
-        self.assertEqual(result, CompletionResult("fallback answer", "bai", ("bai",)))
+        self.assertEqual(result, CompletionResult("fallback answer", "xkiro", ("xkiro",)))
         self.assertEqual(tool_invocations, 1)
         self.assertEqual(len(chainnode.calls), 3)
-        self.assertEqual(len(bai.calls), 1)
-        self.assertIn("PORTABLE-EVIDENCE", repr(bai.calls[0][0]))
+        self.assertEqual(len(xkiro.calls), 1)
+        self.assertIn("PORTABLE-EVIDENCE", repr(xkiro.calls[0][0]))
 
 
 class _FallbackDisablingProvider(ScriptedProvider):
@@ -399,13 +399,13 @@ def _tool_call() -> ChatResponse:
 
 def _router(
     chainnode: ScriptedProvider,
-    bai: ScriptedProvider,
+    xkiro: ScriptedProvider,
     *,
     retry_policy: ProviderRetryPolicy | None = None,
 ) -> AIProviderRouter:
     return AIProviderRouter(
-        [chainnode, bai],
-        text_provider_order=("chainnode", "bai"),
+        [chainnode, xkiro],
+        text_provider_order=("chainnode", "xkiro"),
         retry_policy=retry_policy,
     )
 

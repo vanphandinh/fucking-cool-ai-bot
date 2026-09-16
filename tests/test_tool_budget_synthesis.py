@@ -24,7 +24,7 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, 9)
             return _tool_response_many(request, 1)
 
-        provider = _provider("bai", respond)
+        provider = _provider("xkiro", respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
 
         async def execute(_name: str, _args: dict) -> str:

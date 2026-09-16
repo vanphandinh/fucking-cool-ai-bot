@@ -9,7 +9,10 @@ import tempfile
 _ASSIGNMENT_RE = re.compile(
     r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$"
 )
+_INLINE_COMMENT_RE = re.compile(r"\s+#")
 _PRIVATE_ENV_MODE = 0o600
+_PROVIDER_ORDER_KEYS = ("TEXT_PROVIDER_ORDER", "VISION_PROVIDER_ORDER")
+_FALSE_BOOL_VALUES = {"0", "false", "f", "no", "n", "off"}
 _ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "PROVIDER_RETRY_MAX_CONSECUTIVE": (
         "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES",
@@ -43,6 +46,61 @@ def _parse_values(text: str) -> dict[str, str]:
     return values
 
 
+def _dotenv_scalar_value(raw: str, *, label: str) -> str:
+    value = raw.strip()
+    if not value:
+        return ""
+
+    quote = value[0]
+    if quote not in {"'", '"'}:
+        # Detect dotenv inline comments before trimming leading whitespace.
+        # This preserves '#literal-value' while correctly treating
+        # ' # intentionally empty' as an empty value followed by a comment.
+        unquoted = raw.rstrip()
+        match = _INLINE_COMMENT_RE.search(unquoted)
+        if match is not None:
+            unquoted = unquoted[: match.start()].rstrip()
+        return unquoted.strip()
+
+    escaped = False
+    closing_index: int | None = None
+    for index, char in enumerate(value[1:], start=1):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == quote:
+            closing_index = index
+            break
+    if closing_index is None:
+        raise ValueError(f"invalid {label}: unclosed quoted value")
+
+    trailing = value[closing_index + 1 :].strip()
+    if trailing and not trailing.startswith("#"):
+        raise ValueError(f"invalid {label}: unexpected content after quoted value")
+    return value[1:closing_index]
+
+
+def _provider_order_value(raw: str) -> str:
+    return _dotenv_scalar_value(raw, label="provider order")
+
+
+def _provider_order_names(raw: str) -> list[str]:
+    value = _provider_order_value(raw)
+    return [part.strip().lower() for part in value.split(",") if part.strip()]
+
+
+def _migrate_provider_order(raw: str) -> str:
+    names = _provider_order_names(raw)
+    if "bai" not in names:
+        return raw
+    custom = [name for name in names if name not in {"bai", "chainnode", "xkiro"}]
+    ordered = ["chainnode", "xkiro", *custom]
+    return ",".join(dict.fromkeys(ordered))
+
+
 def _migrate_values(values: dict[str, str]) -> dict[str, str]:
     migrated = dict(values)
     for canonical, legacy_names in _ENV_MIGRATIONS.items():
@@ -52,7 +110,106 @@ def _migrate_values(values: dict[str, str]) -> dict[str, str]:
             if legacy_name in values:
                 migrated[canonical] = values[legacy_name]
                 break
+    for key in _PROVIDER_ORDER_KEYS:
+        if key in migrated:
+            migrated[key] = _migrate_provider_order(migrated[key])
     return migrated
+
+
+def _configured(values: dict[str, str], key: str) -> bool:
+    raw = _dotenv_scalar_value(values.get(key, ""), label=key)
+    return bool(raw.strip())
+
+
+def _enabled(values: dict[str, str], key: str, *, default: bool) -> bool:
+    if key not in values:
+        return default
+    raw = _dotenv_scalar_value(values[key], label=key).strip().casefold()
+    if raw in _FALSE_BOOL_VALUES:
+        return False
+    # Unknown/non-empty forms fail closed here; runtime validation remains the
+    # source of truth for whether the value itself is a valid boolean.
+    return True
+
+
+def _has_replacement_text_provider(values: dict[str, str]) -> bool:
+    names = _provider_order_names(values.get("TEXT_PROVIDER_ORDER", ""))
+    if (
+        "chainnode" in names
+        and _configured(values, "CHAINNODE_API_KEY")
+        and _configured(values, "CHAINNODE_TEXT_MODEL")
+    ):
+        return True
+    return (
+        "xkiro" in names
+        and _configured(values, "XKIRO_API_KEY")
+        and _configured(values, "XKIRO_TEXT_MODEL")
+    )
+
+
+def _has_replacement_vision_provider(values: dict[str, str]) -> bool:
+    names = _provider_order_names(values.get("VISION_PROVIDER_ORDER", ""))
+    if (
+        "chainnode" in names
+        and _configured(values, "CHAINNODE_API_KEY")
+        and _configured(values, "CHAINNODE_VISION_MODEL")
+    ):
+        return True
+    return (
+        "xkiro" in names
+        and _configured(values, "XKIRO_API_KEY")
+        and _configured(values, "XKIRO_VISION_MODEL")
+    )
+
+
+def _validate_legacy_text_retirement(
+    original_values: dict[str, str],
+    effective_values: dict[str, str],
+) -> None:
+    legacy_provider = "bai"
+    # Historical Settings defaulted the text route to the retired provider, so
+    # an omitted order must be evaluated as that old default during migration.
+    raw_order = original_values.get("TEXT_PROVIDER_ORDER", legacy_provider)
+    if legacy_provider not in _provider_order_names(raw_order):
+        return
+
+    # Historical Settings also supplied a default text model, so a selected
+    # legacy route with a nonblank API key could be active without a model override.
+    legacy_prefix = legacy_provider.upper()
+    if not _configured(original_values, f"{legacy_prefix}_API_KEY"):
+        return
+    if not _has_replacement_text_provider(effective_values):
+        raise ValueError(
+            "cannot retire configured B.AI text route without a replacement text provider; "
+            "configure Chainnode or xKiro credentials/model first"
+        )
+
+
+def _validate_legacy_vision_retirement(
+    original_values: dict[str, str],
+    effective_values: dict[str, str],
+) -> None:
+    legacy_provider = "bai"
+    # A target template with no vision route has no vision migration to guard.
+    if "VISION_PROVIDER_ORDER" not in effective_values:
+        return
+    # Historical Settings defaulted the vision route to the retired provider.
+    raw_order = original_values.get("VISION_PROVIDER_ORDER", legacy_provider)
+    if legacy_provider not in _provider_order_names(raw_order):
+        return
+    if not _enabled(effective_values, "VISION_ENABLED", default=True):
+        return
+
+    # The same historical API key and a default vision model could make this
+    # route active even when no vision-model override appeared in .env.
+    legacy_prefix = legacy_provider.upper()
+    if not _configured(original_values, f"{legacy_prefix}_API_KEY"):
+        return
+    if not _has_replacement_vision_provider(effective_values):
+        raise ValueError(
+            "cannot retire configured B.AI vision route without a replacement vision provider; "
+            "configure Chainnode or xKiro vision credentials/model first, or disable vision"
+        )
 
 
 def _owner_only_mode(mode: int) -> int:
@@ -81,7 +238,14 @@ def _sync() -> None:
     example = example_path.read_text(encoding="utf-8")
     env_exists = env_path.exists()
     current = env_path.read_text(encoding="utf-8") if env_exists else ""
-    current_values = _migrate_values(_parse_values(current))
+
+    example_values = _parse_values(example)
+    original_values = _parse_values(current)
+    current_values = _migrate_values(original_values)
+    effective_values = dict(example_values)
+    effective_values.update(current_values)
+    _validate_legacy_text_retirement(original_values, effective_values)
+    _validate_legacy_vision_retirement(original_values, effective_values)
 
     output: list[str] = []
     seen_keys: set[str] = set()
