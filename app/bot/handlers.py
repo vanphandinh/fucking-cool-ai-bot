@@ -79,6 +79,11 @@ def _provider_status_lines(
         f"Provider hiện tại: {stats.last_provider or 'chưa có'}",
         f"Phân bổ: {distribution}",
         f"Fallbacks: {stats.fallback_count}",
+        (
+            f"Target rotations: {stats.target_rotation_count} "
+            f"(models={stats.model_rotation_count}, "
+            f"credentials={stats.credential_failover_count})"
+        ),
         f"Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
     ]
 
@@ -414,6 +419,11 @@ async def _handle_question(
                     await asyncio.gather(typing_task, return_exceptions=True)
 
                 stats.record_fallbacks(answer.fallbacks)
+                stats.record_target_recovery(
+                    target_rotations=getattr(answer, "target_rotations", 0),
+                    model_rotations=getattr(answer, "model_rotations", 0),
+                    credential_failovers=getattr(answer, "credential_failovers", 0),
+                )
                 if not answer.text:
                     await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
                     return
