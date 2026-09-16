@@ -84,14 +84,15 @@ class ScopedProviderHealthTests(unittest.TestCase):
     def test_stale_deferred_update_cannot_overwrite_newer_success(self) -> None:
         registry = ScopedHealthRegistry()
         current = target()
-        generation = registry.generation(HealthScope.MODEL, current)
+        health = registry.health(HealthScope.MODEL, current)
+        barrier_generation = health.observe_deferred_error()
 
         registry.record_success(HealthScope.MODEL, current)
         applied = registry.record_deferred_error(
             HealthScope.MODEL,
             current,
             "stale timeout",
-            expected_generation=generation,
+            expected_barrier_generation=barrier_generation,
             status_code=503,
             transient=True,
         )
