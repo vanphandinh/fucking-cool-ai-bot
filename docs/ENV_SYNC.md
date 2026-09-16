@@ -48,8 +48,8 @@ Chainnode remains primary. xKiro is fallback only after an operator supplies `XK
 Legacy scalar fields remain in the template for backward compatibility:
 
 ```env
-CHAINNODE_TEXT_MODEL=
-CHAINNODE_VISION_MODEL=
+CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash
+CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor
 XKIRO_API_KEY=
 XKIRO_TEXT_MODEL=
 XKIRO_VISION_MODEL=
