@@ -31,6 +31,16 @@ def _set_env_value(rendered: str, key: str, value: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _assignment_values(rendered: str, keys: tuple[str, ...]) -> dict[str, str]:
+    wanted = set(keys)
+    values: dict[str, str] = {}
+    for line in rendered.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key in wanted:
+            values[key] = value
+    return values
+
+
 class ProviderPoolMigrationTests(unittest.TestCase):
     def test_legacy_scalars_migrate_to_case_preserving_plural_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,6 +80,27 @@ class ProviderPoolMigrationTests(unittest.TestCase):
         self.assertIn("XKIRO_TEXT_MODELS=X/ModelCase", rendered)
         self.assertIn("CHAINNODE_TEXT_MODEL=Legacy/ModelCase", rendered)
         self.assertIn("XKIRO_API_KEY=KeyCaseSensitive", rendered)
+
+    def test_env_sync_docs_legacy_scalar_block_matches_template(self) -> None:
+        keys = (
+            "CHAINNODE_TEXT_MODEL",
+            "CHAINNODE_VISION_MODEL",
+            "XKIRO_API_KEY",
+            "XKIRO_TEXT_MODEL",
+            "XKIRO_VISION_MODEL",
+        )
+        template = (ROOT / ".env.example").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "ENV_SYNC.md").read_text(encoding="utf-8")
+        marker = "Legacy scalar fields remain in the template for backward compatibility:"
+        self.assertIn(marker, docs)
+        after_marker = docs.split(marker, 1)[1]
+        self.assertIn("```env", after_marker)
+        code_block = after_marker.split("```env", 1)[1].split("```", 1)[0]
+
+        self.assertEqual(
+            _assignment_values(code_block, keys),
+            _assignment_values(template, keys),
+        )
 
     def test_fresh_template_plural_xkiro_pool_is_operational_and_sync_is_idempotent(
         self,
