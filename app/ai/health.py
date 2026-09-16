@@ -24,6 +24,12 @@ class ProviderHealth:
         self.last_error = None
         self.cooldown_until = 0.0
 
+    def record_success_if_generation(self, expected_generation: int) -> bool:
+        if self.generation != expected_generation:
+            return False
+        self.record_success()
+        return True
+
     def record_disabled(self, message: str) -> None:
         """Explicitly disable this health cell without inventing an HTTP status."""
 
