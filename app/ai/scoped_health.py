@@ -78,6 +78,17 @@ class ScopedHealthRegistry:
     ) -> None:
         self.health(scope, identity).record_success()
 
+    def record_success_if_generation(
+        self,
+        scope: HealthScope,
+        identity: ProviderTargetIdentity,
+        *,
+        expected_generation: int,
+    ) -> bool:
+        return self.health(scope, identity).record_success_if_generation(
+            expected_generation
+        )
+
     def record_effect(
         self,
         scope: HealthScope,
