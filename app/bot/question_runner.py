@@ -119,6 +119,13 @@ class QuestionProcessor:
         await self._send_answer_parts(record, parts)
 
         self.stats.record_fallbacks(answer.fallbacks)
+        record_target_recovery = getattr(self.stats, "record_target_recovery", None)
+        if callable(record_target_recovery):
+            record_target_recovery(
+                target_rotations=getattr(answer, "target_rotations", 0),
+                model_rotations=getattr(answer, "model_rotations", 0),
+                credential_failovers=getattr(answer, "credential_failovers", 0),
+            )
         self.stats.record_answer(answer.provider)
         if answer.searched:
             self.stats.record_search()
