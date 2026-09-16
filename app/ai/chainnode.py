@@ -13,23 +13,35 @@ def make_chainnode_provider(
     *,
     name: str = "chainnode",
     vision: bool = False,
+    api_key: str | None = None,
+    model: str | None = None,
+    credential_id: str = "cred-1",
+    target_id: str | None = None,
 ) -> OpenAICompatProvider:
-    api_key = str(settings.chainnode_api_key or "").strip()
-    if not api_key:
+    configured_key = str(
+        api_key if api_key is not None else settings.chainnode_api_key or ""
+    ).strip()
+    if not configured_key:
         raise ValueError("CHAINNODE_API_KEY là bắt buộc khi khởi tạo Chainnode provider")
 
-    model = str(
-        settings.chainnode_vision_model if vision else settings.chainnode_text_model
+    configured_model = str(
+        model
+        if model is not None
+        else (
+            settings.chainnode_vision_model
+            if vision
+            else settings.chainnode_text_model
+        )
     ).strip()
     setting_name = "CHAINNODE_VISION_MODEL" if vision else "CHAINNODE_TEXT_MODEL"
-    if not model:
+    if not configured_model:
         raise ValueError(f"{setting_name} là bắt buộc khi khởi tạo Chainnode provider")
 
-    return OpenAICompatProvider(
+    provider = OpenAICompatProvider(
         name=name,
         base_url=settings.chainnode_base_url,
-        api_key=api_key,
-        model=model,
+        api_key=configured_key,
+        model=configured_model,
         timeout=settings.chainnode_request_timeout_sec,
         capabilities=ProviderCapabilities(
             route="vision" if vision else "text",
@@ -38,19 +50,44 @@ def make_chainnode_provider(
         ),
         explicit_stream=False,
     )
+    route = "vision" if vision else "text"
+    provider.credential_id = credential_id
+    provider.target_id = target_id or f"{name}:{route}:{configured_model}:{credential_id}"
+    return provider
 
 
 def build_chainnode_provider_slots(settings: Settings) -> list[AIProvider]:
-    if not str(settings.chainnode_api_key or "").strip():
+    keys = settings.chainnode_api_keys_list
+    if not keys:
         return []
 
     slots: list[AIProvider] = []
-    if "chainnode" in settings.text_provider_order_list and settings.chainnode_text_model:
-        slots.append(make_chainnode_provider(settings))
-    if (
-        settings.vision_enabled
-        and "chainnode" in settings.vision_provider_order_list
-        and settings.chainnode_vision_model
-    ):
-        slots.append(make_chainnode_provider(settings, vision=True))
+    if "chainnode" in settings.text_provider_order_list:
+        for model_index, model in enumerate(settings.chainnode_text_models_list, start=1):
+            for key_index, api_key in enumerate(keys, start=1):
+                slots.append(
+                    make_chainnode_provider(
+                        settings,
+                        api_key=api_key,
+                        model=model,
+                        credential_id=f"cred-{key_index}",
+                        target_id=f"chainnode:text:m{model_index}:c{key_index}",
+                    )
+                )
+    if settings.vision_enabled and "chainnode" in settings.vision_provider_order_list:
+        for model_index, model in enumerate(
+            settings.chainnode_vision_models_list,
+            start=1,
+        ):
+            for key_index, api_key in enumerate(keys, start=1):
+                slots.append(
+                    make_chainnode_provider(
+                        settings,
+                        vision=True,
+                        api_key=api_key,
+                        model=model,
+                        credential_id=f"cred-{key_index}",
+                        target_id=f"chainnode:vision:m{model_index}:c{key_index}",
+                    )
+                )
     return slots

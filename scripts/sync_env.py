@@ -24,6 +24,14 @@ _ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
         "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST",
     ),
 }
+_PROVIDER_POOL_MIGRATIONS: dict[str, str] = {
+    "CHAINNODE_API_KEYS": "CHAINNODE_API_KEY",
+    "CHAINNODE_TEXT_MODELS": "CHAINNODE_TEXT_MODEL",
+    "CHAINNODE_VISION_MODELS": "CHAINNODE_VISION_MODEL",
+    "XKIRO_API_KEYS": "XKIRO_API_KEY",
+    "XKIRO_TEXT_MODELS": "XKIRO_TEXT_MODEL",
+    "XKIRO_VISION_MODELS": "XKIRO_VISION_MODEL",
+}
 
 
 def _split_assignment(line: str, source: str) -> tuple[str, str]:
@@ -53,9 +61,6 @@ def _dotenv_scalar_value(raw: str, *, label: str) -> str:
 
     quote = value[0]
     if quote not in {"'", '"'}:
-        # Detect dotenv inline comments before trimming leading whitespace.
-        # This preserves '#literal-value' while correctly treating
-        # ' # intentionally empty' as an empty value followed by a comment.
         unquoted = raw.rstrip()
         match = _INLINE_COMMENT_RE.search(unquoted)
         if match is not None:
@@ -110,6 +115,11 @@ def _migrate_values(values: dict[str, str]) -> dict[str, str]:
             if legacy_name in values:
                 migrated[canonical] = values[legacy_name]
                 break
+    for canonical, legacy_name in _PROVIDER_POOL_MIGRATIONS.items():
+        if canonical not in values and legacy_name in values:
+            # Preserve the raw dotenv representation exactly: API keys and model
+            # IDs are case-sensitive and may be quoted/commented.
+            migrated[canonical] = values[legacy_name]
     for key in _PROVIDER_ORDER_KEYS:
         if key in migrated:
             migrated[key] = _migrate_provider_order(migrated[key])
@@ -127,8 +137,6 @@ def _enabled(values: dict[str, str], key: str, *, default: bool) -> bool:
     raw = _dotenv_scalar_value(values[key], label=key).strip().casefold()
     if raw in _FALSE_BOOL_VALUES:
         return False
-    # Unknown/non-empty forms fail closed here; runtime validation remains the
-    # source of truth for whether the value itself is a valid boolean.
     return True
 
 
@@ -136,14 +144,14 @@ def _has_replacement_text_provider(values: dict[str, str]) -> bool:
     names = _provider_order_names(values.get("TEXT_PROVIDER_ORDER", ""))
     if (
         "chainnode" in names
-        and _configured(values, "CHAINNODE_API_KEY")
-        and _configured(values, "CHAINNODE_TEXT_MODEL")
+        and _configured(values, "CHAINNODE_API_KEYS")
+        and _configured(values, "CHAINNODE_TEXT_MODELS")
     ):
         return True
     return (
         "xkiro" in names
-        and _configured(values, "XKIRO_API_KEY")
-        and _configured(values, "XKIRO_TEXT_MODEL")
+        and _configured(values, "XKIRO_API_KEYS")
+        and _configured(values, "XKIRO_TEXT_MODELS")
     )
 
 
@@ -151,14 +159,14 @@ def _has_replacement_vision_provider(values: dict[str, str]) -> bool:
     names = _provider_order_names(values.get("VISION_PROVIDER_ORDER", ""))
     if (
         "chainnode" in names
-        and _configured(values, "CHAINNODE_API_KEY")
-        and _configured(values, "CHAINNODE_VISION_MODEL")
+        and _configured(values, "CHAINNODE_API_KEYS")
+        and _configured(values, "CHAINNODE_VISION_MODELS")
     ):
         return True
     return (
         "xkiro" in names
-        and _configured(values, "XKIRO_API_KEY")
-        and _configured(values, "XKIRO_VISION_MODEL")
+        and _configured(values, "XKIRO_API_KEYS")
+        and _configured(values, "XKIRO_VISION_MODELS")
     )
 
 
@@ -167,14 +175,10 @@ def _validate_legacy_text_retirement(
     effective_values: dict[str, str],
 ) -> None:
     legacy_provider = "bai"
-    # Historical Settings defaulted the text route to the retired provider, so
-    # an omitted order must be evaluated as that old default during migration.
     raw_order = original_values.get("TEXT_PROVIDER_ORDER", legacy_provider)
     if legacy_provider not in _provider_order_names(raw_order):
         return
 
-    # Historical Settings also supplied a default text model, so a selected
-    # legacy route with a nonblank API key could be active without a model override.
     legacy_prefix = legacy_provider.upper()
     if not _configured(original_values, f"{legacy_prefix}_API_KEY"):
         return
@@ -190,18 +194,14 @@ def _validate_legacy_vision_retirement(
     effective_values: dict[str, str],
 ) -> None:
     legacy_provider = "bai"
-    # A target template with no vision route has no vision migration to guard.
     if "VISION_PROVIDER_ORDER" not in effective_values:
         return
-    # Historical Settings defaulted the vision route to the retired provider.
     raw_order = original_values.get("VISION_PROVIDER_ORDER", legacy_provider)
     if legacy_provider not in _provider_order_names(raw_order):
         return
     if not _enabled(effective_values, "VISION_ENABLED", default=True):
         return
 
-    # The same historical API key and a default vision model could make this
-    # route active even when no vision-model override appeared in .env.
     legacy_prefix = legacy_provider.upper()
     if not _configured(original_values, f"{legacy_prefix}_API_KEY"):
         return

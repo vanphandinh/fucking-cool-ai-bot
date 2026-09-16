@@ -2,7 +2,7 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Default configured AI route: Chainnode primary -> xKiro fallback.** Text và vision đều dùng cùng ordered, capability-aware, health-aware multi-provider framework. Chainnode giữ vai trò primary; xKiro chỉ tham gia khi deployment có `XKIRO_API_KEY` và model ID đã được live-qualify.
+**Default configured AI route: Chainnode primary -> xKiro fallback.** Text và vision đều dùng cùng ordered, capability-aware, health-aware multi-provider framework. Chainnode giữ vai trò primary; xKiro chỉ tham gia khi deployment có canonical `XKIRO_API_KEYS` + route model pool và model IDs đã được live-qualify.
 
 Bot vẫn giữ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
 
@@ -38,29 +38,30 @@ AIProviderRouter
    ├─ TEXT_PROVIDER_ORDER
    ├─ VISION_PROVIDER_ORDER
    ├─ capability filtering
-   ├─ health/cooldown filtering
-   └─ bounded cyclic provider scheduler
+   ├─ scoped health/cooldown filtering
+   └─ bounded retry + recovery scheduler
           │
-          ├─ Chainnode
-          │    ├─ text primary
-          │    └─ vision primary (max_images=1)
-          └─ xKiro
-               ├─ text fallback
-               └─ vision fallback (max_images=1)
+          ├─ Chainnode target pool
+          │    ├─ text model × credential targets
+          │    └─ vision model × credential targets (max_images=1)
+          └─ xKiro target pool
+               ├─ text model × credential targets
+               └─ vision model × credential targets (max_images=1)
 ```
 
 Provider contract là structural `AIProvider`; provider không bắt buộc kế thừa `OpenAICompatProvider`. Chainnode và xKiro đều reuse shared OpenAI-compatible transport/parser qua provider-specific factories.
 
-Production defaults:
+Production defaults dùng canonical plural credential/model pools:
 
 ```env
-CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor
+CHAINNODE_API_KEYS=
+CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
 ```
 
-Chainnode đã được qualify riêng cho text và vision. xKiro model IDs không hard-code trong runtime; `.env.example` cố ý để `XKIRO_TEXT_MODEL` và `XKIRO_VISION_MODEL` trống cho tới khi current candidates vượt live qualification.
+Chainnode đã được qualify riêng cho text và vision. xKiro model IDs không hard-code trong runtime; `.env.example` cố ý để `XKIRO_TEXT_MODELS` và `XKIRO_VISION_MODELS` trống cho tới khi current candidates vượt live qualification.
 
 xKiro runtime endpoint:
 
@@ -97,7 +98,7 @@ known-image understanding
 vision + structured tool flow
 ```
 
-Probe retained:
+Probe retained dùng một credential riêng để qualify candidate:
 
 ```bash
 export XKIRO_API_KEY='...'
@@ -107,40 +108,51 @@ python scripts/probe_xkiro.py \
   --image './known-test-image.png'
 ```
 
-Probe emit JSONL, đọc key chỉ từ environment, không log key/Authorization header, honor bounded `429 Retry-After`, và fail closed trên malformed response.
+`XKIRO_API_KEY` ở block trên là **probe-only single credential input**. Probe emit JSONL, không log key/Authorization header, honor bounded `429 Retry-After`, và fail closed trên malformed response.
 
-Chỉ sau khi probe live pass mới cấu hình:
+Chỉ sau khi probe live pass mới cấu hình canonical runtime pools:
 
 ```env
-XKIRO_TEXT_MODEL=<qualified-live-model-id>
-XKIRO_VISION_MODEL=<qualified-live-model-id>
+XKIRO_API_KEYS=key1,key2
+XKIRO_TEXT_MODELS=<qualified-text-model-a>,<qualified-text-model-b>
+XKIRO_VISION_MODELS=<qualified-vision-model>
 ```
+
+Legacy scalar `XKIRO_API_KEY`, `XKIRO_TEXT_MODEL`, `XKIRO_VISION_MODEL` chỉ là backward-compatibility/migration fields khi plural field tương ứng **không tồn tại**. Explicit blank plural intentionally không fallback về scalar. Vì fresh `.env` từ `.env.example` đã chứa plural fields, deployment hiện tại phải cấu hình plural pools.
 
 ---
 
-## 3. Bounded cyclic transport retry, tool state và Fresh Synthesis
+## 3. Bounded transport retry, scoped recovery, tool state và Fresh Synthesis
 
-Router chọn candidate theo route order, capability, shared health và request-scoped retry state:
+Router chọn candidate theo route order, capability, shared scoped health và request-scoped retry/recovery state:
 
 ```text
-configured capability-filtered ring
- -> currently healthy + request-eligible slot?
+configured capability-filtered targets
+ -> currently healthy + request-eligible target?
  -> provider attempt
- -> bounded same-provider retry nếu policy yêu cầu?
- -> rotate forward; wrap về đầu ring khi cần
- -> stop khi không còn eligible provider hoặc cumulative request budget hết
+ -> bounded exact-target transport retry nếu policy yêu cầu?
+ -> apply scoped resource-health decision
+ -> rotate to meaningful eligible sibling/provider
+ -> stop khi không còn eligible target hoặc cumulative request budget hết
 ```
 
 Shared OpenAI-compatible adapter thực hiện đúng **một HTTP attempt cho mỗi `chat()` call** và gắn transport classification vào `ProviderError`.
 
 | Failure | Policy |
 |---|---|
-| `ConnectError` | retry cùng provider khi còn budget; sau đó rotate |
-| `ConnectTimeout` | retry cùng provider khi còn budget; sau đó rotate |
-| `ReadTimeout` | ưu tiên provider khác đang eligible; nếu không có thì retry cùng provider |
+| `ConnectError` | retry exact target khi còn budget; sau đó rotate |
+| `ConnectTimeout` | retry exact target khi còn budget; sau đó rotate |
+| `ReadTimeout` | ưu tiên provider khác đang eligible; nếu không có thì retry exact target |
 | `WriteTimeout` | không có cyclic revisit mới |
 | `PoolTimeout` | không có cyclic revisit mới |
-| HTTP `401/403/429/4xx/5xx` | giữ existing health/fallback policy; không thêm cyclic revisit |
+| `401` | disable credential scope; rotate target nếu còn sibling hợp lệ |
+| xKiro `402` | disable credential scope; rotate target nếu còn sibling hợp lệ |
+| Chainnode `402` | giữ existing generic family fallback; không áp dụng xKiro account semantics |
+| xKiro `403` | disable model × credential entitlement; rotate target |
+| xKiro `429` | cooldown credential scope; rotate target |
+| Chainnode `429` | cooldown model scope; rotate target |
+| `404` | disable model scope; skip credential siblings của model đó |
+| `5xx` | bounded family fallback theo existing policy |
 | non-transient protocol/content error | fallback theo existing policy; không cyclic revisit |
 
 Request-scoped defaults:
@@ -149,24 +161,25 @@ Request-scoped defaults:
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
 PROVIDER_RETRY_MAX_PER_REQUEST=5
+PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Ba tên trên là canonical env contract. Các verbose legacy aliases vẫn được đọc để nâng cấp deployment cũ; canonical value thắng nếu cả hai dạng cùng tồn tại.
+Ba retry names và recovery-hop name trên là canonical env contract. Các verbose legacy retry aliases vẫn được đọc để nâng cấp deployment cũ; canonical value thắng nếu cả hai dạng cùng tồn tại.
 
-Một valid `provider.chat()` response reset **chỉ consecutive counter** của provider đó. Provider cumulative và request cumulative transport-failure counters không reset trong cùng end-user request. Request mới bắt đầu với retry state mới.
+Một valid `provider.chat()` response reset **chỉ consecutive transport counter** của provider đó. Provider cumulative và request cumulative transport-failure counters không reset trong cùng end-user request. Request mới bắt đầu với retry state mới.
 
-Same-provider retry có token monotonic theo provider trong request. Token đã consume không được hoàn lại bởi chat success. Ví dụ:
+Same-target transport retry có token monotonic theo provider family trong request. Token đã consume không được hoàn lại bởi chat success. Ví dụ:
 
 ```text
 ConnectTimeout
--> same-provider retry returns tool call
+-> same-target retry returns tool call
 -> tool succeeds
 -> ReadTimeout
 ```
 
-không được cấp thêm same-provider retry chỉ vì tool-call chat trước đó thành công.
+không được cấp thêm retry chỉ vì tool-call chat trước đó thành công.
 
-Ví dụ ordered fallback:
+Ví dụ ordered provider fallback:
 
 ```text
 chainnode ReadTimeout
@@ -184,19 +197,19 @@ chainnode #1 fail
 -> AllProvidersFailed
 ```
 
-ReadTimeout alternative được tính lại tại thời điểm failure trên toàn cyclic ring; router không dùng stale suffix snapshot.
+ReadTimeout alternative được tính lại tại thời điểm failure trên toàn eligible ring; router không dùng stale suffix snapshot.
 
-Same-provider immediate retry diễn ra tại đúng AI continuation bị lỗi với cùng `messages` và active tool schema. Provider rotation/wrap không restart request từ base messages và không reset tool budget, portable messages hoặc successful tool outputs.
+Exact-target immediate retry diễn ra tại đúng AI continuation bị lỗi với cùng `messages` và active tool schema. Target/provider rotation không restart request từ base messages và không reset tool budget, portable messages hoặc successful tool outputs.
 
-Tool đã hoàn thành **không chạy lại** chỉ vì provider routing thay đổi. Tool budget là request-wide:
+Tool đã hoàn thành **không chạy lại** chỉ vì target/provider routing thay đổi. Tool budget là request-wide:
 
 - `MAX_TOOL_ROUNDS` — default `2`;
 - hard cap nội bộ: tối đa `8` tool calls/request;
 - tối đa `2` tool calls chạy song song.
 
-Router tách provider-local continuation state khỏi portable state. Khi rotate/wrap, portable state mang canonical evidence/tool results sang provider tiếp theo nhưng không mang provider-local reasoning metadata.
+Router tách target-local continuation state khỏi portable state. Khi rotate, portable state mang canonical evidence/tool results sang target tiếp theo nhưng không mang provider-private reasoning metadata.
 
-Fallback statistics đếm provider transitions, không đếm attempts. `chainnode -> chainnode` immediate retry không tạo fallback; `chainnode -> xkiro -> chainnode` tạo hai transitions.
+Fallback statistics đếm provider-family transitions, không đếm intra-family target rotations. Target/model/credential rotation có counters riêng.
 
 Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original request + bounded untrusted plain-text evidence. Fresh Synthesis:
 
@@ -204,7 +217,7 @@ Khi tool budget đóng/hết, router tạo **Fresh Synthesis** từ original req
 - không replay structured provider-local tool history;
 - không inject provider-specific `tool_choice=none` workaround;
 - không execute tool call phát sinh sau khi budget đã đóng;
-- giữ cùng provider-neutral evidence nếu phải fallback sang provider khác.
+- giữ cùng provider-neutral evidence nếu phải fallback sang target/provider khác.
 
 `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe và giữ `QUESTION_TIMEOUT_SEC` làm outer hard wall-clock guard của legacy handler. Khi `QUESTION_CONTROLS_ENABLED=1`, hết interval chuyển sang Tiếp tục/Dừng trong khi từng provider/search/URL/media operation vẫn có timeout và capacity bound riêng.
 
@@ -216,7 +229,7 @@ Yêu cầu:
 
 - Docker + Docker Compose plugin;
 - Telegram bot token;
-- Chainnode API key cho production primary;
+- một hoặc nhiều Chainnode API key cho production primary;
 - Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
 
 ```bash
@@ -232,16 +245,16 @@ Cấu hình tối thiểu để chạy Chainnode primary:
 
 ```env
 BOT_TOKEN=...
-CHAINNODE_API_KEY=...
-CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor
+CHAINNODE_API_KEYS=...
+CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
 
-Không cần xKiro credential để Chainnode hoạt động. Khi `XKIRO_API_KEY` trống, xKiro factory trả zero active slots.
+Không cần xKiro credential để Chainnode hoạt động. Khi canonical `XKIRO_API_KEYS` trống, xKiro factory trả zero active targets.
 
 Khởi động:
 
@@ -255,21 +268,22 @@ docker compose logs -f bot
 ## 5. Cấu hình AI + vision
 
 ```env
-CHAINNODE_API_KEY=
+CHAINNODE_API_KEYS=
 CHAINNODE_BASE_URL=https://dn.chainno.de/v1
-CHAINNODE_TEXT_MODEL=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODEL=cl/cline-free/muse-spark-1.3-contributor
+CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
 
-XKIRO_API_KEY=
-XKIRO_TEXT_MODEL=
-XKIRO_VISION_MODEL=
+XKIRO_API_KEYS=
+XKIRO_TEXT_MODELS=
+XKIRO_VISION_MODELS=
 XKIRO_REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
 PROVIDER_RETRY_MAX_PER_REQUEST=5
+PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 
 VISION_ENABLED=1
 VISION_PROVIDER_ORDER=chainnode,xkiro
@@ -290,19 +304,29 @@ TOOL_CALL_TOTAL_TIMEOUT_SEC=45
 
 `CHAINNODE_REQUEST_TIMEOUT_SEC` và `XKIRO_REQUEST_TIMEOUT_SEC` điều khiển **per-HTTP-attempt read timeout** của provider tương ứng. Shared OpenAI-compatible transport dùng `connect=8s`, `write=20s`, `pool=5s`.
 
+Chainnode validation:
+
+- non-empty `CHAINNODE_API_KEYS` + Chainnode selected for text => non-empty `CHAINNODE_TEXT_MODELS` required;
+- vision enabled + Chainnode selected for vision => non-empty `CHAINNODE_VISION_MODELS` required;
+- no keys => zero Chainnode targets;
+- target expansion là model-major × credential; tổng enabled targets của mọi provider bị hard-cap ở `64`.
+
 xKiro validation:
 
-- key + xKiro selected for text => `XKIRO_TEXT_MODEL` required;
-- vision enabled + key + xKiro selected for vision => `XKIRO_VISION_MODEL` required;
-- no key => zero xKiro slots.
+- non-empty `XKIRO_API_KEYS` + xKiro selected for text => non-empty `XKIRO_TEXT_MODELS` required;
+- vision enabled + xKiro selected for vision => non-empty `XKIRO_VISION_MODELS` required;
+- no keys => zero xKiro targets.
 
-Retry bounds validation:
+Legacy scalar provider model/key fields remain migration/backward-compatibility inputs only when the corresponding plural field is absent. Do not set only scalars on a fresh synced `.env` because blank plural fields are explicit and intentionally win. `CHAINNODE_API_KEYS=key1` là một pool hợp lệ; plural không bắt buộc phải có nhiều hơn một key.
+
+Retry/recovery bounds validation:
 
 - consecutive: `1..5`;
 - per-provider cumulative: `1..10` và phải `>= consecutive`;
-- per-request cumulative: `1..20` và phải `>= consecutive`.
+- per-request cumulative: `1..20` và phải `>= consecutive`;
+- recovery hops: bounded `1..20`.
 
-`VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động. Effective image limit là giới hạn nhỏ hơn giữa application limit và capabilities của configured vision providers. Cả Chainnode và xKiro vision slots hiện advertise `max_images=1`.
+`VISION_ENABLED=0` chỉ tắt image understanding; text vẫn hoạt động. Effective image limit là giới hạn nhỏ hơn giữa application limit và capabilities của configured vision providers. Cả Chainnode và xKiro vision targets hiện advertise `max_images=1`.
 
 ---
 
@@ -312,14 +336,14 @@ Một provider thông thường nên được add mà **không sửa** router st
 
 1. Implement `AIProvider` trực tiếp, hoặc reuse `OpenAICompatProvider` nếu upstream dùng OpenAI-compatible Chat Completions.
 2. Thêm provider-specific settings/credentials với namespace riêng.
-3. Tạo provider-family factory trả về configured route slots.
+3. Tạo provider-family factory trả về configured concrete targets.
 4. Register factory trong `PROVIDER_FACTORIES`.
-5. Khai báo `ProviderCapabilities` cho từng slot và thêm provider key vào route order phù hợp.
+5. Khai báo `ProviderCapabilities` cho từng target và thêm provider key vào route order phù hợp.
 6. Pass registry, ordered routing/fallback, portability và provider-specific regression tests.
 
-Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks nằm trong adapter, không đưa vào core router. Transport retry policy là generic router concern; adapter chỉ classify transport failures.
+Provider-specific payload mapping, response parsing, auth/header, reasoning metadata và compatibility quirks nằm trong adapter/recovery classifier, không rải vào core router. Transport retry policy là generic router concern; adapter chỉ classify transport failures.
 
-Provider slot identity là `(provider.name, route)`. Cùng provider name có thể có một text slot và một vision slot vì route khác nhau; Chainnode và xKiro đều dùng pattern này.
+Concrete target identity là secret-free `(family, route, model, credential_id)` với opaque target ID. `credential_id`/`target_id` không bao giờ chứa raw API key. Chainnode và xKiro đều dùng deterministic model-major × credential targets.
 
 ---
 
@@ -337,8 +361,9 @@ Script:
 - giữ value của key còn tồn tại;
 - thêm new keys từ template;
 - xoá keys của provider đã retire vì chúng không còn trong template;
+- migrate legacy scalar provider values sang canonical plural pools khi plural field chưa tồn tại, bao gồm `CHAINNODE_API_KEY` -> `CHAINNODE_API_KEYS`;
 - giữ Chainnode credentials/models;
-- giữ `XKIRO_*` values nếu operator đã cấu hình;
+- giữ xKiro credentials/models độc lập;
 - không copy credential giữa hai services khác nhau;
 - nếu provider order chứa legacy retired token, canonicalize thành `chainnode,xkiro` rồi giữ custom names phía sau;
 - nếu order không chứa legacy token, giữ nguyên operator value;
@@ -348,7 +373,7 @@ Script:
 
 Chi tiết: [docs/ENV_SYNC.md](docs/ENV_SYNC.md).
 
-Sau migration, normal production order:
+Sau migration, cấu hình current nên dùng plural pools; normal production order:
 
 ```env
 TEXT_PROVIDER_ORDER=chainnode,xkiro
@@ -408,30 +433,30 @@ Direct URL pipeline: X-specific resolution trước, Crawl4AI nếu active, rồ
 
 Plain image không có text/caption trigger sẽ không tự gọi bot. Forum topic luôn cô lập history bằng `(chat_id, message_thread_id)`.
 
-Provider health state là per-slot:
+Resource health state là scoped:
 
-- `401/403` → disable slot đến process restart;
-- `429` → cooldown, ưu tiên numeric `Retry-After`;
-- unresolved network transport streak → một logical transient health failure sau request-scoped recovery;
-- success → reset transient state.
+- family health giữ provider-family fallback semantics;
+- credential health chia sẻ qua các targets/routes dùng cùng credential alias;
+- model health chia sẻ qua credential siblings của cùng model;
+- xKiro entitlement health là route-independent model × credential;
+- target health giữ exact-target state;
+- success/newer generation không bị stale deferred update ghi đè.
 
-Retry/rotation logs chỉ chứa provider name + transport kind/decision, ví dụ:
+Retry/rotation logs chỉ chứa secret-free target IDs/aliases + transport/recovery decision. Không log API key, Authorization, full prompt, image base64 hay raw sensitive tool output.
 
-```text
-AI provider chainnode transient connect_timeout; retry same provider
-AI provider chainnode lỗi: transport failure: read_timeout
-AI provider xkiro lỗi: transport failure: read_timeout
-```
-
-Không log API key, Authorization, full prompt, image base64 hay raw sensitive tool output.
-
-`/status` hiển thị generic text/vision provider list, configured order, provider distribution, last provider, fallback transition count và cooldown/unavailable state. Same-provider retry không inflate fallback metric.
+`/status` hiển thị provider orders, counters và mọi target đang unavailable/cooldown bằng secret-free concrete `target_id`; scoped state được ưu tiên trước adapter-local state và không render `last_error` hoặc raw credential.
 
 ---
 
 ## 10. Verification
 
 ```bash
+python -m unittest tests.test_provider_recovery_scope_regressions -v
+python -m unittest tests.test_provider_recovery_policy tests.test_scoped_provider_health tests.test_provider_target_rotation -v
+python -m unittest tests.test_provider_pool_config tests.test_provider_pool_factories tests.test_provider_pool_migration -v
+python -m unittest tests.test_provider_target_security tests.test_provider_target_revalidation -v
+python -m unittest tests.test_chainnode_multikey_migration_preflight -v
+python -m unittest tests.test_provider_observability -v
 python -m unittest tests.test_xkiro_provider -v
 python -m unittest tests.test_xkiro_probe -v
 python -m unittest tests.test_chainnode_provider -v
@@ -460,15 +485,15 @@ GitHub Actions chạy Python 3.11/3.12; Python 3.12 còn validate Compose/SearXN
 
 Manual smoke sau deployment:
 
-1. normal text query -> Chainnode first;
+1. normal text query -> first healthy Chainnode text target;
 2. web-search/tool flow;
 3. direct URL;
-4. one-image request -> Chainnode vision first;
+4. one-image request -> first healthy Chainnode vision target;
 5. request vượt effective image limit;
 6. `/status`;
-7. controlled Chainnode failure -> xKiro fallback sau khi xKiro đã live-qualified;
-8. verify completed tool không chạy lại khi rotate provider;
-9. restore valid Chainnode credentials immediately;
-10. verify normal traffic quay lại primary.
+7. controlled Chainnode credential failure -> eligible Chainnode credential sibling without duplicate tool execution;
+8. controlled Chainnode model/family failure -> xKiro fallback sau khi xKiro đã live-qualified/configured bằng plural pools;
+9. controlled xKiro resource failure -> scoped sibling rotation without duplicate tool execution;
+10. restore valid Chainnode credentials immediately and verify normal traffic quay lại primary.
 
 Repo/PR không tự deploy hoặc gửi test vào group thật.

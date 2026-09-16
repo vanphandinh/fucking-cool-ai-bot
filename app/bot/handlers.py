@@ -12,7 +12,9 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import ChatMemberUpdated, LinkPreviewOptions, Message
 
 from ..ai.base import AllProvidersFailed, NoCapableProvider
+from ..ai.recovery import HealthScope
 from ..ai.router import AIProviderRouter
+from ..ai.target import provider_target_identity
 from ..config import Settings
 from ..core.context import ChatMemory
 from ..core.formatting import clean_question, format_sources
@@ -63,14 +65,42 @@ def _provider_status_lines(
         ", ".join(f"{key}: {value}" for key, value in stats.by_provider.items())
         or "chưa có"
     )
-    cooling: list[str] = []
+    unavailable: list[str] = []
+    scoped_order = (
+        HealthScope.FAMILY,
+        HealthScope.CREDENTIAL,
+        HealthScope.MODEL,
+        HealthScope.ENTITLEMENT,
+        HealthScope.TARGET,
+    )
     for provider in provider_router.providers:
+        identity = provider_target_identity(provider)
+        scoped = [
+            provider_router.scoped_health.health(scope, identity)
+            for scope in scoped_order
+        ]
+        scoped_unavailable = [health for health in scoped if not health.available()]
+        if scoped_unavailable:
+            if any(health.disabled for health in scoped_unavailable):
+                state = "scoped-disabled"
+            else:
+                cooldown = max(
+                    (health.cooldown_seconds() for health in scoped_unavailable),
+                    default=0,
+                )
+                state = f"scoped-cooldown:{cooldown}s"
+            unavailable.append(f"{identity.target_id}={state}")
+            continue
+
         health = provider.health
         if health.available():
             continue
-        route = provider.capabilities.route
-        state = "disabled" if health.disabled else f"{health.cooldown_seconds()}s"
-        cooling.append(f"{provider.name}/{route}={state}")
+        state = (
+            "adapter-disabled"
+            if health.disabled
+            else f"adapter-cooldown:{health.cooldown_seconds()}s"
+        )
+        unavailable.append(f"{identity.target_id}={state}")
     return [
         f"Text providers: {text_names}",
         f"Vision providers: {vision_names}",
@@ -79,7 +109,12 @@ def _provider_status_lines(
         f"Provider hiện tại: {stats.last_provider or 'chưa có'}",
         f"Phân bổ: {distribution}",
         f"Fallbacks: {stats.fallback_count}",
-        f"Cooldown/unavailable: {', '.join(cooling) or 'không có'}",
+        (
+            f"Target rotations: {stats.target_rotation_count} "
+            f"(models={stats.model_rotation_count}, "
+            f"credentials={stats.credential_failover_count})"
+        ),
+        f"Cooldown/unavailable: {', '.join(unavailable) or 'không có'}",
     ]
 
 
@@ -400,6 +435,11 @@ async def _handle_question(
                     return
                 except AllProvidersFailed as exc:
                     stats.record_fallbacks(exc.fallbacks)
+                    stats.record_target_recovery(
+                        target_rotations=getattr(exc, "target_rotations", 0),
+                        model_rotations=getattr(exc, "model_rotations", 0),
+                        credential_failovers=getattr(exc, "credential_failovers", 0),
+                    )
                     stats.record_error(str(exc))
                     logger.error("AI providers không thể hoàn tất request: %s", exc)
                     await message.reply(_ALL_PROVIDERS_FAILED_TEXT)
@@ -414,6 +454,11 @@ async def _handle_question(
                     await asyncio.gather(typing_task, return_exceptions=True)
 
                 stats.record_fallbacks(answer.fallbacks)
+                stats.record_target_recovery(
+                    target_rotations=getattr(answer, "target_rotations", 0),
+                    model_rotations=getattr(answer, "model_rotations", 0),
+                    credential_failovers=getattr(answer, "credential_failovers", 0),
+                )
                 if not answer.text:
                     await message.reply("❌ Mình không tạo được câu trả lời, thử lại nhé.")
                     return

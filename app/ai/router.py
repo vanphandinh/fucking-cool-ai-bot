@@ -1,4 +1,4 @@
-"""Capability-aware AI routing with shared tool budget and portable state."""
+"""Capability-aware AI routing with bounded target recovery and portable state."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from .base import (
 )
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
+from .recovery import HealthScope, RecoveryAction, classify_recovery
 from .registry import build_registered_providers
 from .retry import (
     ProviderRetryPolicy,
@@ -27,12 +28,21 @@ from .retry import (
     is_cyclic_retryable_transport,
     transport_kind,
 )
+from .scoped_health import ScopedHealthRegistry
 from .synthesis import build_fresh_synthesis_messages
+from .target import ProviderTargetIdentity, provider_target_identity
 
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
 _MAX_TOOL_CALLS_TOTAL = 8
 _MAX_PARALLEL_TOOL_CALLS = 2
+_HEALTH_SCOPES = (
+    HealthScope.FAMILY,
+    HealthScope.CREDENTIAL,
+    HealthScope.MODEL,
+    HealthScope.ENTITLEMENT,
+    HealthScope.TARGET,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,19 @@ class CompletionResult:
     content: str
     provider: str
     fallbacks: tuple[str, ...] = ()
+    target_rotations: int = 0
+    model_rotations: int = 0
+    credential_failovers: int = 0
+
+
+@dataclass(frozen=True)
+class _HealthGenerationSnapshot:
+    adapter_generation: int | None
+    scoped_generations: tuple[int, ...]
+
+
+class _TargetBecameUnavailable(Exception):
+    """Signal scheduler rotation when shared health changes before a network call."""
 
 
 @dataclass
@@ -69,6 +92,8 @@ class _RequestState:
     tool_outputs: list[str]
     budget: _ToolBudget
     retry: RequestRetryState
+    unsupported_tool_models: set[tuple[str, str]]
+    successful_health_snapshot: _HealthGenerationSnapshot | None
 
 
 def _capabilities(provider: object) -> ProviderCapabilities:
@@ -78,7 +103,7 @@ def _capabilities(provider: object) -> ProviderCapabilities:
     return ProviderCapabilities()
 
 
-def _available(provider: object) -> bool:
+def _adapter_available(provider: object) -> bool:
     health = getattr(provider, "health", None)
     return health is None or health.available()
 
@@ -90,13 +115,17 @@ def _health_generation(provider: object) -> int | None:
     return health.generation
 
 
-def _record_success(provider: object) -> None:
+def _record_adapter_success(
+    provider: object,
+    *,
+    expected_generation: int | None,
+) -> None:
     health = getattr(provider, "health", None)
-    if health is not None:
-        health.record_success()
+    if health is not None and expected_generation is not None:
+        health.record_success_if_generation(expected_generation)
 
 
-def _record_error(provider: object, error: ProviderError) -> None:
+def _record_adapter_error(provider: object, error: ProviderError) -> None:
     health = getattr(provider, "health", None)
     if health is not None:
         health.record_error(
@@ -107,39 +136,46 @@ def _record_error(provider: object, error: ProviderError) -> None:
         )
 
 
-def _flush_pending_health_error(provider: AIProvider, state: _RequestState) -> None:
-    slot = state.retry.provider_state(provider.name)
-    error = slot.pending_health_error
-    if error is None:
-        return
-    health = getattr(provider, "health", None)
-    generation = slot.pending_health_generation
-    if health is not None and generation is not None:
-        health.record_deferred_error(
-            str(error),
-            expected_generation=generation,
-            status_code=error.status_code,
-            retry_after=error.retry_after,
-            transient=error.transient,
+def _flush_pending_family_health_errors(
+    candidates: tuple[AIProvider, ...],
+    state: _RequestState,
+    family: str,
+) -> None:
+    incidents = state.retry.pending_health_incidents(family)
+    for incident in incidents:
+        provider = next(
+            (
+                candidate
+                for candidate in candidates
+                if provider_target_identity(candidate).target_id == incident.target_id
+            ),
+            None,
         )
-    slot.pending_health_error = None
-    slot.pending_health_generation = None
+        if provider is not None:
+            health = getattr(provider, "health", None)
+            if health is not None and incident.health_barrier_generation is not None:
+                error = incident.error
+                health.record_deferred_error(
+                    str(error),
+                    expected_barrier_generation=incident.health_barrier_generation,
+                    status_code=error.status_code,
+                    retry_after=error.retry_after,
+                    transient=error.transient,
+                )
+        state.retry.discard_pending_health_incident(family, incident.target_id)
 
 
 def _flush_all_pending_health_errors(
     candidates: tuple[AIProvider, ...],
     state: _RequestState,
     *,
-    exclude: str | None = None,
+    exclude_family: str | None = None,
 ) -> None:
-    for provider in candidates:
-        if provider.name == exclude:
+    families = tuple(dict.fromkeys(candidate.name for candidate in candidates))
+    for family in families:
+        if family == exclude_family:
             continue
-        _flush_pending_health_error(provider, state)
-
-
-def _candidate_eligible(provider: AIProvider, state: _RequestState) -> bool:
-    return _available(provider) and state.retry.can_attempt(provider.name)
+        _flush_pending_family_health_errors(candidates, state, family)
 
 
 def _cyclic_indices(size: int, start: int):
@@ -184,9 +220,6 @@ async def _execute_tool_batch(
     try:
         return await asyncio.gather(*tasks)
     except BaseException:
-        # asyncio.gather does not cancel sibling tasks when one child raises a
-        # CancelledError subclass (JobStopped is one). Explicitly cancel and join
-        # every owned child before returning control to the job boundary.
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -205,14 +238,12 @@ class AIProviderRouter:
         vision_provider_order: tuple[str, ...] | None = None,
         retry_policy: ProviderRetryPolicy | None = None,
     ) -> None:
-        provider_slots: set[tuple[str, str]] = set()
+        target_ids: set[str] = set()
         for provider in providers:
-            slot = (provider.name, _capabilities(provider).route)
-            if slot in provider_slots:
-                raise ValueError(
-                    f"duplicate provider slot: name={slot[0]!r}, route={slot[1]!r}"
-                )
-            provider_slots.add(slot)
+            identity = provider_target_identity(provider)
+            if identity.target_id in target_ids:
+                raise ValueError(f"duplicate provider target: {identity.target_id!r}")
+            target_ids.add(identity.target_id)
 
         self.providers = providers
         default_order = tuple(dict.fromkeys(provider.name for provider in providers))
@@ -224,6 +255,7 @@ class AIProviderRouter:
         )
         self.max_tool_rounds = max_tool_rounds
         self.retry_policy = retry_policy or ProviderRetryPolicy()
+        self.scoped_health = ScopedHealthRegistry()
 
     def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
         if requires_vision:
@@ -259,6 +291,58 @@ class AIProviderRouter:
         providers = self.capable_providers(requires_vision=True, image_count=1)
         return max((_capabilities(provider).max_images for provider in providers), default=0)
 
+    def _candidate_eligible(self, provider: AIProvider, state: _RequestState) -> bool:
+        identity = provider_target_identity(provider)
+        return (
+            _adapter_available(provider)
+            and self.scoped_health.available(identity)
+            and state.retry.can_attempt_target(identity.family, identity.target_id)
+        )
+
+    def _has_eligible_sibling(
+        self,
+        candidates: tuple[AIProvider, ...],
+        state: _RequestState,
+        identity: ProviderTargetIdentity,
+    ) -> bool:
+        return any(
+            sibling_identity.family == identity.family
+            and sibling_identity.target_id != identity.target_id
+            and self._candidate_eligible(candidate, state)
+            for candidate in candidates
+            for sibling_identity in (provider_target_identity(candidate),)
+        )
+
+    def _health_snapshot(
+        self,
+        provider: AIProvider,
+        identity: ProviderTargetIdentity,
+    ) -> _HealthGenerationSnapshot:
+        return _HealthGenerationSnapshot(
+            adapter_generation=_health_generation(provider),
+            scoped_generations=tuple(
+                self.scoped_health.generation(scope, identity)
+                for scope in _HEALTH_SCOPES
+            ),
+        )
+
+    def _record_scoped_success(
+        self,
+        identity: ProviderTargetIdentity,
+        *,
+        expected_generations: tuple[int, ...],
+    ) -> None:
+        for scope, expected_generation in zip(
+            _HEALTH_SCOPES,
+            expected_generations,
+            strict=True,
+        ):
+            self.scoped_health.record_success_if_generation(
+                scope,
+                identity,
+                expected_generation=expected_generation,
+            )
+
     async def complete(
         self,
         messages: list[dict],
@@ -284,30 +368,44 @@ class AIProviderRouter:
             tool_outputs=[],
             budget=_ToolBudget(),
             retry=RequestRetryState(self.retry_policy),
+            unsupported_tool_models=set(),
+            successful_health_snapshot=None,
         )
         fallbacks: list[str] = []
         last_error: ProviderError | None = None
         cursor = 0
-        previous_provider_name: str | None = None
-        exclude_next_provider_name: str | None = None
+        previous_identity: ProviderTargetIdentity | None = None
+        exclude_next_family: str | None = None
+        target_rotations = 0
+        model_rotations = 0
+        credential_failovers = 0
 
         while not state.retry.request_transport_budget_exhausted():
             selected: tuple[int, AIProvider] | None = None
             for index in _cyclic_indices(len(candidates), cursor):
                 provider = candidates[index]
-                if provider.name == exclude_next_provider_name:
+                identity = provider_target_identity(provider)
+                if identity.family == exclude_next_family:
                     continue
-                if _candidate_eligible(provider, state):
+                if self._candidate_eligible(provider, state):
                     selected = (index, provider)
                     break
             if selected is None:
                 break
 
             index, provider = selected
-            exclude_next_provider_name = None
-            if previous_provider_name is not None and provider.name != previous_provider_name:
-                fallbacks.append(provider.name)
-            previous_provider_name = provider.name
+            identity = provider_target_identity(provider)
+            exclude_next_family = None
+            if previous_identity is not None:
+                if identity.family != previous_identity.family:
+                    fallbacks.append(identity.family)
+                elif identity.target_id != previous_identity.target_id:
+                    target_rotations += 1
+                    if identity.model != previous_identity.model:
+                        model_rotations += 1
+                    if identity.credential_id != previous_identity.credential_id:
+                        credential_failovers += 1
+            previous_identity = identity
 
             try:
                 text = await self._attempt_provider(
@@ -318,26 +416,78 @@ class AIProviderRouter:
                     candidates=candidates,
                     operations=operations,
                 )
+            except _TargetBecameUnavailable:
+                cursor = (index + 1) % len(candidates)
+                continue
             except ProviderError as exc:
                 last_error = exc
                 if is_cyclic_retryable_transport(exc):
-                    exclude_next_provider_name = provider.name
-                    if not state.retry.can_attempt(provider.name):
-                        _flush_pending_health_error(provider, state)
+                    exclude_next_family = identity.family
+                    if not state.retry.can_attempt(identity.family):
+                        _flush_pending_family_health_errors(
+                            candidates, state, identity.family
+                        )
                 else:
-                    state.retry.block_provider(provider.name)
-                    _record_error(provider, exc)
-                logger.warning("AI provider %s lỗi: %s", provider.name, exc)
+                    state.retry.discard_pending_health_incident(
+                        identity.family,
+                        identity.target_id,
+                    )
+                    decision = classify_recovery(identity, exc)
+                    _record_adapter_error(provider, exc)
+                    self.scoped_health.record_effect(
+                        decision.health_scope,
+                        identity,
+                        str(exc),
+                        effect=decision.health_effect,
+                        retry_after=exc.retry_after,
+                    )
+                    state.retry.block_target(identity.target_id)
+                    if decision.action == RecoveryAction.ROTATE_TARGET:
+                        if not (
+                            self._has_eligible_sibling(candidates, state, identity)
+                            and state.retry.consume_recovery_hop()
+                        ):
+                            state.retry.block_family(identity.family)
+                    else:
+                        state.retry.block_family(identity.family)
+                logger.warning(
+                    "AI target %s lỗi: %s",
+                    identity.target_id,
+                    exc,
+                )
                 cursor = (index + 1) % len(candidates)
                 continue
 
-            _record_success(provider)
-            _flush_all_pending_health_errors(candidates, state, exclude=provider.name)
-            return CompletionResult(text, provider.name, tuple(fallbacks))
+            health_snapshot = state.successful_health_snapshot
+            if health_snapshot is None:
+                raise RuntimeError("successful provider attempt missing health snapshot")
+            _record_adapter_success(
+                provider,
+                expected_generation=health_snapshot.adapter_generation,
+            )
+            self._record_scoped_success(
+                identity,
+                expected_generations=health_snapshot.scoped_generations,
+            )
+            _flush_all_pending_health_errors(candidates, state)
+            return CompletionResult(
+                text,
+                identity.family,
+                tuple(fallbacks),
+                target_rotations,
+                model_rotations,
+                credential_failovers,
+            )
 
         _flush_all_pending_health_errors(candidates, state)
         message = str(last_error) if last_error else "Không có AI provider khả dụng"
-        raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
+        raise AllProvidersFailed(
+            message,
+            fallbacks=tuple(fallbacks),
+            target_rotations=target_rotations,
+            model_rotations=model_rotations,
+            credential_failovers=credential_failovers,
+        )
 
     async def _attempt_provider(
         self,
@@ -357,6 +507,7 @@ class AIProviderRouter:
         else:
             provider_messages = deepcopy(state.portable_messages)
 
+        identity = provider_target_identity(provider)
         already_plain = False
         last_error: ProviderError | None = None
 
@@ -366,6 +517,7 @@ class AIProviderRouter:
                 tools
                 if (
                     provider.supports_tools
+                    and identity.model_key not in state.unsupported_tool_models
                     and pass_no == 0
                     and not state.budget.exhausted(self.max_tool_rounds)
                 )
@@ -391,6 +543,7 @@ class AIProviderRouter:
                     provider_messages = local_msgs
                 if exc.unsupported_tools and provider.supports_tools:
                     provider.supports_tools = False
+                    state.unsupported_tool_models.add(identity.model_key)
                     continue
                 if exc.retry_without_tools:
                     continue
@@ -410,15 +563,24 @@ class AIProviderRouter:
         candidates: tuple[AIProvider, ...],
         operations=None,
     ) -> ChatResponse:
+        identity = provider_target_identity(provider)
+
+        async def send_once() -> tuple[ChatResponse, _HealthGenerationSnapshot]:
+            if not self._candidate_eligible(provider, state):
+                raise _TargetBecameUnavailable
+            health_snapshot = self._health_snapshot(provider, identity)
+            response = await provider.chat(messages, tools)
+            return response, health_snapshot
+
         while True:
             try:
                 try:
                     if operations is None:
-                        response = await provider.chat(messages, tools)
+                        response, health_snapshot = await send_once()
                     else:
-                        response = await operations.run(
+                        response, health_snapshot = await operations.run(
                             f"AI {provider.name}",
-                            lambda: provider.chat(messages, tools),
+                            send_once,
                             timeout_sec=operations.ai_timeout,
                         )
                 except TimeoutError:
@@ -432,32 +594,42 @@ class AIProviderRouter:
                 if kind is None or not is_cyclic_retryable_transport(exc):
                     raise
 
-                state.retry.record_transport_failure(
-                    provider.name,
-                    exc,
-                    health_generation=_health_generation(provider),
+                health = getattr(provider, "health", None)
+                barrier_generation = (
+                    health.observe_deferred_error() if health is not None else None
                 )
-                if not state.retry.can_attempt(provider.name):
+                state.retry.record_transport_failure(
+                    identity.family,
+                    exc,
+                    health_barrier_generation=barrier_generation,
+                    target_id=identity.target_id,
+                )
+                if not state.retry.can_attempt(identity.family):
                     raise
 
                 alternatives = [
                     candidate
                     for candidate in candidates
-                    if candidate.name != provider.name and _candidate_eligible(candidate, state)
+                    if provider_target_identity(candidate).family != identity.family
+                    and self._candidate_eligible(candidate, state)
                 ]
                 if kind == TransportFailureKind.READ_TIMEOUT and alternatives:
                     raise
-                if not state.retry.consume_same_provider_retry(provider.name):
+                if not state.retry.consume_same_provider_retry(identity.family):
                     raise
 
                 logger.warning(
-                    "AI provider %s transient %s; retry same provider",
-                    provider.name,
+                    "AI target %s transient %s; retry exact target",
+                    identity.target_id,
                     kind.value,
                 )
                 continue
             else:
-                state.retry.record_chat_success(provider.name)
+                state.retry.record_chat_success(
+                    identity.family,
+                    target_id=identity.target_id,
+                )
+                state.successful_health_snapshot = health_snapshot
                 return response
 
     async def _complete_with_provider(
@@ -593,6 +765,7 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
         max_consecutive_failures=settings.provider_retry_max_consecutive_failures,
         max_failures_per_provider=settings.provider_retry_max_failures_per_provider,
         max_failures_per_request=settings.provider_retry_max_failures_per_request,
+        max_recovery_hops_per_request=settings.provider_recovery_max_hops_per_request,
     )
     return AIProviderRouter(
         providers,

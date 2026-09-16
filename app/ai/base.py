@@ -113,9 +113,15 @@ class AllProvidersFailed(Exception):
         message: str,
         *,
         fallbacks: tuple[str, ...] = (),
+        target_rotations: int = 0,
+        model_rotations: int = 0,
+        credential_failovers: int = 0,
     ) -> None:
         super().__init__(message)
         self.fallbacks = fallbacks
+        self.target_rotations = target_rotations
+        self.model_rotations = model_rotations
+        self.credential_failovers = credential_failovers
 
 
 class NoCapableProvider(Exception):
