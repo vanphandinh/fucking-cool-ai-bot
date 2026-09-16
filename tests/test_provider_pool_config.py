@@ -72,6 +72,25 @@ class ProviderPoolConfigTests(unittest.TestCase):
                         provider_recovery_max_hops_per_request=invalid,
                     )
 
+    def test_oversized_enabled_target_pool_is_rejected_before_factory_allocation(self) -> None:
+        api_keys = ",".join(f"secret-{index}" for index in range(1, 10))
+        models = ",".join(f"model-{index}" for index in range(1, 9))
+
+        with self.assertRaises(ValidationError) as ctx:
+            Settings(
+                _env_file=None,
+                xkiro_api_keys=api_keys,
+                xkiro_text_models=models,
+                text_provider_order="xkiro",
+                vision_enabled=False,
+            )
+
+        error = str(ctx.exception)
+        self.assertIn("72", error)
+        self.assertIn("64", error)
+        self.assertNotIn("secret-1", error)
+        self.assertNotIn("secret-9", error)
+
     def test_xkiro_factory_is_model_major_then_credential(self) -> None:
         settings = Settings(
             _env_file=None,
