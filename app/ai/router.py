@@ -132,43 +132,33 @@ def _record_adapter_error(provider: object, error: ProviderError) -> None:
         )
 
 
-def _flush_pending_family_health_error(
+def _flush_pending_family_health_errors(
     candidates: tuple[AIProvider, ...],
     state: _RequestState,
     family: str,
 ) -> None:
-    slot = state.retry.family_state(family)
-    error = slot.pending_health_error
-    if error is None:
-        return
-
-    provider: AIProvider | None = None
-    if slot.pending_health_target_id is not None:
+    incidents = state.retry.pending_health_incidents(family)
+    for incident in incidents:
         provider = next(
             (
                 candidate
                 for candidate in candidates
-                if provider_target_identity(candidate).target_id
-                == slot.pending_health_target_id
+                if provider_target_identity(candidate).target_id == incident.target_id
             ),
             None,
         )
-    if provider is None:
-        provider = next((candidate for candidate in candidates if candidate.name == family), None)
-
-    health = getattr(provider, "health", None) if provider is not None else None
-    generation = slot.pending_health_generation
-    if health is not None and generation is not None:
-        health.record_deferred_error(
-            str(error),
-            expected_generation=generation,
-            status_code=error.status_code,
-            retry_after=error.retry_after,
-            transient=error.transient,
-        )
-    slot.pending_health_error = None
-    slot.pending_health_generation = None
-    slot.pending_health_target_id = None
+        if provider is not None:
+            health = getattr(provider, "health", None)
+            if health is not None and incident.health_barrier_generation is not None:
+                error = incident.error
+                health.record_deferred_error(
+                    str(error),
+                    expected_barrier_generation=incident.health_barrier_generation,
+                    status_code=error.status_code,
+                    retry_after=error.retry_after,
+                    transient=error.transient,
+                )
+        state.retry.discard_pending_health_incident(family, incident.target_id)
 
 
 def _flush_all_pending_health_errors(
@@ -181,7 +171,7 @@ def _flush_all_pending_health_errors(
     for family in families:
         if family == exclude_family:
             continue
-        _flush_pending_family_health_error(candidates, state, family)
+        _flush_pending_family_health_errors(candidates, state, family)
 
 
 def _cyclic_indices(size: int, start: int):
@@ -427,10 +417,14 @@ class AIProviderRouter:
                 if is_cyclic_retryable_transport(exc):
                     exclude_next_family = identity.family
                     if not state.retry.can_attempt(identity.family):
-                        _flush_pending_family_health_error(
+                        _flush_pending_family_health_errors(
                             candidates, state, identity.family
                         )
                 else:
+                    state.retry.discard_pending_health_incident(
+                        identity.family,
+                        identity.target_id,
+                    )
                     decision = classify_recovery(identity, exc)
                     _record_adapter_error(provider, exc)
                     self.scoped_health.record_effect(
@@ -484,7 +478,13 @@ class AIProviderRouter:
 
         _flush_all_pending_health_errors(candidates, state)
         message = str(last_error) if last_error else "Không có AI provider khả dụng"
-        raise AllProvidersFailed(message, fallbacks=tuple(fallbacks))
+        raise AllProvidersFailed(
+            message,
+            fallbacks=tuple(fallbacks),
+            target_rotations=target_rotations,
+            model_rotations=model_rotations,
+            credential_failovers=credential_failovers,
+        )
 
     async def _attempt_provider(
         self,
@@ -584,10 +584,14 @@ class AIProviderRouter:
                 if kind is None or not is_cyclic_retryable_transport(exc):
                     raise
 
+                health = getattr(provider, "health", None)
+                barrier_generation = (
+                    health.observe_deferred_error() if health is not None else None
+                )
                 state.retry.record_transport_failure(
                     identity.family,
                     exc,
-                    health_generation=_health_generation(provider),
+                    health_barrier_generation=barrier_generation,
                     target_id=identity.target_id,
                 )
                 if not state.retry.can_attempt(identity.family):
@@ -611,7 +615,10 @@ class AIProviderRouter:
                 )
                 continue
             else:
-                state.retry.record_chat_success(identity.family)
+                state.retry.record_chat_success(
+                    identity.family,
+                    target_id=identity.target_id,
+                )
                 state.successful_health_snapshot = health_snapshot
                 return response
 
