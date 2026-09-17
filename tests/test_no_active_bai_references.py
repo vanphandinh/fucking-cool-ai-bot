@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).parents[1]
 ALLOWED_LEGACY_FIXTURE_FILES = {
     Path(__file__),
+    ROOT / "tests" / "test_chainnode_multikey_migration_preflight.py",
     ROOT / "tests" / "test_provider_env_migration.py",
     ROOT / "tests" / "test_sync_env.py",
 }

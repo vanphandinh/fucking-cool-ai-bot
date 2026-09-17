@@ -84,6 +84,9 @@ class Answer:
     searched: bool = False
     sources: list[dict] = field(default_factory=list)
     images: list[dict] = field(default_factory=list)
+    target_rotations: int = 0
+    model_rotations: int = 0
+    credential_failovers: int = 0
 
 
 class Orchestrator:
@@ -260,6 +263,9 @@ class Orchestrator:
             searched=searched,
             sources=_dedupe_sources(sources),
             images=_dedupe_images(image_results, self.settings.image_search_max_results),
+            target_rotations=result.target_rotations,
+            model_rotations=result.model_rotations,
+            credential_failovers=result.credential_failovers,
         )
 
 

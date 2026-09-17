@@ -136,11 +136,11 @@ class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(second.calls, [])
 
-    def test_duplicate_same_name_and_route_is_rejected(self) -> None:
+    def test_duplicate_exact_target_is_rejected(self) -> None:
         first = ScriptedProvider("xkiro", [])
         duplicate = ScriptedProvider("xkiro", [])
 
-        with self.assertRaisesRegex(ValueError, "duplicate provider slot"):
+        with self.assertRaisesRegex(ValueError, "duplicate provider target"):
             AIProviderRouter(
                 [first, duplicate],
                 text_provider_order=("xkiro",),
