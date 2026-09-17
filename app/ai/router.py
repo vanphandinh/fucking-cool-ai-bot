@@ -256,6 +256,7 @@ class AIProviderRouter:
         self.max_tool_rounds = max_tool_rounds
         self.retry_policy = retry_policy or ProviderRetryPolicy()
         self.scoped_health = ScopedHealthRegistry()
+        self._unsupported_tool_models: set[tuple[str, str]] = set()
 
     def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
         if requires_vision:
@@ -368,7 +369,7 @@ class AIProviderRouter:
             tool_outputs=[],
             budget=_ToolBudget(),
             retry=RequestRetryState(self.retry_policy),
-            unsupported_tool_models=set(),
+            unsupported_tool_models=self._unsupported_tool_models,
             successful_health_snapshot=None,
         )
         fallbacks: list[str] = []
