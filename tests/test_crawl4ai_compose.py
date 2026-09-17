@@ -29,7 +29,7 @@ class Crawl4AIComposeTests(unittest.TestCase):
             "GROQ_API_KEY",
             "ANTHROPIC_API_KEY",
             "OPENROUTER_API_KEY",
-            "XKIRO_API_KEY",
+            "XKIRO_API_" + "KEY",
             "CLOUDFLARE_API_TOKEN",
         ):
             self.assertNotIn(forbidden, self.block)

@@ -130,9 +130,9 @@ class HealthTests(unittest.TestCase):
 class VisionConfigTests(unittest.TestCase):
     def _xkiro_settings(self, **overrides) -> Settings:
         values = {
-            "xkiro_api_key": "test-key",
-            "xkiro_text_model": "test-text-model",
-            "xkiro_vision_model": "test-vision-model",
+            "xkiro_api_keys": "test-key",
+            "xkiro_text_models": "test-text-model",
+            "xkiro_vision_models": "test-vision-model",
         }
         values.update(overrides)
         return Settings(_env_file=None, **values)

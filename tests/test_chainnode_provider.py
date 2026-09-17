@@ -19,17 +19,23 @@ TEXT_MODEL = "cl/cline-free/deepseek-v4.1-flash"
 VISION_MODEL = "cl/cline-free/muse-spark-1.3-contributor"
 
 
+def _settings(*, timeout: float = 25.0) -> SimpleNamespace:
+    return SimpleNamespace(
+        chainnode_api_keys_list=["test-key"],
+        chainnode_base_url="https://dn.chainno.de/v1",
+        chainnode_text_models_list=[TEXT_MODEL],
+        chainnode_vision_models_list=[VISION_MODEL],
+        chainnode_request_timeout_sec=timeout,
+    )
+
+
 class ChainnodeProviderModuleTests(unittest.TestCase):
     def test_chainnode_provider_module_exists(self) -> None:
         self.assertIsNotNone(importlib.util.find_spec("app.ai.chainnode"))
 
     def test_text_factory_uses_configured_base_model_and_timeout(self) -> None:
-        settings = SimpleNamespace(
-            chainnode_api_key="test-key",
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model="cl/z-ai/glm-5.3-flash",
-            chainnode_request_timeout_sec=25.0,
-        )
+        settings = _settings()
+        settings.chainnode_text_models_list = ["cl/z-ai/glm-5.3-flash"]
         provider = chainnode.make_chainnode_provider(settings)
         try:
             self.assertEqual(provider.name, "chainnode")
@@ -43,13 +49,7 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
             asyncio.run(provider.aclose())
 
     def test_text_and_vision_factories_use_distinct_models(self) -> None:
-        settings = SimpleNamespace(
-            chainnode_api_key="test-key",
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model=TEXT_MODEL,
-            chainnode_vision_model=VISION_MODEL,
-            chainnode_request_timeout_sec=25.0,
-        )
+        settings = _settings()
         text = chainnode.make_chainnode_provider(settings, vision=False)
         vision = chainnode.make_chainnode_provider(settings, vision=True)
         try:
@@ -69,19 +69,19 @@ class ChainnodeProviderModuleTests(unittest.TestCase):
 class ChainnodeDeploymentConfigTests(unittest.TestCase):
     def test_defaults_keep_chainnode_primary_with_xkiro_fallback(self) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.chainnode_api_key, "")
+        self.assertEqual(settings.chainnode_api_keys_list, [])
         self.assertEqual(settings.chainnode_base_url, "https://dn.chainno.de/v1")
-        self.assertEqual(settings.chainnode_text_model, "")
-        self.assertEqual(settings.chainnode_vision_model, "")
+        self.assertEqual(settings.chainnode_text_models_list, [])
+        self.assertEqual(settings.chainnode_vision_models_list, [])
         self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
         self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
         self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
 
     def test_chainnode_vision_order_requires_explicit_model(self) -> None:
-        with self.assertRaisesRegex(ValueError, "CHAINNODE_VISION_MODEL"):
+        with self.assertRaisesRegex(ValueError, "CHAINNODE_VISION_MODELS"):
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-key",
+                chainnode_api_keys="test-key",
                 text_provider_order="xkiro",
                 vision_enabled=True,
                 vision_provider_order="chainnode,xkiro",
@@ -90,7 +90,7 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
     def test_disabled_vision_does_not_require_chainnode_vision_model(self) -> None:
         settings = Settings(
             _env_file=None,
-            chainnode_api_key="test-key",
+            chainnode_api_keys="test-key",
             text_provider_order="xkiro",
             vision_enabled=False,
             vision_provider_order="chainnode,xkiro",
@@ -101,7 +101,7 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         disabled = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-key",
+                chainnode_api_keys="test-key",
                 text_provider_order="xkiro",
                 vision_provider_order="",
             )
@@ -109,10 +109,10 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         enabled = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-key",
-                chainnode_text_model=TEXT_MODEL,
-                xkiro_api_key="test-xkiro-key",
-                xkiro_text_model="test-xkiro-text",
+                chainnode_api_keys="test-key",
+                chainnode_text_models=TEXT_MODEL,
+                xkiro_api_keys="test-xkiro-key",
+                xkiro_text_models="test-xkiro-text",
                 text_provider_order="chainnode,xkiro",
                 vision_provider_order="",
             )
@@ -131,9 +131,9 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-key",
-                chainnode_text_model=TEXT_MODEL,
-                chainnode_vision_model=VISION_MODEL,
+                chainnode_api_keys="test-key",
+                chainnode_text_models=TEXT_MODEL,
+                chainnode_vision_models=VISION_MODEL,
                 text_provider_order="chainnode,xkiro",
                 vision_provider_order="chainnode,xkiro",
             )
@@ -153,8 +153,8 @@ class ChainnodeDeploymentConfigTests(unittest.TestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-key",
-                chainnode_vision_model=VISION_MODEL,
+                chainnode_api_keys="test-key",
+                chainnode_vision_models=VISION_MODEL,
                 text_provider_order="xkiro",
                 vision_provider_order="chainnode,xkiro",
             )
@@ -182,13 +182,7 @@ class ChainnodeWireContractTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        settings = SimpleNamespace(
-            chainnode_api_key="test-key",
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model=TEXT_MODEL,
-            chainnode_request_timeout_sec=30.0,
-        )
-        provider = chainnode.make_chainnode_provider(settings)
+        provider = chainnode.make_chainnode_provider(_settings(timeout=30.0))
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://dn.chainno.de/v1/",
@@ -226,14 +220,7 @@ class ChainnodeWireContractTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        settings = SimpleNamespace(
-            chainnode_api_key="test-key",
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model=TEXT_MODEL,
-            chainnode_vision_model=VISION_MODEL,
-            chainnode_request_timeout_sec=30.0,
-        )
-        provider = chainnode.make_chainnode_provider(settings, vision=True)
+        provider = chainnode.make_chainnode_provider(_settings(timeout=30.0), vision=True)
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://dn.chainno.de/v1/",

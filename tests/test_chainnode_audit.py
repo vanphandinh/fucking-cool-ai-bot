@@ -250,10 +250,10 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-chainnode-key",
-                chainnode_text_model=QUALIFIED_MODEL,
-                xkiro_api_key="test-xkiro-key",
-                xkiro_text_model="test-xkiro-text",
+                chainnode_api_keys="test-chainnode-key",
+                chainnode_text_models=QUALIFIED_MODEL,
+                xkiro_api_keys="test-xkiro-key",
+                xkiro_text_models="test-xkiro-text",
                 text_provider_order="chainnode,xkiro",
                 vision_enabled=False,
             )
@@ -311,11 +311,11 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-chainnode-key",
-                chainnode_vision_model=VISION_MODEL,
-                xkiro_api_key="test-xkiro-key",
-                xkiro_text_model="test-xkiro-text",
-                xkiro_vision_model="test-xkiro-vision",
+                chainnode_api_keys="test-chainnode-key",
+                chainnode_vision_models=VISION_MODEL,
+                xkiro_api_keys="test-xkiro-key",
+                xkiro_text_models="test-xkiro-text",
+                xkiro_vision_models="test-xkiro-vision",
                 text_provider_order="xkiro",
                 vision_provider_order="chainnode,xkiro",
             )
@@ -390,9 +390,10 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
 def _provider():
     return chainnode.make_chainnode_provider(
         SimpleNamespace(
-            chainnode_api_key="test-key",
+            chainnode_api_keys_list=["test-key"],
             chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_model=QUALIFIED_MODEL,
+            chainnode_text_models_list=[QUALIFIED_MODEL],
+            chainnode_vision_models_list=[],
             chainnode_request_timeout_sec=30.0,
         )
     )

@@ -303,8 +303,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 Settings(
                     _env_file=None,
                     bot_token="123:test",
-                    xkiro_api_key="test-key",
-                    xkiro_text_model="test-text-model",
+                    xkiro_api_keys="test-key",
+                    xkiro_text_models="test-text-model",
                     vision_enabled=False,
                 )
             )
@@ -334,8 +334,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     Settings(
                         _env_file=None,
                         bot_token="123:test",
-                        xkiro_api_key="test-key",
-                        xkiro_text_model="test-text-model",
+                        xkiro_api_keys="test-key",
+                        xkiro_text_models="test-text-model",
                         vision_enabled=False,
                     )
                 )
@@ -384,8 +384,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(
                 _env_file=None,
                 bot_token="123:test",
-                xkiro_api_key="test-key",
-                xkiro_text_model="test-text-model",
+                xkiro_api_keys="test-key",
+                xkiro_text_models="test-text-model",
                 vision_enabled=False,
             )
             await main._amain(settings)

@@ -763,9 +763,9 @@ def build_provider_router(settings: Settings) -> AIProviderRouter:
     registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
     providers = build_registered_providers(settings, registered_names)
     retry_policy = ProviderRetryPolicy(
-        max_consecutive_failures=settings.provider_retry_max_consecutive_failures,
-        max_failures_per_provider=settings.provider_retry_max_failures_per_provider,
-        max_failures_per_request=settings.provider_retry_max_failures_per_request,
+        max_consecutive_failures=settings.provider_retry_max_consecutive,
+        max_failures_per_provider=settings.provider_retry_max_per_provider,
+        max_failures_per_request=settings.provider_retry_max_per_request,
         max_recovery_hops_per_request=settings.provider_recovery_max_hops_per_request,
     )
     return AIProviderRouter(

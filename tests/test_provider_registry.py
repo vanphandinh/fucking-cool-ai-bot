@@ -80,9 +80,9 @@ class ProviderContractTests(unittest.TestCase):
         slots = build_xkiro_provider_slots(
             Settings(
                 _env_file=None,
-                xkiro_api_key="test-key",
-                xkiro_text_model="test-text-model",
-                xkiro_vision_model="test-vision-model",
+                xkiro_api_keys="test-key",
+                xkiro_text_models="test-text-model",
+                xkiro_vision_models="test-vision-model",
             )
         )
         try:
@@ -132,12 +132,12 @@ class ProviderOrderTests(unittest.TestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_key="test-chainnode-key",
-                chainnode_text_model="test-chainnode-text",
-                chainnode_vision_model="test-chainnode-vision",
-                xkiro_api_key="test-xkiro-key",
-                xkiro_text_model="test-xkiro-text",
-                xkiro_vision_model="test-xkiro-vision",
+                chainnode_api_keys="test-chainnode-key",
+                chainnode_text_models="test-chainnode-text",
+                chainnode_vision_models="test-chainnode-vision",
+                xkiro_api_keys="test-xkiro-key",
+                xkiro_text_models="test-xkiro-text",
+                xkiro_vision_models="test-xkiro-vision",
             )
         )
         try:

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import io
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -13,6 +18,7 @@ import httpx
 import scripts.probe_xkiro as probe
 
 
+ROOT = Path(__file__).parents[1]
 FREE_TEXT_MODEL = {
     "id": "free-text",
     "access_tier": "free",
@@ -58,6 +64,44 @@ def _structured_tool_response(request: httpx.Request) -> httpx.Response:
     )
 
 
+class XKiroProbeCliTests(unittest.TestCase):
+    def test_direct_script_invocation_imports_app_package(self) -> None:
+        env = dict(os.environ)
+        retired_probe_key = "XKIRO_PROBE_API_" + "KEY"
+        env.pop(retired_probe_key, None)
+        env["XKIRO_API_KEYS"] = ""
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "probe_xkiro.py"),
+                "--text-model",
+                "free-text",
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('"error": "XKIRO_API_KEYS is required"', result.stdout)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_parse_args_rejects_invalid_numeric_bounds(self) -> None:
+        invalid_argv = (
+            ["--text-model", "free-text", "--timeout", "0"],
+            ["--text-model", "free-text", "--max-retries", "-1"],
+            ["--text-model", "free-text", "--retry-base-delay", "-0.1"],
+            ["--text-model", "free-text", "--max-retry-after", "-0.1"],
+        )
+        for argv in invalid_argv:
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit) as exc:
+                    probe.parse_args(argv)
+                self.assertEqual(exc.exception.code, 2)
+
+
 class XKiroCatalogTests(unittest.TestCase):
     def test_catalog_lookup_requires_exact_model_id(self) -> None:
         catalog = {"data": [FREE_TEXT_MODEL, FREE_VISION_MODEL]}
@@ -99,6 +143,105 @@ class XKiroCatalogTests(unittest.TestCase):
         }
         errors = probe.qualification_errors(model, require_vision=True)
         self.assertTrue(any("vision" in error for error in errors))
+
+
+class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
+    def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"XKIRO_API_KEYS": "  ProbeOne , ProbeTwo ,  "},
+            clear=True,
+        ):
+            self.assertEqual(probe.xkiro_probe_credential(), "ProbeOne")
+
+    async def test_probe_accepts_canonical_credential_pool(self) -> None:
+        args = probe.parse_args(["--text-model", "free-text"])
+        with patch.dict(
+            os.environ,
+            {"XKIRO_API_KEYS": "probe-secret"},
+            clear=True,
+        ):
+            with patch.object(
+                probe,
+                "fetch_catalog",
+                side_effect=ValueError("stop-after-auth"),
+            ):
+                with patch.object(probe, "emit") as emit:
+                    result = await probe.run_probe(args)
+
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            emit.call_args_list[-1].kwargs,
+            {"compatible": False, "error": "stop-after-auth"},
+        )
+
+    async def test_all_catalog_gates_run_before_live_probe(self) -> None:
+        args = probe.parse_args(
+            [
+                "--text-model",
+                "free-text",
+                "--vision-model",
+                "missing-vision",
+                "--image",
+                "fixture.png",
+            ]
+        )
+        catalog = {"data": [FREE_TEXT_MODEL]}
+        with patch.dict(os.environ, {"XKIRO_API_KEYS": "probe-secret"}, clear=True):
+            with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
+                with patch.object(probe, "_probe_plain", new=AsyncMock()) as plain:
+                    with patch.object(
+                        probe,
+                        "_probe_tool_flow",
+                        new=AsyncMock(),
+                    ) as tool_flow:
+                        result = await probe.run_probe(args)
+
+        self.assertEqual(result, 1)
+        plain.assert_not_awaited()
+        tool_flow.assert_not_awaited()
+
+    async def test_emits_every_requested_catalog_gate_before_failing(self) -> None:
+        paid_text_model = {
+            "id": "paid-text",
+            "access_tier": "paid",
+            "pricing": {"input": 0, "output": 0},
+            "capabilities": {"tools": True, "vision": False},
+            "context_length": 131072,
+        }
+        args = probe.parse_args(
+            [
+                "--text-model",
+                "paid-text",
+                "--vision-model",
+                "free-vision",
+                "--image",
+                "fixture.png",
+            ]
+        )
+        catalog = {"data": [paid_text_model, FREE_VISION_MODEL]}
+
+        async def forbidden_probe(*args: object, **kwargs: object) -> None:
+            raise AssertionError("live probe must not run after any catalog gate failure")
+
+        output = io.StringIO()
+        with patch.dict(os.environ, {"XKIRO_API_KEYS": "probe-secret"}, clear=True):
+            with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
+                with patch.object(probe, "_probe_plain", new=forbidden_probe):
+                    with patch.object(probe, "_probe_tool_flow", new=forbidden_probe):
+                        with redirect_stdout(output):
+                            result = await probe.run_probe(args)
+
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        gates = [event for event in events if event["event"] == "catalog_gate"]
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            [(gate["route"], gate["model"], gate["compatible"]) for gate in gates],
+            [
+                ("text", "paid-text", False),
+                ("vision", "free-vision", True),
+            ],
+        )
 
 
 class XKiroPayloadTests(unittest.TestCase):

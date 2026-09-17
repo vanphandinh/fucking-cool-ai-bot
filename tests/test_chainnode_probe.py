@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import httpx
 
@@ -23,6 +25,15 @@ EXPECTED_MODELS = (
 class ChainnodeProbeTests(unittest.TestCase):
     def test_probe_script_exists(self) -> None:
         self.assertTrue(PROBE_PATH.is_file())
+
+    def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
+        module = _load_probe()
+        with patch.dict(
+            os.environ,
+            {"CHAINNODE_API_KEYS": "  KeyOne  , KeyTwo ,  "},
+            clear=False,
+        ):
+            self.assertEqual(module.chainnode_probe_credential(), "KeyOne")
 
     def test_default_model_matrix_contains_all_approved_candidates(self) -> None:
         module = _load_probe()
