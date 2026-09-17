@@ -16,9 +16,10 @@ _END = "[/DỮ LIỆU NGHIÊN CỨU]"
 
 def _xkiro_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        xkiro_api_key="test-key",
-        xkiro_text_model="test-text-model",
-        xkiro_vision_model="test-vision-model",
+        xkiro_api_keys_list=["test-key"],
+        xkiro_text_models_list=["test-text-model"],
+        xkiro_vision_models_list=["test-vision-model"],
+        xkiro_base_url="https://api.xkiro.com/v1",
         xkiro_request_timeout_sec=30.0,
     )
 

@@ -18,22 +18,22 @@ def make_chainnode_provider(
     credential_id: str = "cred-1",
     target_id: str | None = None,
 ) -> OpenAICompatProvider:
+    keys = settings.chainnode_api_keys_list
     configured_key = str(
-        api_key if api_key is not None else settings.chainnode_api_key or ""
+        api_key if api_key is not None else (keys[0] if keys else "")
     ).strip()
     if not configured_key:
-        raise ValueError("CHAINNODE_API_KEY là bắt buộc khi khởi tạo Chainnode provider")
+        raise ValueError("CHAINNODE_API_KEYS là bắt buộc khi khởi tạo Chainnode provider")
 
+    models = (
+        settings.chainnode_vision_models_list
+        if vision
+        else settings.chainnode_text_models_list
+    )
     configured_model = str(
-        model
-        if model is not None
-        else (
-            settings.chainnode_vision_model
-            if vision
-            else settings.chainnode_text_model
-        )
+        model if model is not None else (models[0] if models else "")
     ).strip()
-    setting_name = "CHAINNODE_VISION_MODEL" if vision else "CHAINNODE_TEXT_MODEL"
+    setting_name = "CHAINNODE_VISION_MODELS" if vision else "CHAINNODE_TEXT_MODELS"
     if not configured_model:
         raise ValueError(f"{setting_name} là bắt buộc khi khởi tạo Chainnode provider")
 

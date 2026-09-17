@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 _MAX_AI_PROVIDER_TARGETS = 64
+XKIRO_DEFAULT_BASE_URL = "https://api.xkiro.com/v1"
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -65,71 +66,30 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Provider-specific AI credentials/models. Plural fields are canonical;
-    # legacy scalars remain supported when the plural field is absent.
+    # Provider-specific AI credentials/models. Runtime config is plural-only.
     chainnode_api_keys: str = ""
-    chainnode_api_key: str = ""
     chainnode_base_url: str = "https://dn.chainno.de/v1"
     chainnode_text_models: str = ""
     chainnode_vision_models: str = ""
-    chainnode_text_model: str = ""
-    chainnode_vision_model: str = ""
     chainnode_request_timeout_sec: float = Field(
         default=60.0,
         gt=0,
         allow_inf_nan=False,
     )
     xkiro_api_keys: str = ""
+    xkiro_base_url: str = XKIRO_DEFAULT_BASE_URL
     xkiro_text_models: str = ""
     xkiro_vision_models: str = ""
-    xkiro_api_key: str = ""
-    xkiro_text_model: str = ""
-    xkiro_vision_model: str = ""
     xkiro_request_timeout_sec: float = Field(
         default=60.0,
         gt=0,
         allow_inf_nan=False,
     )
     text_provider_order: str = "chainnode,xkiro"
-    provider_retry_max_consecutive_failures: int = Field(
-        default=2,
-        ge=1,
-        le=5,
-        validation_alias=AliasChoices(
-            "PROVIDER_RETRY_MAX_CONSECUTIVE",
-            "PROVIDER_RETRY_MAX_CONSECUTIVE_FAILURES",
-            "provider_retry_max_consecutive_failures",
-        ),
-    )
-    provider_retry_max_failures_per_provider: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        validation_alias=AliasChoices(
-            "PROVIDER_RETRY_MAX_PER_PROVIDER",
-            "PROVIDER_RETRY_MAX_FAILURES_PER_PROVIDER",
-            "provider_retry_max_failures_per_provider",
-        ),
-    )
-    provider_retry_max_failures_per_request: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-        validation_alias=AliasChoices(
-            "PROVIDER_RETRY_MAX_PER_REQUEST",
-            "PROVIDER_RETRY_MAX_FAILURES_PER_REQUEST",
-            "provider_retry_max_failures_per_request",
-        ),
-    )
-    provider_recovery_max_hops_per_request: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-        validation_alias=AliasChoices(
-            "PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST",
-            "provider_recovery_max_hops_per_request",
-        ),
-    )
+    provider_retry_max_consecutive: int = Field(default=2, ge=1, le=5)
+    provider_retry_max_per_provider: int = Field(default=3, ge=1, le=10)
+    provider_retry_max_per_request: int = Field(default=5, ge=1, le=20)
+    provider_recovery_max_hops_per_request: int = Field(default=5, ge=1, le=20)
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
@@ -217,12 +177,6 @@ class Settings(BaseSettings):
             )
         return level
 
-    def _pool(self, plural_field: str, scalar_value: str) -> list[str]:
-        if plural_field in self.model_fields_set:
-            return parse_unique_csv_preserve_case(str(getattr(self, plural_field) or ""))
-        value = str(scalar_value or "").strip()
-        return [value] if value else []
-
     @model_validator(mode="after")
     def _check_provider_and_timeout_config(self) -> "Settings":
         chainnode_keys = self.chainnode_api_keys_list
@@ -232,8 +186,8 @@ class Settings(BaseSettings):
             and not self.chainnode_text_models_list
         ):
             raise ValueError(
-                "CHAINNODE_TEXT_MODELS/CHAINNODE_TEXT_MODEL là bắt buộc khi Chainnode "
-                "được bật trong TEXT_PROVIDER_ORDER"
+                "CHAINNODE_TEXT_MODELS là bắt buộc khi Chainnode được bật trong "
+                "TEXT_PROVIDER_ORDER"
             )
 
         if (
@@ -243,8 +197,8 @@ class Settings(BaseSettings):
             and not self.chainnode_vision_models_list
         ):
             raise ValueError(
-                "CHAINNODE_VISION_MODELS/CHAINNODE_VISION_MODEL là bắt buộc khi Chainnode "
-                "được bật trong VISION_PROVIDER_ORDER"
+                "CHAINNODE_VISION_MODELS là bắt buộc khi Chainnode được bật trong "
+                "VISION_PROVIDER_ORDER"
             )
 
         if (
@@ -253,8 +207,8 @@ class Settings(BaseSettings):
             and not self.xkiro_text_models_list
         ):
             raise ValueError(
-                "XKIRO_TEXT_MODELS/XKIRO_TEXT_MODEL là bắt buộc khi xKiro được bật "
-                "trong TEXT_PROVIDER_ORDER"
+                "XKIRO_TEXT_MODELS là bắt buộc khi xKiro được bật trong "
+                "TEXT_PROVIDER_ORDER"
             )
 
         if (
@@ -264,8 +218,8 @@ class Settings(BaseSettings):
             and not self.xkiro_vision_models_list
         ):
             raise ValueError(
-                "XKIRO_VISION_MODELS/XKIRO_VISION_MODEL là bắt buộc khi xKiro được bật "
-                "trong VISION_PROVIDER_ORDER"
+                "XKIRO_VISION_MODELS là bắt buộc khi xKiro được bật trong "
+                "VISION_PROVIDER_ORDER"
             )
 
         target_count = 0
@@ -289,18 +243,12 @@ class Settings(BaseSettings):
                 f"maximum is {_MAX_AI_PROVIDER_TARGETS}"
             )
 
-        if (
-            self.provider_retry_max_failures_per_provider
-            < self.provider_retry_max_consecutive_failures
-        ):
+        if self.provider_retry_max_per_provider < self.provider_retry_max_consecutive:
             raise ValueError(
                 "PROVIDER_RETRY_MAX_PER_PROVIDER must be >= "
                 "PROVIDER_RETRY_MAX_CONSECUTIVE"
             )
-        if (
-            self.provider_retry_max_failures_per_request
-            < self.provider_retry_max_consecutive_failures
-        ):
+        if self.provider_retry_max_per_request < self.provider_retry_max_consecutive:
             raise ValueError(
                 "PROVIDER_RETRY_MAX_PER_REQUEST must be >= "
                 "PROVIDER_RETRY_MAX_CONSECUTIVE"
@@ -356,27 +304,27 @@ class Settings(BaseSettings):
 
     @property
     def chainnode_api_keys_list(self) -> list[str]:
-        return self._pool("chainnode_api_keys", self.chainnode_api_key)
+        return parse_unique_csv_preserve_case(self.chainnode_api_keys)
 
     @property
     def chainnode_text_models_list(self) -> list[str]:
-        return self._pool("chainnode_text_models", self.chainnode_text_model)
+        return parse_unique_csv_preserve_case(self.chainnode_text_models)
 
     @property
     def chainnode_vision_models_list(self) -> list[str]:
-        return self._pool("chainnode_vision_models", self.chainnode_vision_model)
+        return parse_unique_csv_preserve_case(self.chainnode_vision_models)
 
     @property
     def xkiro_api_keys_list(self) -> list[str]:
-        return self._pool("xkiro_api_keys", self.xkiro_api_key)
+        return parse_unique_csv_preserve_case(self.xkiro_api_keys)
 
     @property
     def xkiro_text_models_list(self) -> list[str]:
-        return self._pool("xkiro_text_models", self.xkiro_text_model)
+        return parse_unique_csv_preserve_case(self.xkiro_text_models)
 
     @property
     def xkiro_vision_models_list(self) -> list[str]:
-        return self._pool("xkiro_vision_models", self.xkiro_vision_model)
+        return parse_unique_csv_preserve_case(self.xkiro_vision_models)
 
 
 @lru_cache

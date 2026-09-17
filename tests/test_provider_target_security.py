@@ -82,7 +82,9 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
             self.fail("validation error exposed raw xKiro credential input")
-        self.assertIn("XKIRO_TEXT_MODELS/XKIRO_TEXT_MODEL", rendered)
+        self.assertIn("XKIRO_TEXT_MODELS", rendered)
+        retired = "XKIRO_TEXT_" + "MODEL"
+        self.assertNotIn(f"{retired} là", rendered)
 
     def test_validation_error_hides_canonical_chainnode_credentials(self) -> None:
         secrets = (
@@ -102,7 +104,9 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
             self.fail("validation error exposed raw Chainnode credential input")
-        self.assertIn("CHAINNODE_TEXT_MODELS/CHAINNODE_TEXT_MODEL", rendered)
+        self.assertIn("CHAINNODE_TEXT_MODELS", rendered)
+        retired = "CHAINNODE_TEXT_" + "MODEL"
+        self.assertNotIn(f"{retired} là", rendered)
 
 
 class ProviderTargetDiagnosticSecurityTests(unittest.IsolatedAsyncioTestCase):

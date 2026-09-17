@@ -12,15 +12,19 @@ import httpx
 import app.ai.xkiro as xkiro
 
 
+def _settings(*, timeout: float = 25.0) -> SimpleNamespace:
+    return SimpleNamespace(
+        xkiro_api_keys_list=["test-key"],
+        xkiro_base_url="https://api.xkiro.com/v1",
+        xkiro_text_models_list=["test-text-model"],
+        xkiro_vision_models_list=["test-vision-model"],
+        xkiro_request_timeout_sec=timeout,
+    )
+
+
 class XKiroProviderTests(unittest.TestCase):
     def test_text_factory_uses_xkiro_contract(self) -> None:
-        settings = SimpleNamespace(
-            xkiro_api_key="test-key",
-            xkiro_text_model="test-text-model",
-            xkiro_vision_model="test-vision-model",
-            xkiro_request_timeout_sec=25.0,
-        )
-        provider = xkiro.make_xkiro_provider(settings)
+        provider = xkiro.make_xkiro_provider(_settings())
         try:
             self.assertEqual(provider.name, "xkiro")
             self.assertEqual(provider.model, "test-text-model")
@@ -34,14 +38,20 @@ class XKiroProviderTests(unittest.TestCase):
         finally:
             asyncio.run(provider.aclose())
 
+    def test_text_factory_uses_configured_base_url(self) -> None:
+        settings = _settings()
+        settings.xkiro_base_url = "https://gateway.example/xkiro/v1"
+        provider = xkiro.make_xkiro_provider(settings)
+        try:
+            self.assertEqual(
+                str(provider._client.base_url),
+                "https://gateway.example/xkiro/v1/",
+            )
+        finally:
+            asyncio.run(provider.aclose())
+
     def test_vision_factory_uses_one_image_capability(self) -> None:
-        settings = SimpleNamespace(
-            xkiro_api_key="test-key",
-            xkiro_text_model="test-text-model",
-            xkiro_vision_model="test-vision-model",
-            xkiro_request_timeout_sec=25.0,
-        )
-        provider = xkiro.make_xkiro_provider(settings, vision=True)
+        provider = xkiro.make_xkiro_provider(_settings(), vision=True)
         try:
             self.assertEqual(provider.model, "test-vision-model")
             self.assertEqual(provider.capabilities.route, "vision")
@@ -51,15 +61,12 @@ class XKiroProviderTests(unittest.TestCase):
             asyncio.run(provider.aclose())
 
     def test_missing_route_model_is_rejected(self) -> None:
-        settings = SimpleNamespace(
-            xkiro_api_key="test-key",
-            xkiro_text_model="",
-            xkiro_vision_model="",
-            xkiro_request_timeout_sec=25.0,
-        )
-        with self.assertRaisesRegex(ValueError, "XKIRO_TEXT_MODEL"):
+        settings = _settings()
+        settings.xkiro_text_models_list = []
+        settings.xkiro_vision_models_list = []
+        with self.assertRaisesRegex(ValueError, "XKIRO_TEXT_MODELS"):
             xkiro.make_xkiro_provider(settings)
-        with self.assertRaisesRegex(ValueError, "XKIRO_VISION_MODEL"):
+        with self.assertRaisesRegex(ValueError, "XKIRO_VISION_MODELS"):
             xkiro.make_xkiro_provider(settings, vision=True)
 
 
@@ -75,13 +82,7 @@ class XKiroWireContractTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        settings = SimpleNamespace(
-            xkiro_api_key="test-key",
-            xkiro_text_model="test-text-model",
-            xkiro_vision_model="test-vision-model",
-            xkiro_request_timeout_sec=30.0,
-        )
-        provider = xkiro.make_xkiro_provider(settings)
+        provider = xkiro.make_xkiro_provider(_settings(timeout=30.0))
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://api.xkiro.com/v1/",

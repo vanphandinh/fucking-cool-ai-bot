@@ -1,4 +1,4 @@
-"""Backward-compatible plural provider-pool configuration contracts."""
+"""Plural-only provider-pool configuration contracts."""
 
 from __future__ import annotations
 
@@ -12,31 +12,12 @@ from app.config import Settings
 
 
 class ProviderPoolConfigTests(unittest.TestCase):
-    def test_legacy_scalar_becomes_one_element_pool(self) -> None:
+    def test_plural_pools_preserve_case_and_deduplicate(self) -> None:
         settings = Settings(
             _env_file=None,
-            chainnode_api_key="ChainLegacyKey",
-            chainnode_text_model="Legacy/ModelCase",
-            xkiro_api_key="LegacyKeyCase",
-            xkiro_text_model="LegacyX/Model",
-            vision_enabled=False,
-        )
-
-        self.assertEqual(settings.chainnode_api_keys_list, ["ChainLegacyKey"])
-        self.assertEqual(settings.chainnode_text_models_list, ["Legacy/ModelCase"])
-        self.assertEqual(settings.xkiro_api_keys_list, ["LegacyKeyCase"])
-        self.assertEqual(settings.xkiro_text_models_list, ["LegacyX/Model"])
-
-    def test_explicit_plural_wins_and_preserves_case(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            chainnode_api_key="legacy-chain-key",
             chainnode_api_keys="ChainOne,chainTWO,ChainOne",
-            chainnode_text_model="legacy",
             chainnode_text_models="Model/A,model/B,Model/A",
-            xkiro_api_key="legacy-key",
             xkiro_api_keys="KeyOne,keyTWO",
-            xkiro_text_model="legacy-model",
             xkiro_text_models="X/One,x/Two",
             vision_enabled=False,
         )
@@ -46,16 +27,12 @@ class ProviderPoolConfigTests(unittest.TestCase):
         self.assertEqual(settings.xkiro_api_keys_list, ["KeyOne", "keyTWO"])
         self.assertEqual(settings.xkiro_text_models_list, ["X/One", "x/Two"])
 
-    def test_explicit_blank_plural_disables_scalar_fallback(self) -> None:
+    def test_explicit_blank_plural_pool_is_empty(self) -> None:
         settings = Settings(
             _env_file=None,
-            chainnode_api_key="legacy-chain-key",
             chainnode_api_keys="",
-            chainnode_text_model="legacy",
             chainnode_text_models="",
-            xkiro_api_key="legacy-key",
             xkiro_api_keys="",
-            xkiro_text_model="legacy-model",
             xkiro_text_models="",
             text_provider_order="",
             vision_provider_order="",

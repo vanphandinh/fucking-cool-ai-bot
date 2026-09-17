@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import httpx
 
@@ -24,6 +26,15 @@ EXPECTED_CODE = "47-GREEN-CIRCLE"
 class ChainnodeVisionProbeTests(unittest.TestCase):
     def test_probe_script_exists(self) -> None:
         self.assertTrue(PROBE_PATH.is_file())
+
+    def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
+        module = _load_probe()
+        with patch.dict(
+            os.environ,
+            {"CHAINNODE_API_KEYS": "  VisionKeyOne  , VisionKeyTwo ,  "},
+            clear=False,
+        ):
+            self.assertEqual(module.chainnode_probe_credential(), "VisionKeyOne")
 
     def test_default_model_matrix_matches_requested_candidates(self) -> None:
         module = _load_probe()

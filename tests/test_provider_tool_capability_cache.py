@@ -91,9 +91,10 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
 
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
-        xkiro_api_key="unused",
-        xkiro_text_model="shared-model",
-        xkiro_vision_model="shared-model",
+        xkiro_api_keys_list=["unused"],
+        xkiro_text_models_list=["shared-model"],
+        xkiro_vision_models_list=["shared-model"],
+        xkiro_base_url="https://api.xkiro.com/v1",
         xkiro_request_timeout_sec=30.0,
     )
 

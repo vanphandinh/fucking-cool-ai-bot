@@ -57,6 +57,14 @@ _TOOL = {
 }
 
 
+def chainnode_probe_credential() -> str:
+    for part in os.environ.get("CHAINNODE_API_KEYS", "").split(","):
+        value = part.strip()
+        if value:
+            return value
+    return ""
+
+
 def _probe_png_bytes() -> bytes:
     width, height = 640, 320
     pixels = bytearray([255, 255, 255] * width * height)
@@ -531,9 +539,9 @@ async def probe_model(
 
 
 async def run(args: argparse.Namespace) -> int:
-    api_key = os.environ.get("CHAINNODE_API_KEY", "").strip()
+    api_key = chainnode_probe_credential()
     if not api_key:
-        print("probe-chainnode-vision: CHAINNODE_API_KEY is required", file=sys.stderr)
+        print("probe-chainnode-vision: CHAINNODE_API_KEYS is required", file=sys.stderr)
         return 2
 
     requested = tuple(part.strip() for part in args.models.split(",") if part.strip())

@@ -50,6 +50,14 @@ _INTERNAL_MARKUP_RE = re.compile(
 )
 
 
+def chainnode_probe_credential() -> str:
+    for part in os.environ.get("CHAINNODE_API_KEYS", "").split(","):
+        value = part.strip()
+        if value:
+            return value
+    return ""
+
+
 def build_chat_payload(
     model: str,
     *,
@@ -514,9 +522,9 @@ async def probe_model(
 
 
 async def run(args: argparse.Namespace) -> int:
-    api_key = os.environ.get("CHAINNODE_API_KEY", "").strip()
+    api_key = chainnode_probe_credential()
     if not api_key:
-        print("probe-chainnode: CHAINNODE_API_KEY is required", file=sys.stderr)
+        print("probe-chainnode: CHAINNODE_API_KEYS is required", file=sys.stderr)
         return 2
 
     base_url = os.environ.get("CHAINNODE_BASE_URL", DEFAULT_BASE_URL).strip()

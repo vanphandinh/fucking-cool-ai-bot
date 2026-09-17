@@ -47,6 +47,8 @@ jobs:
           python -m ruff check .
           python -m pip check
           python -m compileall -q app tests scripts
+      - name: Check canonical environment vocabulary
+        run: python scripts/check_canonical_env_vocabulary.py
       - name: Targeted Crawl4AI tests
         run: |
           python -m unittest discover -s tests -p 'test_crawl4ai*.py' -v

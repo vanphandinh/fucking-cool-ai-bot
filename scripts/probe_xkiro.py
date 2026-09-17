@@ -20,9 +20,15 @@ import secrets
 import sys
 from typing import Any
 
-import httpx
+if __package__ in (None, ""):
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
 
-BASE_URL = "https://api.xkiro.com/v1"
+import httpx  # noqa: E402
+
+from app.config import XKIRO_DEFAULT_BASE_URL  # noqa: E402
+
 DEFAULT_VISION_EXPECT = "47-GREEN-CIRCLE"
 DEFAULT_MAX_RETRY_AFTER = 60.0
 TOOL_RESULT = "XKIRO_TOOL_PROBE_OK"
@@ -39,6 +45,19 @@ TOOL_SCHEMA = {
         },
     },
 }
+
+
+def xkiro_base_url() -> str:
+    configured = os.getenv("XKIRO_BASE_URL", XKIRO_DEFAULT_BASE_URL).strip()
+    return (configured or XKIRO_DEFAULT_BASE_URL).rstrip("/")
+
+
+def xkiro_probe_credential() -> str:
+    for part in os.environ.get("XKIRO_API_KEYS", "").split(","):
+        value = part.strip()
+        if value:
+            return value
+    return ""
 
 
 def emit(event: str, **fields: Any) -> None:
@@ -431,9 +450,9 @@ async def _probe_tool_flow(
 
 
 async def run_probe(args: argparse.Namespace) -> int:
-    api_key = os.getenv("XKIRO_API_KEY", "").strip()
+    api_key = xkiro_probe_credential()
     if not api_key:
-        emit("error", compatible=False, error="XKIRO_API_KEY is required")
+        emit("error", compatible=False, error="XKIRO_API_KEYS is required")
         return 2
 
     if args.vision_model and not args.image:
@@ -447,7 +466,7 @@ async def run_probe(args: argparse.Namespace) -> int:
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(args.timeout)
     async with httpx.AsyncClient(
-        base_url=BASE_URL.rstrip("/") + "/",
+        base_url=xkiro_base_url() + "/",
         headers=headers,
         timeout=timeout,
     ) as client:
@@ -459,6 +478,7 @@ async def run_probe(args: argparse.Namespace) -> int:
             if args.vision_model:
                 requested.append(("vision", args.vision_model, True))
 
+            gate_failed = False
             for route, model_id, require_vision in requested:
                 model = find_model(catalog, model_id)
                 if model is None:
@@ -469,7 +489,8 @@ async def run_probe(args: argparse.Namespace) -> int:
                         compatible=False,
                         errors=["model does not exist in live /models catalog"],
                     )
-                    return 1
+                    gate_failed = True
+                    continue
                 errors = qualification_errors(model, require_vision=require_vision)
                 emit(
                     "catalog_gate",
@@ -479,84 +500,66 @@ async def run_probe(args: argparse.Namespace) -> int:
                     metadata=catalog_summary(model),
                     errors=errors,
                 )
-                if errors:
-                    return 1
+                gate_failed = gate_failed or bool(errors)
 
-            await _probe_plain(
-                client,
-                args.text_model,
-                max_retries=args.max_retries,
-                retry_base_delay=args.retry_base_delay,
-                max_retry_after=args.max_retry_after,
-            )
-            await _probe_tool_flow(
-                client,
-                args.text_model,
-                max_retries=args.max_retries,
-                retry_base_delay=args.retry_base_delay,
-                max_retry_after=args.max_retry_after,
-            )
+            if gate_failed:
+                return 1
 
-            if args.vision_model:
-                data_url = image_data_url(Path(args.image))
-                vision = vision_message(data_url)
-                await _probe_plain(
-                    client,
-                    args.vision_model,
-                    max_retries=args.max_retries,
-                    retry_base_delay=args.retry_base_delay,
-                    max_retry_after=args.max_retry_after,
-                    messages=[vision],
-                    event="vision_chat",
-                    expected_content=args.vision_expect,
-                )
-                await _probe_tool_flow(
-                    client,
-                    args.vision_model,
-                    max_retries=args.max_retries,
-                    retry_base_delay=args.retry_base_delay,
-                    max_retry_after=args.max_retry_after,
-                    user_message=vision_tool_message(data_url),
-                    event_prefix="vision_tool",
-                )
+            for _, model_id, require_vision in requested:
+                if require_vision:
+                    data_url = image_data_url(args.image)
+                    await _probe_plain(
+                        client,
+                        model_id,
+                        max_retries=args.max_retries,
+                        retry_base_delay=args.retry_base_delay,
+                        max_retry_after=args.max_retry_after,
+                        messages=[vision_message(data_url)],
+                        event="vision_chat",
+                        expected_content=args.vision_expect,
+                    )
+                    await _probe_tool_flow(
+                        client,
+                        model_id,
+                        max_retries=args.max_retries,
+                        retry_base_delay=args.retry_base_delay,
+                        max_retry_after=args.max_retry_after,
+                        user_message=vision_tool_message(data_url),
+                        event_prefix="vision_tool",
+                    )
+                else:
+                    await _probe_plain(
+                        client,
+                        model_id,
+                        max_retries=args.max_retries,
+                        retry_base_delay=args.retry_base_delay,
+                        max_retry_after=args.max_retry_after,
+                    )
+                    await _probe_tool_flow(
+                        client,
+                        model_id,
+                        max_retries=args.max_retries,
+                        retry_base_delay=args.retry_base_delay,
+                        max_retry_after=args.max_retry_after,
+                    )
         except (httpx.HTTPError, OSError, ValueError) as exc:
             emit("error", compatible=False, error=str(exc))
             return 1
 
-    emit(
-        "complete",
-        compatible=True,
-        text_model=args.text_model,
-        vision_model=args.vision_model or None,
-    )
+    emit("result", compatible=True)
     return 0
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--text-model", required=True)
     parser.add_argument("--vision-model")
-    parser.add_argument("--image")
-    parser.add_argument(
-        "--vision-expect",
-        default=DEFAULT_VISION_EXPECT,
-        help=(
-            "Expected visible verification marker for the known vision fixture "
-            f"(default: {DEFAULT_VISION_EXPECT})"
-        ),
-    )
+    parser.add_argument("--image", type=Path)
+    parser.add_argument("--vision-expect", default=DEFAULT_VISION_EXPECT)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--max-retries", type=int, default=2)
-    parser.add_argument("--retry-base-delay", type=float, default=0.5)
-    parser.add_argument(
-        "--max-retry-after",
-        type=float,
-        default=DEFAULT_MAX_RETRY_AFTER,
-        help=(
-            "Maximum numeric Retry-After wait in seconds before qualification "
-            f"fails closed (default: {DEFAULT_MAX_RETRY_AFTER:g})"
-        ),
-    )
+    parser.add_argument("--retry-base-delay", type=float, default=1.0)
+    parser.add_argument("--max-retry-after", type=float, default=DEFAULT_MAX_RETRY_AFTER)
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error("--timeout must be > 0")
@@ -570,7 +573,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return asyncio.run(run_probe(parse_args(argv)))
+    return asyncio.run(run_probe(parse_args(argv or [])))
 
 
 if __name__ == "__main__":

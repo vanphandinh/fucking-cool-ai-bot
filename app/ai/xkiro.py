@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from ..config import Settings
+from ..config import Settings, XKIRO_DEFAULT_BASE_URL
 from .base import OpenAICompatProvider
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
-
-_BASE_URL = "https://api.xkiro.com/v1"
 
 
 def make_xkiro_provider(
@@ -20,24 +18,31 @@ def make_xkiro_provider(
     credential_id: str = "cred-1",
     target_id: str | None = None,
 ) -> OpenAICompatProvider:
+    keys = settings.xkiro_api_keys_list
     configured_key = str(
-        api_key if api_key is not None else settings.xkiro_api_key or ""
+        api_key if api_key is not None else (keys[0] if keys else "")
     ).strip()
     if not configured_key:
-        raise ValueError("XKIRO_API_KEY là bắt buộc khi khởi tạo xKiro provider")
+        raise ValueError("XKIRO_API_KEYS là bắt buộc khi khởi tạo xKiro provider")
 
+    models = (
+        settings.xkiro_vision_models_list
+        if vision
+        else settings.xkiro_text_models_list
+    )
     configured_model = str(
-        model
-        if model is not None
-        else (settings.xkiro_vision_model if vision else settings.xkiro_text_model)
+        model if model is not None else (models[0] if models else "")
     ).strip()
-    setting_name = "XKIRO_VISION_MODEL" if vision else "XKIRO_TEXT_MODEL"
+    setting_name = "XKIRO_VISION_MODELS" if vision else "XKIRO_TEXT_MODELS"
     if not configured_model:
         raise ValueError(f"{setting_name} là bắt buộc khi khởi tạo xKiro provider")
 
+    configured_base_url = (
+        str(settings.xkiro_base_url or "").strip() or XKIRO_DEFAULT_BASE_URL
+    )
     provider = OpenAICompatProvider(
         name=name,
-        base_url=_BASE_URL,
+        base_url=configured_base_url,
         api_key=configured_key,
         model=configured_model,
         timeout=settings.xkiro_request_timeout_sec,
