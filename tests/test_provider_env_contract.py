@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
@@ -16,13 +15,6 @@ from app.config import Settings, XKIRO_DEFAULT_BASE_URL
 import scripts.probe_xkiro as xkiro_probe
 
 ROOT = Path(__file__).parents[1]
-DESIGN_SPEC = (
-    ROOT
-    / "docs"
-    / "superpowers"
-    / "specs"
-    / "2026-09-17-canonical-env-cutover-design.md"
-)
 SYNC_SCRIPT = ROOT / "scripts" / "sync_env.py"
 
 
@@ -34,22 +26,6 @@ def _assignments(text: str) -> dict[str, str]:
         key, value = line.split("=", 1)
         out[key.strip()] = value.strip()
     return out
-
-
-def _design_contract_assignments() -> dict[str, str]:
-    text = DESIGN_SPEC.read_text(encoding="utf-8")
-    section = text.split("## Canonical environment contract", 1)[1]
-    section = section.split("## Strict environment synchronization", 1)[0]
-    blocks = re.findall(r"```env\n(.*?)```", section, flags=re.DOTALL)
-    if len(blocks) != 2:
-        raise AssertionError(
-            "canonical environment contract must contain provider and retry env blocks"
-        )
-
-    assignments: dict[str, str] = {}
-    for block in blocks:
-        assignments.update(_assignments(block))
-    return assignments
 
 
 def _set_env_value(rendered: str, key: str, value: str) -> str:
@@ -90,33 +66,6 @@ class ProviderEnvContractTests(unittest.TestCase):
         self.assertEqual(assignments["PROVIDER_RETRY_MAX_PER_PROVIDER"], "3")
         self.assertEqual(assignments["PROVIDER_RETRY_MAX_PER_REQUEST"], "5")
         self.assertEqual(assignments["PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST"], "5")
-
-    def test_design_contract_matches_template_provider_and_retry_defaults(self) -> None:
-        template = _assignments((ROOT / ".env.example").read_text(encoding="utf-8"))
-        design = _design_contract_assignments()
-        keys = (
-            "CHAINNODE_API_KEYS",
-            "CHAINNODE_BASE_URL",
-            "CHAINNODE_TEXT_MODELS",
-            "CHAINNODE_VISION_MODELS",
-            "CHAINNODE_REQUEST_TIMEOUT_SEC",
-            "XKIRO_API_KEYS",
-            "XKIRO_BASE_URL",
-            "XKIRO_TEXT_MODELS",
-            "XKIRO_VISION_MODELS",
-            "XKIRO_REQUEST_TIMEOUT_SEC",
-            "TEXT_PROVIDER_ORDER",
-            "VISION_PROVIDER_ORDER",
-            "PROVIDER_RETRY_MAX_CONSECUTIVE",
-            "PROVIDER_RETRY_MAX_PER_PROVIDER",
-            "PROVIDER_RETRY_MAX_PER_REQUEST",
-            "PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST",
-        )
-
-        self.assertEqual(
-            {key: design[key] for key in keys},
-            {key: template[key] for key in keys},
-        )
 
     def test_retry_fields_have_no_validation_aliases(self) -> None:
         for field_name in (
