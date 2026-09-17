@@ -9,7 +9,6 @@ Xem thêm:
 - [Search resilience](docs/SEARCH_RESILIENCE.md)
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md)
 - [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md)
-- [SearXNG DuckDuckGo incident 2026-09-08](docs/SEARXNG_DDG_INCIDENT_2026-09-08.md)
 - [Đồng bộ `.env`](docs/ENV_SYNC.md)
 
 ---
@@ -139,6 +138,7 @@ use_default_settings:
       - startpage images
       - duckduckgo
       - wikipedia
+      - wikidata
 
 server:
   secret_key: "<secret thật>"
@@ -156,11 +156,10 @@ Lý do chính:
 - `ahmia`, `torch`: cần Tor, không dùng trong deployment này.
 - ba Startpage engines: workaround cho parser/response issue đã quan sát.
 - `duckduckgo`: HTML engine có thể CAPTCHA trên datacenter egress.
-- không enable `duckduckgo web` override theo incident hiện tại.
+- không enable `duckduckgo web` override theo current settings policy.
 - `wikipedia`: workaround cho lỗi HTTP 400 đã quan sát.
+- `wikidata`: tránh SPARQL timeout vượt global timeout và late-result warnings đã quan sát; bot không phụ thuộc structured Wikidata results.
 - `json` bắt buộc cho bot JSON API.
-
-Chi tiết DuckDuckGo: [docs/SEARXNG_DDG_INCIDENT_2026-09-08.md](docs/SEARXNG_DDG_INCIDENT_2026-09-08.md).
 
 ---
 

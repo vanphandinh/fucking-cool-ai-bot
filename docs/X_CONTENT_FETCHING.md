@@ -313,9 +313,8 @@ Vì vậy:
 - không sửa engine SearXNG chỉ vì direct-X resolver fail;
 - không test direct-X bằng cách search raw X URL.
 
-Xem thêm [../DEPLOY_SEARXNG_VPS.md](../DEPLOY_SEARXNG_VPS.md),
-[CRAWL4AI_INTEGRATION.md](CRAWL4AI_INTEGRATION.md) và
-[SEARXNG_DDG_INCIDENT_2026-09-08.md](SEARXNG_DDG_INCIDENT_2026-09-08.md).
+Xem thêm [../DEPLOY_SEARXNG_VPS.md](../DEPLOY_SEARXNG_VPS.md) và
+[CRAWL4AI_INTEGRATION.md](CRAWL4AI_INTEGRATION.md).
 
 ## 12. Deferred adapters
 

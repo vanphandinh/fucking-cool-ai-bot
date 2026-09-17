@@ -1,8 +1,10 @@
 # Documentation index
 
-Tài liệu trong repo được chia thành **canonical/current guides** và một số audit/incident records không chứa superseded environment contracts. Khi có khác biệt, source code + tests + `.env.example` là source of truth cao nhất.
+Tài liệu trong repo chỉ mô tả **trạng thái vận hành hiện tại**. Audit, incident, migration record, implementation plan và design cũ được lưu trong Git history thay vì giữ trong working tree.
 
-## Canonical / current guides
+Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source code + tests hiện tại đứng cao nhất.
+
+## Current guides
 
 - [`../README.md`](../README.md) — kiến trúc tổng quan, cấu hình chính, quick start và verification.
 - [`../DEPLOY_SEARXNG_VPS.md`](../DEPLOY_SEARXNG_VPS.md) — triển khai SearXNG private trên VPS.
@@ -16,21 +18,14 @@ Tài liệu trong repo được chia thành **canonical/current guides** và m�
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — strict `.env` synchronization, canonical provider contract và secret-file permissions.
 
-## Retained records
-
-- [`AUDIT_2026-09-10.md`](AUDIT_2026-09-10.md) — runtime hardening audit.
-- [`SEARXNG_DDG_INCIDENT_2026-09-08.md`](SEARXNG_DDG_INCIDENT_2026-09-08.md) — search incident record.
-- [`superpowers/plans/`](superpowers/plans/) — retained plans that do not preserve removed environment/provider contracts.
-- [`superpowers/specs/`](superpowers/specs/) — retained durable design specs.
-
-Git history is the archive for superseded environment/provider contracts; current tracked documentation must not teach those contracts.
-
 ## Source-of-truth order
 
 1. source code + tests hiện tại;
 2. `.env.example`, `docker-compose.yml`, `searxng/settings.example.yml` và CI workflow;
-3. canonical/current guides ở trên;
-4. retained audit/incident/design records.
+3. `README.md` và current operator guides ở trên;
+4. Git history cho audit, incident, migration record, plan và design đã hoàn thành.
+
+Active documentation không được dạy superseded environment/provider contracts.
 
 ## Current runtime snapshot
 
