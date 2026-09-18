@@ -12,9 +12,7 @@ class SearchPolicyPromptTests(unittest.TestCase):
         settings = Settings(_env_file=None, bot_username="testbot")
         self.prompt = Orchestrator(settings, SimpleNamespace()).system_prompt().lower()
         self.web_search_description = next(
-            tool["function"]["description"]
-            for tool in TOOLS
-            if tool["function"]["name"] == "web_search"
+            tool.description for tool in TOOLS if tool.name == "web_search"
         ).lower()
 
     def test_bare_translate_defaults_to_vietnamese(self):
@@ -66,12 +64,10 @@ class SearchPolicyPromptTests(unittest.TestCase):
         self.assertIn("không tìm mirror", self.prompt)
 
     def test_fetch_url_tool_supports_x_thread_mode(self):
-        fetch_tool = next(
-            tool["function"] for tool in TOOLS if tool["function"]["name"] == "fetch_url"
-        )
-        mode = fetch_tool["parameters"]["properties"]["mode"]
+        fetch_tool = next(tool for tool in TOOLS if tool.name == "fetch_url")
+        mode = fetch_tool.parameters["properties"]["mode"]
         self.assertEqual(mode["enum"], ["auto", "x_thread"])
-        self.assertIn("x/thread", fetch_tool["description"].lower())
+        self.assertIn("x/thread", fetch_tool.description.lower())
 
 
 if __name__ == "__main__":

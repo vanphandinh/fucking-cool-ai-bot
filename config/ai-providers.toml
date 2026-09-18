@@ -1,0 +1,45 @@
+[[providers]]
+id = "chainnode"
+driver = "openai-chat"
+default_base_url = "https://dn.chainno.de/v1"
+default_timeout_sec = 60.0
+
+[providers.routes.text]
+enabled = true
+
+[providers.routes.vision]
+enabled = true
+supports_vision = true
+max_images = 1
+
+[[providers]]
+id = "xkiro"
+driver = "openai-chat"
+default_base_url = "https://api.xkiro.com/v1"
+default_timeout_sec = 60.0
+
+[providers.routes.text]
+enabled = true
+
+[providers.routes.vision]
+enabled = true
+supports_vision = true
+max_images = 1
+
+[[providers.recovery]]
+status = 402
+action = "rotate_target"
+scope = "credential"
+effect = "disable"
+
+[[providers.recovery]]
+status = 403
+action = "rotate_target"
+scope = "entitlement"
+effect = "disable"
+
+[[providers.recovery]]
+status = 429
+action = "rotate_target"
+scope = "credential"
+effect = "cooldown"

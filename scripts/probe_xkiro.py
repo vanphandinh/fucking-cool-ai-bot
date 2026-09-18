@@ -27,8 +27,6 @@ if __package__ in (None, ""):
 
 import httpx  # noqa: E402
 
-from app.config import XKIRO_DEFAULT_BASE_URL  # noqa: E402
-
 DEFAULT_VISION_EXPECT = "47-GREEN-CIRCLE"
 DEFAULT_MAX_RETRY_AFTER = 60.0
 TOOL_RESULT = "XKIRO_TOOL_PROBE_OK"
@@ -47,13 +45,17 @@ TOOL_SCHEMA = {
 }
 
 
-def xkiro_base_url() -> str:
-    configured = os.getenv("XKIRO_BASE_URL", XKIRO_DEFAULT_BASE_URL).strip()
-    return (configured or XKIRO_DEFAULT_BASE_URL).rstrip("/")
+def provider_base_url() -> str:
+    default_base_url = "https://api.xkiro.com/v1"
+    configured = os.getenv(
+        "AI_PROVIDERS__XKIRO__BASE_URL",
+        default_base_url,
+    ).strip()
+    return (configured or default_base_url).rstrip("/")
 
 
 def xkiro_probe_credential() -> str:
-    for part in os.environ.get("XKIRO_API_KEYS", "").split(","):
+    for part in os.environ.get("AI_PROVIDERS__XKIRO__API_KEYS", "").split(","):
         value = part.strip()
         if value:
             return value
@@ -452,7 +454,7 @@ async def _probe_tool_flow(
 async def run_probe(args: argparse.Namespace) -> int:
     api_key = xkiro_probe_credential()
     if not api_key:
-        emit("error", compatible=False, error="XKIRO_API_KEYS is required")
+        emit("error", compatible=False, error="AI_PROVIDERS__XKIRO__API_KEYS is required")
         return 2
 
     if args.vision_model and not args.image:
@@ -466,7 +468,7 @@ async def run_probe(args: argparse.Namespace) -> int:
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(args.timeout)
     async with httpx.AsyncClient(
-        base_url=xkiro_base_url() + "/",
+        base_url=provider_base_url() + "/",
         headers=headers,
         timeout=timeout,
     ) as client:

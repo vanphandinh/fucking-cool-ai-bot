@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from app.ai.contracts import ChatRequest
 from app.ai.router import CompletionResult
 from app.config import Settings
 from app.core.orchestrator import Orchestrator
@@ -13,7 +14,7 @@ class _FetchTwiceRouter:
     def __init__(self):
         self.outputs = []
 
-    async def complete(self, messages, tools, tool_executor, **kwargs):
+    async def complete(self, request: ChatRequest, tool_executor, **kwargs):
         args = {"url": "https://example.org/article", "mode": "auto"}
         self.outputs.append(await tool_executor("fetch_url", args))
         self.outputs.append(await tool_executor("fetch_url", args))
@@ -21,7 +22,7 @@ class _FetchTwiceRouter:
 
 
 class _ThreadRouter:
-    async def complete(self, messages, tools, tool_executor, **kwargs):
+    async def complete(self, request: ChatRequest, tool_executor, **kwargs):
         await tool_executor(
             "fetch_url",
             {"url": "https://x.com/a/status/1234567890", "mode": "x_thread"},
@@ -30,7 +31,7 @@ class _ThreadRouter:
 
 
 class _FailureRouter:
-    async def complete(self, messages, tools, tool_executor, **kwargs):
+    async def complete(self, request: ChatRequest, tool_executor, **kwargs):
         self.output = await tool_executor(
             "fetch_url", {"url": "https://x.com/a/status/1234567890"}
         )

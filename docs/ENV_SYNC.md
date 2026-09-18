@@ -24,17 +24,17 @@ Permission hardening là một phần của sync vì `.env` chứa Telegram toke
 Runtime và template chỉ dùng plural credential/model pools:
 
 ```env
-CHAINNODE_API_KEYS=
-CHAINNODE_BASE_URL=https://dn.chainno.de/v1
-CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__CHAINNODE__API_KEYS=
+AI_PROVIDERS__CHAINNODE__BASE_URL=https://dn.chainno.de/v1
+AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-XKIRO_API_KEYS=
-XKIRO_BASE_URL=https://api.xkiro.com/v1
-XKIRO_TEXT_MODELS=
-XKIRO_VISION_MODELS=
-XKIRO_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__XKIRO__API_KEYS=
+AI_PROVIDERS__XKIRO__BASE_URL=https://api.xkiro.com/v1
+AI_PROVIDERS__XKIRO__TEXT_MODELS=
+AI_PROVIDERS__XKIRO__VISION_MODELS=
+AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
@@ -45,7 +45,7 @@ PROVIDER_RETRY_MAX_PER_REQUEST=5
 PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả Chainnode và xKiro mở rộng target theo deterministic model-major × credential order. `XKIRO_BASE_URL` mặc định là `https://api.xkiro.com/v1` và được dùng chung bởi runtime và qualification probe.
+Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả Chainnode và xKiro mở rộng target theo deterministic model-major × credential order. `AI_PROVIDERS__XKIRO__BASE_URL` mặc định là `https://api.xkiro.com/v1` và được dùng chung bởi runtime và qualification probe.
 
 ## Deployment sequence
 
@@ -75,7 +75,7 @@ Không commit `.env` hoặc bản backup chứa secret vào repository.
 Sau sync, kiểm tra các current keys và permission:
 
 ```bash
-grep -E '^(CHAINNODE_|XKIRO_|PROVIDER_RETRY_|PROVIDER_RECOVERY_|TEXT_PROVIDER_ORDER|VISION_PROVIDER_ORDER|VISION_ENABLED)' .env
+grep -E '^(AI_PROVIDERS__|PROVIDER_RETRY_|PROVIDER_RECOVERY_|TEXT_PROVIDER_ORDER|VISION_PROVIDER_ORDER|VISION_ENABLED)' .env
 stat -c '%a %n' .env
 ```
 

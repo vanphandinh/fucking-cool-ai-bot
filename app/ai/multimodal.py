@@ -1,34 +1,37 @@
-"""Build OpenAI-compatible multimodal user content at the provider boundary."""
+"""Build protocol-independent multimodal user message parts."""
 
 from __future__ import annotations
 
-import base64
-
-from ..core.request import ImageAttachment, UserRequest
-
-
-def _image_part(image: ImageAttachment) -> dict:
-    encoded = base64.b64encode(image.data).decode("ascii")
-    return {
-        "type": "image_url",
-        "image_url": {"url": f"data:{image.mime_type};base64,{encoded}"},
-    }
+from .contracts import ImagePart, MessagePart, TextPart
+from ..core.request import UserRequest
 
 
-def build_user_content(request: UserRequest) -> str | list[dict]:
+def build_user_parts(request: UserRequest) -> tuple[MessagePart, ...]:
     if not request.requires_vision:
-        parts: list[str] = []
+        text_parts: list[str] = []
         if request.quoted_text:
-            parts.append(f"Nội dung tin đang được reply:\n{request.quoted_text[:1500]}")
-        parts.append(f"Câu hỏi của người dùng:\n{request.text[:4000]}")
-        return "\n\n".join(parts)
+            text_parts.append(
+                f"Nội dung tin đang được reply:\n{request.quoted_text[:1500]}"
+            )
+        text_parts.append(f"Câu hỏi của người dùng:\n{request.text[:4000]}")
+        return (TextPart("\n\n".join(text_parts)),)
 
-    content: list[dict] = []
+    parts: list[MessagePart] = []
     if request.quoted_text:
-        content.append(
-            {"type": "text", "text": f"Nội dung tin đang được reply:\n{request.quoted_text[:1500]}"}
+        parts.append(
+            TextPart(
+                f"Nội dung tin đang được reply:\n{request.quoted_text[:1500]}"
+            )
         )
-    content.extend(_image_part(image) for image in request.images if image.source == "reply")
-    content.append({"type": "text", "text": f"Câu hỏi của người dùng:\n{request.text[:4000]}"})
-    content.extend(_image_part(image) for image in request.images if image.source == "current")
-    return content
+    parts.extend(
+        ImagePart(image.mime_type, image.data)
+        for image in request.images
+        if image.source == "reply"
+    )
+    parts.append(TextPart(f"Câu hỏi của người dùng:\n{request.text[:4000]}"))
+    parts.extend(
+        ImagePart(image.mime_type, image.data)
+        for image in request.images
+        if image.source == "current"
+    )
+    return tuple(parts)

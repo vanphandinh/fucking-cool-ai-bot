@@ -1,104 +1,127 @@
-"""Pure recovery-classifier contracts for provider target pools."""
+"""Pure recovery-classifier contracts for declarative target policies."""
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import MappingProxyType
 import unittest
 
 from app.ai.base import ProviderError
+from app.ai.capabilities import ProviderCapabilities
 from app.ai.recovery import (
     HealthEffect,
     HealthScope,
     RecoveryAction,
+    RecoveryDecision,
+    RecoveryPolicy,
     classify_recovery,
 )
-from app.ai.target import ProviderTargetIdentity
+from app.ai.target import ProviderTargetIdentity, TargetSpec
 
 
-def identity(family: str = "chainnode") -> ProviderTargetIdentity:
-    return ProviderTargetIdentity(
-        family=family,
-        route="text",
-        model="Model/Case",
-        credential_id="cred-1",
-        target_id=f"{family}:text:m1:c1",
+def spec(*, overrides: dict[int, RecoveryDecision] | None = None) -> TargetSpec:
+    return TargetSpec(
+        identity=ProviderTargetIdentity(
+            family="demo",
+            route="text",
+            model="Model/Case",
+            credential_id="cred-1",
+            target_id="demo:text:m1:c1",
+        ),
+        driver="fake",
+        capabilities=ProviderCapabilities(route="text"),
+        base_url="https://example.invalid/v1",
+        request_timeout_sec=60.0,
+        recovery_policy=RecoveryPolicy(
+            MappingProxyType(dict(overrides or {}))
+        ),
     )
 
 
 class ProviderRecoveryPolicyTests(unittest.TestCase):
-    def test_chainnode_429_is_model_scoped_rotation(self) -> None:
+    def assert_decision(self, status: int, expected, *, overrides=None, transient=False):
         decision = classify_recovery(
-            identity("chainnode"),
-            ProviderError("quota", status_code=429, transient=True),
+            spec(overrides=overrides),
+            ProviderError("failure", status_code=status, transient=transient),
         )
-        self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
-        self.assertEqual(decision.health_scope, HealthScope.MODEL)
-        self.assertEqual(decision.health_effect, HealthEffect.COOLDOWN)
-
-    def test_xkiro_429_is_credential_scoped_rotation(self) -> None:
-        decision = classify_recovery(
-            identity("xkiro"),
-            ProviderError("quota", status_code=429, transient=True),
-        )
-        self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
-        self.assertEqual(decision.health_scope, HealthScope.CREDENTIAL)
-        self.assertEqual(decision.health_effect, HealthEffect.COOLDOWN)
-
-    def test_auth_and_account_failures_are_credential_scoped(self) -> None:
-        for status in (401, 402):
-            with self.subTest(status=status):
-                decision = classify_recovery(
-                    identity("xkiro"),
-                    ProviderError("account", status_code=status, transient=False),
-                )
-                self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
-                self.assertEqual(decision.health_scope, HealthScope.CREDENTIAL)
-                self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
-
-    def test_chainnode_402_keeps_generic_family_fallback_semantics(self) -> None:
-        decision = classify_recovery(
-            identity("chainnode"),
-            ProviderError("account", status_code=402, transient=False),
+        self.assertEqual(
+            (decision.action, decision.health_scope, decision.health_effect),
+            expected,
         )
 
-        self.assertEqual(decision.action, RecoveryAction.FALLBACK_FAMILY)
-        self.assertEqual(decision.health_scope, HealthScope.FAMILY)
-        self.assertEqual(decision.health_effect, HealthEffect.RECORD_ONLY)
-
-    def test_xkiro_403_is_entitlement_scoped_disable(self) -> None:
-        decision = classify_recovery(
-            identity("xkiro"),
-            ProviderError("entitlement", status_code=403, transient=False),
+    def test_default_429_is_model_cooldown_rotation(self) -> None:
+        self.assert_decision(
+            429,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.MODEL, HealthEffect.COOLDOWN),
         )
 
-        self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
-        self.assertEqual(decision.health_scope, HealthScope.ENTITLEMENT)
-        self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
-
-    def test_model_not_found_is_model_scoped_disable(self) -> None:
-        decision = classify_recovery(
-            identity("chainnode"),
-            ProviderError("model", status_code=404, transient=False),
+    def test_override_429_can_be_credential_cooldown_rotation(self) -> None:
+        override = RecoveryDecision(
+            RecoveryAction.ROTATE_TARGET,
+            HealthScope.CREDENTIAL,
+            HealthEffect.COOLDOWN,
         )
-        self.assertEqual(decision.action, RecoveryAction.ROTATE_TARGET)
-        self.assertEqual(decision.health_scope, HealthScope.MODEL)
-        self.assertEqual(decision.health_effect, HealthEffect.DISABLE)
-
-    def test_chainnode_403_and_5xx_fallback_family_without_pool_spray(self) -> None:
-        cases = (
-            (403, HealthEffect.DISABLE),
-            (500, HealthEffect.TRANSIENT),
-            (502, HealthEffect.TRANSIENT),
-            (503, HealthEffect.TRANSIENT),
+        self.assert_decision(
+            429,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.CREDENTIAL, HealthEffect.COOLDOWN),
+            overrides={429: override},
         )
-        for status, effect in cases:
-            with self.subTest(status=status):
-                decision = classify_recovery(
-                    identity("chainnode"),
-                    ProviderError("family", status_code=status, transient=True),
-                )
-                self.assertEqual(decision.action, RecoveryAction.FALLBACK_FAMILY)
-                self.assertEqual(decision.health_scope, HealthScope.FAMILY)
-                self.assertEqual(decision.health_effect, effect)
+
+    def test_default_401_is_credential_disable_rotation(self) -> None:
+        self.assert_decision(
+            401,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.CREDENTIAL, HealthEffect.DISABLE),
+        )
+
+    def test_exact_402_override_is_credential_disable_rotation(self) -> None:
+        override = RecoveryDecision(
+            RecoveryAction.ROTATE_TARGET,
+            HealthScope.CREDENTIAL,
+            HealthEffect.DISABLE,
+        )
+        self.assert_decision(
+            402,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.CREDENTIAL, HealthEffect.DISABLE),
+            overrides={402: override},
+        )
+
+    def test_exact_403_override_can_be_entitlement_disable_rotation(self) -> None:
+        override = RecoveryDecision(
+            RecoveryAction.ROTATE_TARGET,
+            HealthScope.ENTITLEMENT,
+            HealthEffect.DISABLE,
+        )
+        self.assert_decision(
+            403,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.ENTITLEMENT, HealthEffect.DISABLE),
+            overrides={403: override},
+        )
+
+    def test_default_403_is_family_disable_fallback(self) -> None:
+        self.assert_decision(
+            403,
+            (RecoveryAction.FALLBACK_FAMILY, HealthScope.FAMILY, HealthEffect.DISABLE),
+        )
+
+    def test_default_404_is_model_disable_rotation(self) -> None:
+        self.assert_decision(
+            404,
+            (RecoveryAction.ROTATE_TARGET, HealthScope.MODEL, HealthEffect.DISABLE),
+        )
+
+    def test_5xx_is_family_transient_fallback(self) -> None:
+        self.assert_decision(
+            503,
+            (RecoveryAction.FALLBACK_FAMILY, HealthScope.FAMILY, HealthEffect.TRANSIENT),
+            transient=True,
+        )
+
+    def test_classifier_source_contains_no_provider_family_names(self) -> None:
+        source = (
+            Path(__file__).parents[1] / "app" / "ai" / "recovery.py"
+        ).read_text(encoding="utf-8").lower()
+        self.assertNotIn("chainnode", source)
+        self.assertNotIn("xkiro", source)
 
 
 if __name__ == "__main__":

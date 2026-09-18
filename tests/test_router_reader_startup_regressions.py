@@ -12,18 +12,22 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.ai.base import (
-    AllProvidersFailed,
-    ChatResponse,
-    OpenAICompatProvider,
-    ToolCall,
-)
+from app.ai.base import AllProvidersFailed
+from app.ai.contracts import ChatResponse, ToolCallPart as ToolCall, ToolDefinition
 from app.ai.router import AIProviderRouter
 from app.config import Settings
 from app.search import reader
+from tests.openai_target_fakes import make_catalog_target
+from tests.provider_fakes import ScriptedProvider, text_request
 
 
-TOOLS = [{"type": "function", "function": {"name": "web_search"}}]
+TOOLS = (
+    ToolDefinition(
+        name="web_search",
+        description="Search the web",
+        parameters={"type": "object", "properties": {}},
+    ),
+)
 
 
 def _startup_router(provider):
@@ -60,11 +64,11 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
                 json={"choices": [{"message": {"content": "answer"}}]},
             )
 
-        provider = OpenAICompatProvider(
-            "xkiro-test",
-            "https://example.org/v1",
-            "test-key",
-            "test-model",
+        provider = make_catalog_target(
+            "xkiro",
+            model="test-model",
+            credential="test-key",
+            target_id="xkiro:text:test:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -75,8 +79,7 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
             router = AIProviderRouter([provider])
             for _ in range(2):
                 result = await router.complete(
-                    [{"role": "user", "content": "question"}],
-                    TOOLS,
+                    text_request("question", tools=TOOLS),
                     AsyncMock(),
                 )
                 self.assertEqual(result.content, "answer")
@@ -88,22 +91,20 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_pass_does_not_execute_unsolicited_tools(self):
         executed = []
 
-        class IgnoresToolsFlag:
-            name = "ignores-flag"
-            supports_tools = False
-
-            async def chat(self, messages, tools):
-                return ChatResponse(tool_calls=[ToolCall("c1", "web_search", {})])
+        provider = ScriptedProvider(
+            "ignores-flag",
+            [ChatResponse(tool_calls=[ToolCall("c1", "web_search", {})])],
+        )
+        provider.supports_tools = False
 
         async def execute(name, args):
             executed.append(name)
             return "search result"
 
-        router = AIProviderRouter([IgnoresToolsFlag()])  # type: ignore[list-item]
+        router = AIProviderRouter([provider])
         with self.assertRaises(AllProvidersFailed):
             await router.complete(
-                [{"role": "user", "content": "question"}],
-                TOOLS,
+                text_request("question", tools=TOOLS),
                 execute,
             )
         self.assertEqual(executed, [])
@@ -303,8 +304,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 Settings(
                     _env_file=None,
                     bot_token="123:test",
-                    xkiro_api_keys="test-key",
-                    xkiro_text_models="test-text-model",
+                    ai_providers={
+                        "xkiro": {
+                            "api_keys": "test-key",
+                            "text_models": "test-text-model",
+                        }
+                    },
                     vision_enabled=False,
                 )
             )
@@ -334,8 +339,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     Settings(
                         _env_file=None,
                         bot_token="123:test",
-                        xkiro_api_keys="test-key",
-                        xkiro_text_models="test-text-model",
+                        ai_providers={
+                            "xkiro": {
+                                "api_keys": "test-key",
+                                "text_models": "test-text-model",
+                            }
+                        },
                         vision_enabled=False,
                     )
                 )
@@ -384,8 +393,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(
                 _env_file=None,
                 bot_token="123:test",
-                xkiro_api_keys="test-key",
-                xkiro_text_models="test-text-model",
+                ai_providers={
+                    "xkiro": {
+                        "api_keys": "test-key",
+                        "text_models": "test-text-model",
+                    }
+                },
                 vision_enabled=False,
             )
             await main._amain(settings)

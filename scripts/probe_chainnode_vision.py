@@ -58,7 +58,7 @@ _TOOL = {
 
 
 def chainnode_probe_credential() -> str:
-    for part in os.environ.get("CHAINNODE_API_KEYS", "").split(","):
+    for part in os.environ.get("AI_PROVIDERS__CHAINNODE__API_KEYS", "").split(","):
         value = part.strip()
         if value:
             return value
@@ -541,7 +541,11 @@ async def probe_model(
 async def run(args: argparse.Namespace) -> int:
     api_key = chainnode_probe_credential()
     if not api_key:
-        print("probe-chainnode-vision: CHAINNODE_API_KEYS is required", file=sys.stderr)
+        print(
+            "probe-chainnode-vision: "
+            "AI_PROVIDERS__CHAINNODE__API_KEYS is required",
+            file=sys.stderr,
+        )
         return 2
 
     requested = tuple(part.strip() for part in args.models.split(",") if part.strip())
@@ -549,7 +553,7 @@ async def run(args: argparse.Namespace) -> int:
         print("probe-chainnode-vision: at least one model is required", file=sys.stderr)
         return 2
 
-    base_url = os.environ.get("CHAINNODE_BASE_URL", DEFAULT_BASE_URL).strip()
+    base_url = os.environ.get("AI_PROVIDERS__CHAINNODE__BASE_URL", DEFAULT_BASE_URL).strip()
     headers = {"Authorization": f"Bearer {api_key}"}
     all_ok = True
     async with httpx.AsyncClient(

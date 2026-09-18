@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError
+from app.ai.base import AllProvidersFailed, ProviderError
+from app.ai.contracts import ChatRequest, ChatResponse
 from app.ai.recovery import HealthScope
 from app.ai.router import AIProviderRouter
 from app.ai.target import provider_target_identity
-from tests.provider_fakes import ScriptedProvider, noop_tool
+from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 class _BlockingRateLimitProvider(ScriptedProvider):
@@ -30,12 +31,8 @@ class _BlockingRateLimitProvider(ScriptedProvider):
         self.release_first = asyncio.Event()
         self.call_count = 0
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.call_count += 1
         if self.call_count == 1:
             self.first_started.set()
@@ -60,12 +57,8 @@ class _BlockingSuccessThenTransportProvider(ScriptedProvider):
         self.release_first = asyncio.Event()
         self.call_count = 0
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.call_count += 1
         if self.call_count == 1:
             self.first_started.set()
@@ -87,12 +80,8 @@ class _RepeatedTransportAroundDirectSuccessProvider(ScriptedProvider):
         self.release_second = asyncio.Event()
         self.call_count = 0
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.call_count += 1
         if self.call_count == 1:
             error = ProviderError(
@@ -123,12 +112,8 @@ class _BlockingFailureProvider(ScriptedProvider):
         self.started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.started.set()
         await self.release.wait()
         raise ProviderError(
@@ -150,8 +135,8 @@ def _target(
     return provider
 
 
-def _messages() -> list[dict]:
-    return [{"role": "user", "content": "hello"}]
+def _request() -> ChatRequest:
+    return text_request()
 
 
 class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
@@ -184,10 +169,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
         raced_identity = provider_target_identity(raced)
 
-        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        request_a = asyncio.create_task(router.complete(_request(), noop_tool))
         await raced.first_started.wait()
 
-        request_b = await router.complete(_messages(), None, noop_tool)
+        request_b = await router.complete(_request(), noop_tool)
         self.assertEqual(request_b.content, "b-sibling")
         credential_health = router.scoped_health.health(
             HealthScope.CREDENTIAL,
@@ -209,10 +194,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             "older success must not erase newer adapter-local cooldown state",
         )
 
-        request_c = await router.complete(_messages(), None, noop_tool)
+        request_c = await router.complete(_request(), noop_tool)
         self.assertEqual(request_c.content, "c-sibling")
         self.assertEqual(raced.call_count, 2)
-        self.assertEqual(len(same_key_other_model.calls), 0)
+        self.assertEqual(len(same_key_other_model.requests), 0)
 
     async def test_chainnode_older_success_cannot_clear_newer_model_cooldown(self) -> None:
         raced = _BlockingRateLimitProvider(
@@ -243,10 +228,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
         raced_identity = provider_target_identity(raced)
 
-        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        request_a = asyncio.create_task(router.complete(_request(), noop_tool))
         await raced.first_started.wait()
 
-        request_b = await router.complete(_messages(), None, noop_tool)
+        request_b = await router.complete(_request(), noop_tool)
         self.assertEqual(request_b.content, "b-sibling")
         model_health = router.scoped_health.health(HealthScope.MODEL, raced_identity)
         self.assertFalse(model_health.available())
@@ -265,10 +250,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             "older success must not erase newer adapter-local cooldown state",
         )
 
-        request_c = await router.complete(_messages(), None, noop_tool)
+        request_c = await router.complete(_request(), noop_tool)
         self.assertEqual(request_c.content, "c-sibling")
         self.assertEqual(raced.call_count, 2)
-        self.assertEqual(len(same_model_other_key.calls), 0)
+        self.assertEqual(len(same_model_other_key.requests), 0)
 
     async def test_older_success_cannot_erase_newer_deferred_transport_failure(self) -> None:
         primary = _BlockingSuccessThenTransportProvider("a")
@@ -282,10 +267,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             text_provider_order=("a", "b"),
         )
 
-        request_a = asyncio.create_task(first_router.complete(_messages(), None, noop_tool))
+        request_a = asyncio.create_task(first_router.complete(_request(), noop_tool))
         await primary.first_started.wait()
 
-        request_b = await second_router.complete(_messages(), None, noop_tool)
+        request_b = await second_router.complete(_request(), noop_tool)
         self.assertEqual(request_b.content, "fallback-success")
         self.assertEqual(primary.health.consecutive_transient_failures, 1)
         self.assertIsNotNone(primary.health.last_error)
@@ -314,11 +299,11 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
 
         request_a = asyncio.create_task(
-            request_a_router.complete(_messages(), None, noop_tool)
+            request_a_router.complete(_request(), noop_tool)
         )
         await primary.second_started.wait()
 
-        request_b = await request_b_router.complete(_messages(), None, noop_tool)
+        request_b = await request_b_router.complete(_request(), noop_tool)
         self.assertEqual(request_b.content, "newer-direct-success")
         self.assertEqual(primary.health.deferred_barrier_generation, 1)
         self.assertEqual(primary.health.consecutive_transient_failures, 0)
@@ -373,13 +358,12 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             vision_provider_order=("chainnode",),
         )
 
-        request_a = asyncio.create_task(router.complete(_messages(), None, noop_tool))
+        request_a = asyncio.create_task(router.complete(_request(), noop_tool))
         await bridge.started.wait()
 
         with self.assertRaises(AllProvidersFailed):
             await router.complete(
-                _messages(),
-                None,
+                _request(),
                 noop_tool,
                 requires_vision=True,
                 image_count=1,
@@ -397,10 +381,10 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.content, "sibling-success")
         self.assertEqual(result.provider, "chainnode")
-        self.assertEqual(len(target_one.calls), 1)
-        self.assertEqual(len(target_two.calls), 1)
-        self.assertEqual(len(vision_same_model.calls), 1)
-        self.assertEqual(len(bridge.calls), 1)
+        self.assertEqual(len(target_one.requests), 1)
+        self.assertEqual(len(target_two.requests), 1)
+        self.assertEqual(len(vision_same_model.requests), 1)
+        self.assertEqual(len(bridge.requests), 1)
         self.assertEqual(target_one.health.consecutive_transient_failures, 1)
         self.assertIn("target-one read timeout", target_one.health.last_error or "")
 

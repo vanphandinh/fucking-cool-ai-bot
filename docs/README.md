@@ -8,8 +8,8 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 
 - [`../README.md`](../README.md) — kiến trúc tổng quan, cấu hình chính, quick start và verification.
 - [`../DEPLOY_SEARXNG_VPS.md`](../DEPLOY_SEARXNG_VPS.md) — triển khai SearXNG private trên VPS.
-- [`XKIRO.md`](XKIRO.md) — xKiro fallback adapter, live qualification, rollout và rollback.
-- [`CHAINNODE.md`](CHAINNODE.md) — Chainnode primary text/vision provider, model pools và operational probes.
+- [`XKIRO.md`](XKIRO.md) — xKiro declarative provider profile, live qualification, rollout và rollback.
+- [`CHAINNODE.md`](CHAINNODE.md) — Chainnode declarative primary profile, model pools và operational probes.
 - [`telegram-vision-input.md`](telegram-vision-input.md) — Telegram image input, limits và capability-aware vision routing.
 - [`TELEGRAM_FORMATTING.md`](TELEGRAM_FORMATTING.md) — Telegram-native HTML formatting, splitting và delivery fallback.
 - [`QUESTION_CONTROLS.md`](QUESTION_CONTROLS.md) — renewable Telegram jobs, consent/Stop semantics, local bounds, rollout và rollback.
@@ -31,8 +31,8 @@ Active documentation không được dạy superseded environment/provider contr
 
 - Text provider order mặc định: `chainnode,xkiro`; Chainnode primary, xKiro fallback khi có credential + qualified model pool.
 - Vision provider order mặc định: `chainnode,xkiro`; current vision targets advertise tối đa một image/request.
-- Chainnode production defaults dùng `CHAINNODE_API_KEYS`, `CHAINNODE_TEXT_MODELS` và `CHAINNODE_VISION_MODELS`.
-- xKiro runtime và qualification probe dùng canonical `XKIRO_API_KEYS`; runtime còn dùng `XKIRO_TEXT_MODELS`, `XKIRO_VISION_MODELS` và shared `XKIRO_BASE_URL`; runtime model IDs không hard-code trong source.
+- Chainnode production defaults dùng `AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS` và `AI_PROVIDERS__CHAINNODE__VISION_MODELS`.
+- xKiro runtime và qualification probe dùng canonical `AI_PROVIDERS__XKIRO__API_KEYS`; runtime còn dùng `AI_PROVIDERS__XKIRO__TEXT_MODELS`, `AI_PROVIDERS__XKIRO__VISION_MODELS` và shared `AI_PROVIDERS__XKIRO__BASE_URL`; runtime model IDs không hard-code trong source.
 - Canonical retry fields là `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; recovery-hop field là `PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST`.
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
 - `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy.

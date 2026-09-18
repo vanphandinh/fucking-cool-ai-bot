@@ -10,6 +10,7 @@ class ProviderCapabilities:
     route: str = "text"  # text | vision
     supports_vision: bool = False
     max_images: int = 0
+    supports_tools: bool = True
 
     def accepts(self, *, requires_vision: bool, image_count: int) -> bool:
         if requires_vision:

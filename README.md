@@ -44,24 +44,40 @@ AIProviderRouter
                └─ vision model × credential targets
 ```
 
-Chainnode và xKiro reuse shared OpenAI-compatible transport/parser qua provider-specific factories. Concrete targets được mở rộng theo deterministic **model-major × credential** order.
+Chainnode và xKiro là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả hai dùng `openai-chat` driver. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
+
+### Thêm OpenAI-compatible provider chỉ bằng config/catalog
+
+1. Thêm một `ProviderProfile` mới vào `config/ai-providers.toml` với `driver = "openai-chat"`, endpoint mặc định, route capabilities và recovery overrides nếu cần.
+2. Cấu hình runtime bằng `AI_PROVIDERS__<ID>__API_KEYS`, `BASE_URL`, `TEXT_MODELS`, `VISION_MODELS` và `REQUEST_TIMEOUT_SEC` tương ứng.
+3. Thêm provider id vào `TEXT_PROVIDER_ORDER` và/hoặc `VISION_PROVIDER_ORDER`.
+
+Không cần thêm module Python theo vendor và không sửa router, retry, health hoặc orchestrator.
+
+### Thêm native protocol bằng driver mới
+
+1. Implement driver mới dưới `app/ai/drivers/` để serialize `ChatRequest`, thực hiện đúng một network attempt và parse về `ChatResponse`.
+2. Đăng ký driver id trong `app/ai/drivers/registry.py`.
+3. Thêm `ProviderProfile` vào `config/ai-providers.toml` trỏ tới driver mới và cấu hình `AI_PROVIDERS__<ID>__*` như bình thường.
+
+Native protocol mới không yêu cầu thay đổi `AIProviderRouter`, retry, scoped health, target rotation, tool orchestration hay fallback logic.
 
 ## Canonical provider and retry configuration
 
 Current runtime/environment contract chỉ dùng canonical plural pools và canonical retry fields:
 
 ```env
-CHAINNODE_API_KEYS=
-CHAINNODE_BASE_URL=https://dn.chainno.de/v1
-CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__CHAINNODE__API_KEYS=
+AI_PROVIDERS__CHAINNODE__BASE_URL=https://dn.chainno.de/v1
+AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-XKIRO_API_KEYS=
-XKIRO_BASE_URL=https://api.xkiro.com/v1
-XKIRO_TEXT_MODELS=
-XKIRO_VISION_MODELS=
-XKIRO_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__XKIRO__API_KEYS=
+AI_PROVIDERS__XKIRO__BASE_URL=https://api.xkiro.com/v1
+AI_PROVIDERS__XKIRO__TEXT_MODELS=
+AI_PROVIDERS__XKIRO__VISION_MODELS=
+AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
@@ -74,7 +90,7 @@ PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 
 Một phần tử trong plural pool là hợp lệ. Chainnode text/vision pools có qualified defaults; xKiro model pools cố ý để trống cho tới khi current candidate pass live qualification. Runtime không query model catalog khi startup hoặc mỗi request.
 
-`XKIRO_BASE_URL` dùng chung current endpoint contract giữa runtime và retained qualification probe, default `https://api.xkiro.com/v1`.
+`AI_PROVIDERS__XKIRO__BASE_URL` dùng chung current endpoint contract giữa runtime và retained qualification probe, default `https://api.xkiro.com/v1`.
 
 ## Strict `.env` synchronization
 
@@ -90,7 +106,7 @@ Trước khi deploy canonical-only revision, remove mọi assignment không có 
 
 ## xKiro live qualification
 
-`GET <XKIRO_BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code xKiro runtime model IDs trong source.
+`GET <AI_PROVIDERS__XKIRO__BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code xKiro runtime model IDs trong source.
 
 Text candidate phải pass:
 
@@ -110,15 +126,15 @@ Vision candidate còn phải pass `capabilities.vision == true`, known-image und
 Probe dùng canonical credential pool và lấy credential non-blank đầu tiên cho single-credential qualification run:
 
 ```bash
-export XKIRO_API_KEYS='...'
-export XKIRO_BASE_URL='https://api.xkiro.com/v1'
+export AI_PROVIDERS__XKIRO__API_KEYS='...'
+export AI_PROVIDERS__XKIRO__BASE_URL='https://api.xkiro.com/v1'
 python scripts/probe_xkiro.py \
   --text-model '<candidate-text-id>' \
   --vision-model '<candidate-vision-id>' \
   --image './known-test-image.png'
 ```
 
-Sau khi candidate pass, cấu hình IDs vào `XKIRO_TEXT_MODELS` / `XKIRO_VISION_MODELS`; runtime dùng cùng canonical `XKIRO_API_KEYS` pool.
+Sau khi candidate pass, cấu hình IDs vào `AI_PROVIDERS__XKIRO__TEXT_MODELS` / `AI_PROVIDERS__XKIRO__VISION_MODELS`; runtime dùng cùng canonical `AI_PROVIDERS__XKIRO__API_KEYS` pool.
 
 ## Retry, recovery and tool state
 
@@ -156,16 +172,16 @@ Cấu hình tối thiểu:
 
 ```env
 BOT_TOKEN=...
-CHAINNODE_API_KEYS=...
-CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+AI_PROVIDERS__CHAINNODE__API_KEYS=...
+AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
 
-Không cần xKiro credential để Chainnode hoạt động. Khi `XKIRO_API_KEYS` trống, xKiro có zero active targets.
+Không cần xKiro credential để Chainnode hoạt động. Khi `AI_PROVIDERS__XKIRO__API_KEYS` trống, xKiro có zero active targets.
 
 ## Production smoke
 

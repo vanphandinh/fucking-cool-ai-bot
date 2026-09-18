@@ -7,8 +7,10 @@ import unittest
 
 import httpx
 
-from app.ai.base import AllProvidersFailed, OpenAICompatProvider
+from app.ai.base import AllProvidersFailed
 from app.ai.router import AIProviderRouter
+from tests.openai_target_fakes import make_catalog_target
+from tests.provider_fakes import fetch_url_definition, text_request
 
 
 class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
@@ -33,8 +35,7 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaises(AllProvidersFailed):
                 await router.complete(
-                    [{"role": "user", "content": "research broadly"}],
-                    [_fetch_url_tool()],
+                    text_request("research broadly", tools=(fetch_url_definition(),)),
                     execute,
                 )
         finally:
@@ -45,12 +46,12 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("tools", requests[1])
 
 
-def _provider(name: str, responder) -> OpenAICompatProvider:
-    provider = OpenAICompatProvider(
-        name,
-        f"https://{name}.test/v1",
-        "fake",
-        "model",
+def _provider(name: str, responder):
+    provider = make_catalog_target(
+        "xkiro",
+        model="model",
+        credential="fake",
+        target_id=f"xkiro:text:{name}:c1",
     )
     provider._client = httpx.AsyncClient(
         base_url=f"https://{name}.test/v1/",
@@ -86,20 +87,6 @@ def _tool_response_many(request: httpx.Request, count: int) -> httpx.Response:
         },
         request=request,
     )
-
-
-def _fetch_url_tool() -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "fetch_url",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
-        },
-    }
 
 
 if __name__ == "__main__":

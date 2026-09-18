@@ -10,9 +10,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError, ToolCall
+from app.ai.base import AllProvidersFailed, ProviderError
+from app.ai.contracts import ChatResponse, ToolCallPart as ToolCall
 from app.ai.router import AIProviderRouter, CompletionResult
-from tests.provider_fakes import ScriptedProvider, fetch_url_tool, noop_tool
+from tests.provider_fakes import (
+    ScriptedProvider,
+    fetch_url_definition,
+    noop_tool,
+    text_request,
+)
 
 
 def _target(
@@ -55,8 +61,8 @@ def _router(
         raise AssertionError(self_message) from exc
 
 
-def _messages() -> list[dict]:
-    return [{"role": "user", "content": "hello"}]
+def _request():
+    return text_request()
 
 
 def _tool_call(*, private: str = "PRIVATE-A") -> ChatResponse:
@@ -66,10 +72,9 @@ def _tool_call(*, private: str = "PRIVATE-A") -> ChatResponse:
                 id="call_fetch",
                 name="fetch_url",
                 arguments={"url": "https://example.com"},
-                extra_content={"provider_private": private},
             )
         ],
-        assistant_metadata={"reasoning_content": private},
+        provider_state={"private_test_state": private},
     )
 
 
@@ -101,7 +106,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([model_a, model_b, xkiro])
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
@@ -110,9 +115,9 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
-        self.assertEqual(len(model_a.calls), 1)
-        self.assertEqual(len(model_b.calls), 1)
-        self.assertEqual(xkiro.calls, [])
+        self.assertEqual(len(model_a.requests), 1)
+        self.assertEqual(len(model_b.requests), 1)
+        self.assertEqual(xkiro.requests, [])
 
     async def test_chainnode_two_429s_then_falls_back_to_xkiro(self) -> None:
         a = _target(
@@ -136,7 +141,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([a, b, xkiro])
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
@@ -145,9 +150,9 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
-        self.assertEqual(len(a.calls), 1)
-        self.assertEqual(len(b.calls), 1)
-        self.assertEqual(len(xkiro.calls), 1)
+        self.assertEqual(len(a.requests), 1)
+        self.assertEqual(len(b.requests), 1)
+        self.assertEqual(len(xkiro.requests), 1)
 
     async def test_transport_then_429_then_sibling_transport_flushes_correct_target(self) -> None:
         first = _target(
@@ -176,7 +181,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([first, sibling, fallback])
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result.content, "fallback")
         self.assertEqual(result.provider, "xkiro")
@@ -184,7 +189,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.health.last_error, "rate-limit")
         self.assertEqual(sibling.health.consecutive_transient_failures, 1)
         self.assertIn("read-timeout", sibling.health.last_error or "")
-        self.assertEqual(len(fallback.calls), 1)
+        self.assertEqual(len(fallback.requests), 1)
 
     async def test_xkiro_429_rotates_credential_before_model(self) -> None:
         key1 = _target(
@@ -213,7 +218,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             vision_order=(),
         )
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
@@ -222,9 +227,9 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 0)
         self.assertEqual(result.credential_failovers, 1)
-        self.assertEqual(len(key1.calls), 1)
-        self.assertEqual(len(key2.calls), 1)
-        self.assertEqual(model_b_key1.calls, [])
+        self.assertEqual(len(key1.requests), 1)
+        self.assertEqual(len(key2.requests), 1)
+        self.assertEqual(model_b_key1.requests, [])
 
     async def test_xkiro_401_disables_credential_across_text_and_vision(self) -> None:
         text_key1 = _target(
@@ -270,15 +275,15 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             vision_order=("xkiro",),
         )
 
-        text = await router.complete(_messages(), None, noop_tool)
+        text = await router.complete(_request(), noop_tool)
         vision = await router.complete(
-            _messages(), None, noop_tool, requires_vision=True, image_count=1
+            _request(), noop_tool, requires_vision=True, image_count=1
         )
 
         self.assertEqual(text.content, "text-ok")
         self.assertEqual(vision.content, "vision-ok")
-        self.assertEqual(vision_key1.calls, [])
-        self.assertEqual(len(vision_key2.calls), 1)
+        self.assertEqual(vision_key1.requests, [])
+        self.assertEqual(len(vision_key2.requests), 1)
 
     async def test_chainnode_503_falls_back_without_sibling_model_spray(self) -> None:
         a = _target(
@@ -300,10 +305,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([a, sibling, xkiro])
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result, CompletionResult("fallback", "xkiro", ("xkiro",)))
-        self.assertEqual(sibling.calls, [])
+        self.assertEqual(sibling.requests, [])
 
     async def test_xkiro_503_falls_back_without_sibling_credential_spray(self) -> None:
         key1 = _target(
@@ -331,10 +336,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             vision_order=(),
         )
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result, CompletionResult("backup", "backup", ("backup",)))
-        self.assertEqual(key2.calls, [])
+        self.assertEqual(key2.requests, [])
 
     async def test_transport_retry_token_does_not_multiply_with_siblings(self) -> None:
         first = _target(
@@ -365,11 +370,11 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([first, *siblings, xkiro])
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result.provider, "xkiro")
-        self.assertEqual(len(first.calls), 2)
-        self.assertTrue(all(not sibling.calls for sibling in siblings))
+        self.assertEqual(len(first.requests), 2)
+        self.assertTrue(all(not sibling.requests for sibling in siblings))
 
     async def test_twenty_targets_are_bounded_by_recovery_hop_limit(self) -> None:
         targets = [
@@ -391,9 +396,9 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(AllProvidersFailed):
-            await router.complete(_messages(), None, noop_tool)
+            await router.complete(_request(), noop_tool)
 
-        self.assertEqual(sum(len(target.calls) for target in targets), 6)
+        self.assertEqual(sum(len(target.requests) for target in targets), 6)
 
     async def test_tool_is_not_rerun_when_429_switches_target(self) -> None:
         a = _target(
@@ -420,7 +425,10 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             tool_invocations += 1
             return "PORTABLE-EVIDENCE"
 
-        result = await router.complete(_messages(), [fetch_url_tool()], execute)
+        result = await router.complete(
+            text_request(tools=(fetch_url_definition(),)),
+            execute,
+        )
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
@@ -430,8 +438,8 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(tool_invocations, 1)
-        self.assertIn("PORTABLE-EVIDENCE", repr(b.calls[0][0]))
-        self.assertNotIn("PRIVATE-A", repr(b.calls[0][0]))
+        self.assertIn("PORTABLE-EVIDENCE", repr(b.requests[0].messages))
+        self.assertNotIn("PRIVATE-A", repr(b.requests[0].messages))
 
     async def test_rotation_does_not_reset_tool_budget(self) -> None:
         a = _target(
@@ -470,11 +478,89 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             executed += 1
             return f"evidence-{executed}"
 
-        result = await router.complete(_messages(), [fetch_url_tool()], execute)
+        result = await router.complete(
+            text_request(tools=(fetch_url_definition(),)),
+            execute,
+        )
 
         self.assertEqual(result.content, "bounded synthesis")
         self.assertEqual(executed, 8)
-        self.assertIsNone(b.calls[0][1])
+        self.assertEqual(b.requests[0].tools, ())
+
+
+    async def test_recovery_hop_limit_bounds_cross_family_fallbacks(self) -> None:
+        providers = [
+            _target(
+                ScriptedProvider(
+                    name,
+                    [
+                        ProviderError(
+                            f"{name}-down",
+                            status_code=503,
+                            transient=True,
+                        )
+                    ],
+                ),
+                model=f"{name}-model",
+                target_id=f"{name}:text:m1:c1",
+            )
+            for name in ("first", "second", "third")
+        ]
+        router = _router(
+            providers,
+            text_order=("first", "second", "third"),
+            vision_order=(),
+            recovery_hops=1,
+        )
+
+        with self.assertRaises(AllProvidersFailed):
+            await router.complete(_request(), noop_tool)
+
+        self.assertEqual(
+            [len(provider.requests) for provider in providers],
+            [1, 1, 0],
+            "one recovery hop must permit only one post-failure target transition",
+        )
+
+    async def test_exhausted_rotation_budget_blocks_later_family_fallback(self) -> None:
+        first = _target(
+            ScriptedProvider(
+                "chainnode",
+                [ProviderError("quota", status_code=429, transient=True)],
+            ),
+            model="cn-a",
+            target_id="chainnode:text:m1:c1",
+        )
+        sibling = _target(
+            ScriptedProvider(
+                "chainnode",
+                [ProviderError("down", status_code=503, transient=True)],
+            ),
+            model="cn-b",
+            target_id="chainnode:text:m2:c1",
+        )
+        backup = _target(
+            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            model="x-model",
+            target_id="xkiro:text:m1:c1",
+        )
+        router = _router(
+            [first, sibling, backup],
+            text_order=("chainnode", "xkiro"),
+            vision_order=(),
+            recovery_hops=1,
+        )
+
+        with self.assertRaises(AllProvidersFailed):
+            await router.complete(_request(), noop_tool)
+
+        self.assertEqual(len(first.requests), 1)
+        self.assertEqual(len(sibling.requests), 1)
+        self.assertEqual(
+            backup.requests,
+            [],
+            "a spent recovery-hop budget must not allow an extra family fallback",
+        )
 
 
 if __name__ == "__main__":

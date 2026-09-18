@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError
+from app.ai.base import AllProvidersFailed, ProviderError
+from app.ai.contracts import ChatMessage, ChatRequest, ChatResponse, TextPart
 from app.ai.router import AIProviderRouter
 from tests.provider_fakes import ScriptedProvider, noop_tool
 
@@ -21,11 +22,11 @@ class ProviderRetryHealthTests(unittest.IsolatedAsyncioTestCase):
         second_router = AIProviderRouter([provider], text_provider_order=("a",))
 
         first_task = asyncio.create_task(
-            first_router.complete(_messages("first"), None, noop_tool)
+            first_router.complete(_request("first"), noop_tool)
         )
         await fallback.all_started.wait()
 
-        second = await second_router.complete(_messages("second"), None, noop_tool)
+        second = await second_router.complete(_request("second"), noop_tool)
         self.assertEqual(second.content, "newer success")
 
         fallback.release.set()
@@ -54,12 +55,12 @@ class ProviderRetryHealthTests(unittest.IsolatedAsyncioTestCase):
         second_router = AIProviderRouter([provider], text_provider_order=("a",))
 
         first_task = asyncio.create_task(
-            first_router.complete(_messages("first"), None, noop_tool)
+            first_router.complete(_request("first"), noop_tool)
         )
         await fallback.all_started.wait()
 
         with self.assertRaises(AllProvidersFailed):
-            await second_router.complete(_messages("second"), None, noop_tool)
+            await second_router.complete(_request("second"), noop_tool)
 
         fallback.release.set()
         first = await first_task
@@ -78,10 +79,10 @@ class ProviderRetryHealthTests(unittest.IsolatedAsyncioTestCase):
         second_router = _router(provider, fallback)
 
         first_task = asyncio.create_task(
-            first_router.complete(_messages("first"), None, noop_tool)
+            first_router.complete(_request("first"), noop_tool)
         )
         second_task = asyncio.create_task(
-            second_router.complete(_messages("second"), None, noop_tool)
+            second_router.complete(_request("second"), noop_tool)
         )
         await fallback.all_started.wait()
 
@@ -106,16 +107,12 @@ class _GateSuccessProvider(ScriptedProvider):
         self.all_started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
+    async def chat(self, request: ChatRequest) -> ChatResponse:
         self.started_calls += 1
         if self.started_calls >= self.expected_calls:
             self.all_started.set()
         await self.release.wait()
-        return await super().chat(messages, tools)
+        return await super().chat(request)
 
 
 def _transport_error(kind: str) -> ProviderError:
@@ -134,8 +131,8 @@ def _router(
     )
 
 
-def _messages(label: str) -> list[dict]:
-    return [{"role": "user", "content": label}]
+def _request(label: str) -> ChatRequest:
+    return ChatRequest(messages=(ChatMessage("user", (TextPart(label),)),))
 
 
 if __name__ == "__main__":

@@ -94,8 +94,8 @@ Current config:
 ```env
 VISION_ENABLED=1
 VISION_PROVIDER_ORDER=chainnode,xkiro
-CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-XKIRO_VISION_MODELS=
+AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+AI_PROVIDERS__XKIRO__VISION_MODELS=
 MAX_IMAGES_PER_REQUEST=1
 ```
 

@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.ai.base import ChatResponse, ProviderError, ToolCall
+from app.ai.base import ProviderError
+from app.ai.contracts import ChatRequest, ChatResponse, ToolCallPart as ToolCall
 from app.ai.router import AIProviderRouter
-from tests.provider_fakes import ScriptedProvider, fetch_url_tool
+from tests.provider_fakes import ScriptedProvider, fetch_url_definition, text_request
 
 
 class _ToolThenConcurrentRateLimitProvider(ScriptedProvider):
@@ -20,12 +21,8 @@ class _ToolThenConcurrentRateLimitProvider(ScriptedProvider):
         self.target_id = "xkiro:text:m1:c1"
         self.call_count = 0
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.call_count += 1
         if self.call_count == 1:
             return ChatResponse(
@@ -57,12 +54,8 @@ class _ToolThenConcurrentChainnodeAuthFailureProvider(ScriptedProvider):
         self.target_id = "chainnode:text:m1:c1"
         self.call_count = 0
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
-        self.calls.append((messages, tools))
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         self.call_count += 1
         if self.call_count == 1:
             return ChatResponse(
@@ -127,16 +120,14 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
 
         request_a = asyncio.create_task(
             router.complete(
-                [{"role": "user", "content": "request-a"}],
-                [fetch_url_tool()],
+                text_request("request-a", tools=(fetch_url_definition(),)),
                 execute,
             )
         )
         await tool_started.wait()
 
         request_b = await router.complete(
-            [{"role": "user", "content": "request-b"}],
-            [fetch_url_tool()],
+            text_request("request-b", tools=(fetch_url_definition(),)),
             execute,
         )
         self.assertEqual(request_b.content, "request-b")
@@ -152,7 +143,7 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
             2,
             "request A must not send a stale continuation to a target cooled down by B",
         )
-        self.assertEqual(len(sibling.calls), 2)
+        self.assertEqual(len(sibling.requests), 2)
         self.assertEqual(tool_invocations, 1)
 
     async def test_chainnode_tool_continuation_revalidates_credential_after_concurrent_401(
@@ -178,16 +169,14 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
 
         request_a = asyncio.create_task(
             router.complete(
-                [{"role": "user", "content": "request-a"}],
-                [fetch_url_tool()],
+                text_request("request-a", tools=(fetch_url_definition(),)),
                 execute,
             )
         )
         await tool_started.wait()
 
         request_b = await router.complete(
-            [{"role": "user", "content": "request-b"}],
-            [fetch_url_tool()],
+            text_request("request-b", tools=(fetch_url_definition(),)),
             execute,
         )
         self.assertEqual(request_b.content, "request-b")
@@ -202,7 +191,7 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
             2,
             "request A must not call credential #1 after B disabled that credential scope",
         )
-        self.assertEqual(len(sibling.calls), 2)
+        self.assertEqual(len(sibling.requests), 2)
         self.assertEqual(tool_invocations, 1)
 
 

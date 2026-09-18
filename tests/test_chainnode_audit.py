@@ -5,21 +5,21 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
-from types import SimpleNamespace
 import unittest
 
 import httpx
 
-import app.ai.chainnode as chainnode
 from app.ai.base import ProviderError
+from app.ai.contracts import ChatMessage, ChatRequest, ImagePart, TextPart, ToolDefinition
 from app.ai.router import build_provider_router
+from app.ai.target_builder import build_provider_targets
 from app.config import Settings
+from tests.provider_fakes import text_request
 
 
 ROOT = Path(__file__).parents[1]
 PROBE_PATH = ROOT / "scripts" / "probe_chainnode.py"
 CHAINNODE_FILES = (
-    ROOT / "app" / "ai" / "chainnode.py",
     ROOT / "scripts" / "probe_chainnode.py",
     ROOT / "scripts" / "probe_chainnode_vision.py",
     ROOT / ".env.example",
@@ -85,8 +85,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaisesRegex(ProviderError, "arguments"):
                 await provider.chat(
-                    [{"role": "user", "content": "latest?"}],
-                    [_search_tool()],
+                    text_request("latest?", tools=(_search_tool(),))
                 )
         finally:
             await provider.aclose()
@@ -159,8 +158,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 try:
                     with self.assertRaises(ProviderError):
                         await provider.chat(
-                            [{"role": "user", "content": "latest?"}],
-                            [_search_tool()],
+                            text_request("latest?", tools=(_search_tool(),))
                         )
                 finally:
                     await provider.aclose()
@@ -203,8 +201,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaisesRegex(ProviderError, "tool"):
                 await provider.chat(
-                    [{"role": "user", "content": "latest?"}],
-                    [_search_tool()],
+                    text_request("latest?", tools=(_search_tool(),))
                 )
         finally:
             await provider.aclose()
@@ -239,7 +236,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 )
                 try:
                     with self.assertRaises(ProviderError) as ctx:
-                        await provider.chat([{"role": "user", "content": "hi"}])
+                        await provider.chat(text_request("hi"))
                 finally:
                     await provider.aclose()
                 self.assertEqual(ctx.exception.status_code, status)
@@ -250,10 +247,10 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_keys="test-chainnode-key",
-                chainnode_text_models=QUALIFIED_MODEL,
-                xkiro_api_keys="test-xkiro-key",
-                xkiro_text_models="test-xkiro-text",
+                ai_providers={
+                    "chainnode":{"api_keys":"test-chainnode-key","text_models":QUALIFIED_MODEL},
+                    "xkiro":{"api_keys":"test-xkiro-key","text_models":"test-xkiro-text"},
+                },
                 text_provider_order="chainnode,xkiro",
                 vision_enabled=False,
             )
@@ -289,11 +286,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.MockTransport(xkiro_success),
         )
         try:
-            result = await router.complete(
-                [{"role": "user", "content": "hi"}],
-                None,
-                _noop_tool,
-            )
+            result = await router.complete(text_request("hi"), _noop_tool)
         finally:
             for provider in providers.values():
                 await provider.aclose()
@@ -311,11 +304,10 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         router = build_provider_router(
             Settings(
                 _env_file=None,
-                chainnode_api_keys="test-chainnode-key",
-                chainnode_vision_models=VISION_MODEL,
-                xkiro_api_keys="test-xkiro-key",
-                xkiro_text_models="test-xkiro-text",
-                xkiro_vision_models="test-xkiro-vision",
+                ai_providers={
+                    "chainnode":{"api_keys":"test-chainnode-key","vision_models":VISION_MODEL},
+                    "xkiro":{"api_keys":"test-xkiro-key","text_models":"test-xkiro-text","vision_models":"test-xkiro-vision"},
+                },
                 text_provider_order="xkiro",
                 vision_provider_order="chainnode,xkiro",
             )
@@ -358,22 +350,20 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             base_url="https://api.xkiro.com/v1/",
             transport=httpx.MockTransport(xkiro_success),
         )
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Describe this image"},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": "data:image/png;base64,aGVsbG8="},
-                    },
-                ],
-            }
-        ]
+        request = ChatRequest(
+            messages=(
+                ChatMessage(
+                    "user",
+                    (
+                        TextPart("Describe this image"),
+                        ImagePart("image/png", b"hello"),
+                    ),
+                ),
+            )
+        )
         try:
             result = await router.complete(
-                messages,
-                None,
+                request,
                 _noop_tool,
                 requires_vision=True,
                 image_count=1,
@@ -388,29 +378,25 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 
 def _provider():
-    return chainnode.make_chainnode_provider(
-        SimpleNamespace(
-            chainnode_api_keys_list=["test-key"],
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_models_list=[QUALIFIED_MODEL],
-            chainnode_vision_models_list=[],
-            chainnode_request_timeout_sec=30.0,
-        )
+    settings = Settings(
+        _env_file=None,
+        ai_providers={"chainnode":{"api_keys":"test-key","text_models":QUALIFIED_MODEL,"request_timeout_sec":30}},
+        text_provider_order="chainnode",
+        vision_enabled=False,
     )
+    return build_provider_targets(settings, ["chainnode"])[0]
 
 
-def _search_tool() -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
+def _search_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="web_search",
+        description="Search the web",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
         },
-    }
+    )
 
 
 async def _noop_tool(name: str, args: dict) -> str:

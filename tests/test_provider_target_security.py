@@ -8,27 +8,36 @@ import unittest
 from pydantic import ValidationError
 
 from app.ai.base import AllProvidersFailed, ProviderError
-from app.ai.chainnode import build_chainnode_provider_slots
 from app.ai.router import AIProviderRouter
+from app.ai.target_builder import build_provider_targets
 from app.ai.target import provider_target_identity
-from app.ai.xkiro import build_xkiro_provider_slots
 from app.bot.handlers import _provider_status_lines
 from app.config import Settings
 from app.core.stats import Stats
-from tests.provider_fakes import ScriptedProvider, noop_tool
+from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 class ProviderTargetIdentitySecurityTests(unittest.TestCase):
+    def test_provider_identity_comes_from_target_spec(self) -> None:
+        provider = ScriptedProvider("demo", [])
+        self.assertEqual(provider_target_identity(provider), provider.spec.identity)
+
+    def test_target_spec_repr_never_contains_secret(self) -> None:
+        secret = "SeCrEt-Value"
+        provider = ScriptedProvider("demo", [], credential=secret)
+        rendered = repr(provider.spec) + repr(provider_target_identity(provider))
+        self.assertNotIn(secret, rendered)
+        self.assertIn("cred-1", rendered)
+
     def test_xkiro_target_identity_never_contains_raw_api_key(self) -> None:
         secrets = ("SeCrEt-Key-One", "SeCrEt-Key-Two")
         settings = Settings(
             _env_file=None,
-            xkiro_api_keys=",".join(secrets),
-            xkiro_text_models="Model/Case",
+            ai_providers={"xkiro":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
             text_provider_order="xkiro",
             vision_enabled=False,
         )
-        slots = build_xkiro_provider_slots(settings)
+        slots = build_provider_targets(settings, ["xkiro"])
         try:
             rendered = repr([provider_target_identity(slot) for slot in slots])
             rendered += repr([slot.target_id for slot in slots])
@@ -45,12 +54,11 @@ class ProviderTargetIdentitySecurityTests(unittest.TestCase):
         secrets = ("Chain-SeCrEt-One", "Chain-SeCrEt-Two")
         settings = Settings(
             _env_file=None,
-            chainnode_api_keys=",".join(secrets),
-            chainnode_text_models="Model/Case",
+            ai_providers={"chainnode":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
             text_provider_order="chainnode",
             vision_enabled=False,
         )
-        slots = build_chainnode_provider_slots(settings)
+        slots = build_provider_targets(settings, ["chainnode"])
         try:
             rendered = repr([provider_target_identity(slot) for slot in slots])
             rendered += repr([slot.target_id for slot in slots])
@@ -73,8 +81,7 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             Settings(
                 _env_file=None,
-                xkiro_api_keys=",".join(secrets),
-                xkiro_text_models="",
+                ai_providers={"xkiro":{"api_keys":",".join(secrets),"text_models":""}},
                 text_provider_order="xkiro",
                 vision_enabled=False,
             )
@@ -82,7 +89,7 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
             self.fail("validation error exposed raw xKiro credential input")
-        self.assertIn("XKIRO_TEXT_MODELS", rendered)
+        self.assertIn("AI_PROVIDERS__XKIRO__TEXT_MODELS", rendered)
         retired = "XKIRO_TEXT_" + "MODEL"
         self.assertNotIn(f"{retired} là", rendered)
 
@@ -95,8 +102,7 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             Settings(
                 _env_file=None,
-                chainnode_api_keys=",".join(secrets),
-                chainnode_text_models="",
+                ai_providers={"chainnode":{"api_keys":",".join(secrets),"text_models":""}},
                 text_provider_order="chainnode",
                 vision_enabled=False,
             )
@@ -104,7 +110,7 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
             self.fail("validation error exposed raw Chainnode credential input")
-        self.assertIn("CHAINNODE_TEXT_MODELS", rendered)
+        self.assertIn("AI_PROVIDERS__CHAINNODE__TEXT_MODELS", rendered)
         retired = "CHAINNODE_TEXT_" + "MODEL"
         self.assertNotIn(f"{retired} là", rendered)
 
@@ -128,11 +134,7 @@ class ProviderTargetDiagnosticSecurityTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs("app.ai.router", level="WARNING") as captured:
             with self.assertRaises(AllProvidersFailed) as ctx:
-                await router.complete(
-                    [{"role": "user", "content": "hello"}],
-                    None,
-                    noop_tool,
-                )
+                await router.complete(text_request("hello"), noop_tool)
 
         rendered = "\n".join(
             (

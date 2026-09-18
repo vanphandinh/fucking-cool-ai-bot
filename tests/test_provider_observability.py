@@ -6,7 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.ai.base import AllProvidersFailed, ChatResponse, ProviderError
+from app.ai.base import AllProvidersFailed, ProviderError
+from app.ai.contracts import ChatResponse
 from app.ai.recovery import HealthEffect, HealthScope
 from app.ai.router import AIProviderRouter, CompletionResult
 from app.ai.target import provider_target_identity
@@ -17,7 +18,7 @@ from app.core.job_manager import UserFacingJobError
 from app.core.orchestrator import Orchestrator
 from app.core.request import UserRequest
 from app.core.stats import Stats
-from tests.provider_fakes import ScriptedProvider, noop_tool
+from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
@@ -121,7 +122,7 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(AllProvidersFailed) as caught:
-            await router.complete([{"role": "user", "content": "hello"}], None, noop_tool)
+            await router.complete(text_request("hello"), noop_tool)
 
         exc = caught.exception
         self.assertEqual(exc.target_rotations, 1)

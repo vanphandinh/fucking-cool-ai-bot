@@ -1,27 +1,20 @@
-"""Structural contract shared by all AI provider adapters."""
+"""Structural contract shared by all AI provider targets."""
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .base import ChatResponse
-from .capabilities import ProviderCapabilities
+from .contracts import ChatRequest, ChatResponse
 from .health import ProviderHealth
+from .target import TargetSpec
 
 
 @runtime_checkable
 class AIProvider(Protocol):
-    name: str
-    model: str
-    supports_tools: bool
-    capabilities: ProviderCapabilities
+    spec: TargetSpec
     health: ProviderHealth
 
-    async def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> ChatResponse:
+    async def chat(self, request: ChatRequest) -> ChatResponse:
         ...
 
     async def aclose(self) -> None:

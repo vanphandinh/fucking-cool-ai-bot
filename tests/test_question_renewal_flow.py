@@ -4,7 +4,8 @@ from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.ai.base import ChatResponse, ProviderError, ToolCall, TransportFailureKind
+from app.ai.base import ProviderError, TransportFailureKind
+from app.ai.contracts import ChatResponse, ToolCallPart as ToolCall
 from app.ai.router import AIProviderRouter, CompletionResult
 from app.config import Settings
 from app.core.job_manager import JobManager, JobSubmission
@@ -97,8 +98,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         class FakeRouter:
             async def complete(
                 self,
-                messages,
-                tools,
+                request,
                 tool_executor,
                 *,
                 requires_vision=False,
@@ -299,8 +299,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.renewals, 2)
         self.assertEqual(fetch_counts[url1], 1)
         self.assertEqual(fetch_counts[url2], 1)
-        self.assertEqual(len(chainnode.calls), 1)
-        self.assertEqual(len(xkiro.calls), 4)
+        self.assertEqual(len(chainnode.requests), 1)
+        self.assertEqual(len(xkiro.requests), 4)
         self.assertEqual(final_answers, [(7, "final answer")])
 
         await self.manager.shutdown()

@@ -69,7 +69,7 @@ class XKiroProbeCliTests(unittest.TestCase):
         env = dict(os.environ)
         retired_probe_key = "XKIRO_PROBE_API_" + "KEY"
         env.pop(retired_probe_key, None)
-        env["XKIRO_API_KEYS"] = ""
+        env["AI_PROVIDERS__XKIRO__API_KEYS"] = ""
         result = subprocess.run(
             [
                 sys.executable,
@@ -85,7 +85,7 @@ class XKiroProbeCliTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn('"error": "XKIRO_API_KEYS is required"', result.stdout)
+        self.assertIn('"error": "AI_PROVIDERS__XKIRO__API_KEYS is required"', result.stdout)
         self.assertNotIn("ModuleNotFoundError", result.stderr)
 
     def test_parse_args_rejects_invalid_numeric_bounds(self) -> None:
@@ -149,7 +149,7 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
     def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
         with patch.dict(
             os.environ,
-            {"XKIRO_API_KEYS": "  ProbeOne , ProbeTwo ,  "},
+            {"AI_PROVIDERS__XKIRO__API_KEYS": "  ProbeOne , ProbeTwo ,  "},
             clear=True,
         ):
             self.assertEqual(probe.xkiro_probe_credential(), "ProbeOne")
@@ -158,7 +158,7 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
         args = probe.parse_args(["--text-model", "free-text"])
         with patch.dict(
             os.environ,
-            {"XKIRO_API_KEYS": "probe-secret"},
+            {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"},
             clear=True,
         ):
             with patch.object(
@@ -187,7 +187,7 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         catalog = {"data": [FREE_TEXT_MODEL]}
-        with patch.dict(os.environ, {"XKIRO_API_KEYS": "probe-secret"}, clear=True):
+        with patch.dict(os.environ, {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"}, clear=True):
             with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
                 with patch.object(probe, "_probe_plain", new=AsyncMock()) as plain:
                     with patch.object(
@@ -225,7 +225,7 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("live probe must not run after any catalog gate failure")
 
         output = io.StringIO()
-        with patch.dict(os.environ, {"XKIRO_API_KEYS": "probe-secret"}, clear=True):
+        with patch.dict(os.environ, {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"}, clear=True):
             with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
                 with patch.object(probe, "_probe_plain", new=forbidden_probe):
                     with patch.object(probe, "_probe_tool_flow", new=forbidden_probe):

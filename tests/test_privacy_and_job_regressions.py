@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import httpx
 
-from app.ai.base import AllProvidersFailed, OpenAICompatProvider, ProviderError
+from app.ai.base import AllProvidersFailed, ProviderError
 from app.ai.router import AIProviderRouter
 from app.bot import job_status
 from app.bot.question_runner import QuestionProcessor
@@ -15,7 +15,8 @@ from app.core.job_manager import JobManager, JobSnapshot, JobSubmission, UserFac
 from app.core.stats import Stats
 from app.search import image_service, service
 from app.search.router import RoutedSearchError, route_auto
-from tests.provider_fakes import ScriptedProvider, noop_tool
+from tests.openai_target_fakes import make_catalog_target
+from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 class StatusRetryRegressionTests(unittest.TestCase):
@@ -139,10 +140,7 @@ class ProviderFailurePrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs("app.ai.router", level="WARNING") as caught:
             with self.assertRaises(AllProvidersFailed) as raised:
-                await router.complete(
-                    [{"role": "user", "content": "question"}],
-                    None,
-                    noop_tool,
+                await router.complete(text_request("question"), noop_tool,
                 )
 
         output = "\n".join(caught.output)
@@ -164,11 +162,11 @@ class ProviderFailurePrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        provider = OpenAICompatProvider(
-            "privacy-test",
-            "https://example.org/v1",
-            "fake",
-            "fake",
+        provider = make_catalog_target(
+            "xkiro",
+            model="privacy-model",
+            credential="fake",
+            target_id="xkiro:text:privacy:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -177,7 +175,7 @@ class ProviderFailurePrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         try:
             with self.assertRaises(ProviderError) as raised:
-                await provider.chat([{"role": "user", "content": "question"}])
+                await provider.chat(text_request("question"))
             self.assertEqual(raised.exception.status_code, 500)
             self.assertNotIn(secret_payload, str(raised.exception))
         finally:

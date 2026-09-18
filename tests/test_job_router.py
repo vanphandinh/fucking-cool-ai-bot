@@ -1,11 +1,11 @@
 import asyncio
 import unittest
 
-from app.ai.base import ChatResponse, ToolCall
+from app.ai.contracts import ChatRequest, ChatResponse, ToolCallPart as ToolCall
 from app.ai.router import AIProviderRouter, _execute_tool_batch
 from app.core.job_control import JobControl
 from app.core.job_operations import OperationRunner, _budgets
-from tests.provider_fakes import ScriptedProvider, fetch_url_tool
+from tests.provider_fakes import ScriptedProvider, fetch_url_definition, text_request
 
 
 class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
@@ -15,7 +15,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         release = asyncio.Event()
 
         class SlowProvider(ScriptedProvider):
-            async def chat(self, messages, tools=None):
+            async def chat(self, request: ChatRequest):
                 entered.set()
                 await release.wait()
                 return ChatResponse(content="done")
@@ -30,8 +30,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         task = asyncio.create_task(
             router.complete(
-                [{"role": "user", "content": "q"}],
-                None,
+                text_request("q"),
                 lambda name, args: asyncio.sleep(0, result="unused"),
                 operations=operations,
             )
@@ -55,7 +54,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
                 super().__init__("one", [])
                 self.turn = 0
 
-            async def chat(self, messages, tools=None):
+            async def chat(self, request: ChatRequest):
                 self.turn += 1
                 if self.turn == 1:
                     entered.set()
@@ -85,8 +84,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         task = asyncio.create_task(
             router.complete(
-                [{"role": "user", "content": "q"}],
-                [fetch_url_tool()],
+                text_request("q", tools=(fetch_url_definition(),)),
                 tool,
                 operations=operations,
             )
@@ -194,7 +192,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         from app.ai.base import AllProvidersFailed
 
         class HungProvider(ScriptedProvider):
-            async def chat(self, messages, tools=None):
+            async def chat(self, request: ChatRequest):
                 await asyncio.Event().wait()
 
         provider = HungProvider("hung", [])
@@ -208,8 +206,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(AllProvidersFailed) as caught:
             await router.complete(
-                [{"role": "user", "content": "q"}],
-                None,
+                text_request("q"),
                 lambda name, args: asyncio.sleep(0, result="unused"),
                 operations=operations,
             )

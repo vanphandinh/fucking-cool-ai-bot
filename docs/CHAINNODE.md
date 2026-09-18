@@ -5,21 +5,21 @@ Chainnode là production primary AI provider cho cả text và vision. Router gi
 ## Current configuration
 
 ```env
-CHAINNODE_API_KEYS=
-CHAINNODE_BASE_URL=https://dn.chainno.de/v1
-CHAINNODE_TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-CHAINNODE_VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-CHAINNODE_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__CHAINNODE__API_KEYS=
+AI_PROVIDERS__CHAINNODE__BASE_URL=https://dn.chainno.de/v1
+AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
+AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
 ```
 
-`CHAINNODE_API_KEYS`, `CHAINNODE_TEXT_MODELS`, và `CHAINNODE_VISION_MODELS` là canonical runtime pools. Một phần tử là hợp lệ; nhiều phần tử được phân tách bằng dấu phẩy và giữ nguyên case.
+`AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS`, và `AI_PROVIDERS__CHAINNODE__VISION_MODELS` là canonical runtime pools. Một phần tử là hợp lệ; nhiều phần tử được phân tách bằng dấu phẩy và giữ nguyên case.
 
-Khi Chainnode được chọn cho text và credential pool không rỗng, `CHAINNODE_TEXT_MODELS` phải có ít nhất một model. Khi vision bật và Chainnode được chọn cho vision, `CHAINNODE_VISION_MODELS` cũng phải có ít nhất một model.
+Khi Chainnode được chọn cho text và credential pool không rỗng, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS` phải có ít nhất một model. Khi vision bật và Chainnode được chọn cho vision, `AI_PROVIDERS__CHAINNODE__VISION_MODELS` cũng phải có ít nhất một model.
 
-`CHAINNODE_BASE_URL` mặc định là `https://dn.chainno.de/v1`. `CHAINNODE_REQUEST_TIMEOUT_SEC` là per-attempt read timeout và mặc định `60.0` giây. Shared OpenAI-compatible transport vẫn dùng bounded connect/write/pool timeouts.
+`AI_PROVIDERS__CHAINNODE__BASE_URL` mặc định là `https://dn.chainno.de/v1`. `AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC` là per-attempt read timeout và mặc định `60.0` giây. Shared OpenAI-compatible transport vẫn dùng bounded connect/write/pool timeouts.
 
 ## Target expansion
 
@@ -88,3 +88,8 @@ Operational rollback để tắt xKiro fallback:
 TEXT_PROVIDER_ORDER=chainnode
 VISION_PROVIDER_ORDER=chainnode
 ```
+
+
+## Generic provider architecture
+
+Chainnode là một `ProviderProfile` trong `config/ai-providers.toml` dùng `openai-chat` driver. Runtime credentials/models chỉ đến từ `AI_PROVIDERS__CHAINNODE__*`; thêm một vendor OpenAI-compatible tương tự chỉ cần catalog + env config, không cần provider-specific Python module.

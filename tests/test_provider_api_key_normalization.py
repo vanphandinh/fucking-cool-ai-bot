@@ -1,64 +1,45 @@
-"""Regression tests for provider API-key normalization at factory boundaries."""
+"""Credential normalization at generic target-builder boundaries."""
 
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 import unittest
 
-import app.ai.chainnode as chainnode
-import app.ai.xkiro as xkiro
+from app.ai.target_builder import build_provider_targets
 from app.config import Settings
 
 
 class ProviderApiKeyNormalizationTests(unittest.TestCase):
-    def test_xkiro_whitespace_only_key_builds_no_slots(self) -> None:
+    def _build(self, provider_id: str, key: str):
         settings = Settings(
             _env_file=None,
-            xkiro_api_keys="   ",
-            xkiro_text_models="test-model",
-            text_provider_order="xkiro",
+            ai_providers={
+                provider_id: {
+                    "api_keys": key,
+                    "text_models": "test-model",
+                }
+            },
+            text_provider_order=provider_id,
             vision_enabled=False,
         )
-        self.assertEqual(xkiro.build_xkiro_provider_slots(settings), [])
+        return build_provider_targets(settings, [provider_id])
 
-    def test_chainnode_whitespace_only_key_builds_no_slots(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            chainnode_api_keys="   ",
-            chainnode_text_models="test-model",
-            text_provider_order="chainnode",
-            vision_enabled=False,
-        )
-        self.assertEqual(chainnode.build_chainnode_provider_slots(settings), [])
+    def test_whitespace_only_key_builds_no_targets(self) -> None:
+        for provider_id in ("chainnode", "xkiro"):
+            with self.subTest(provider_id=provider_id):
+                self.assertEqual(self._build(provider_id, "   "), [])
 
-    def test_xkiro_factory_strips_api_key_before_authorization_header(self) -> None:
-        settings = SimpleNamespace(
-            xkiro_api_keys_list=["  test-key  "],
-            xkiro_base_url="https://api.xkiro.com/v1",
-            xkiro_text_models_list=["test-model"],
-            xkiro_vision_models_list=[],
-            xkiro_request_timeout_sec=30.0,
-        )
-        provider = xkiro.make_xkiro_provider(settings)
-        try:
-            self.assertEqual(provider._client.headers["Authorization"], "Bearer test-key")
-        finally:
-            asyncio.run(provider.aclose())
-
-    def test_chainnode_factory_strips_api_key_before_authorization_header(self) -> None:
-        settings = SimpleNamespace(
-            chainnode_api_keys_list=["  test-key  "],
-            chainnode_base_url="https://dn.chainno.de/v1",
-            chainnode_text_models_list=["test-model"],
-            chainnode_vision_models_list=[],
-            chainnode_request_timeout_sec=30.0,
-        )
-        provider = chainnode.make_chainnode_provider(settings)
-        try:
-            self.assertEqual(provider._client.headers["Authorization"], "Bearer test-key")
-        finally:
-            asyncio.run(provider.aclose())
+    def test_builder_strips_credential_before_authorization_header(self) -> None:
+        for provider_id in ("chainnode", "xkiro"):
+            targets = self._build(provider_id, "  test-key  ")
+            try:
+                self.assertEqual(
+                    targets[0]._client.headers["Authorization"],
+                    "Bearer test-key",
+                )
+            finally:
+                for target in targets:
+                    asyncio.run(target.aclose())
 
 
 if __name__ == "__main__":

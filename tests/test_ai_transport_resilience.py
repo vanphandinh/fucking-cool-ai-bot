@@ -8,9 +8,26 @@ from unittest.mock import patch
 
 import httpx
 
+from tests.provider_fakes import text_request
+
 from app.ai import base as ai_base
-from app.ai.base import OpenAICompatProvider, ProviderError
+from app.ai.base import ProviderError
+from app.ai.capabilities import ProviderCapabilities
+from app.ai.drivers.openai_chat import OpenAIChatDriver, OpenAIChatTarget
+from app.ai.drivers.registry import get_driver
+from app.ai.recovery import RecoveryPolicy
+from app.ai.target import ProviderTargetIdentity, TargetSpec
+from app.ai.runtime_config import provider_runtime
 from app.config import Settings
+
+
+class DriverRegistryTests(unittest.TestCase):
+    def test_openai_chat_driver_is_registered(self) -> None:
+        self.assertIsInstance(get_driver("openai-chat"), OpenAIChatDriver)
+
+    def test_unknown_driver_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown AI driver"):
+            get_driver("missing")
 
 
 class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
@@ -29,8 +46,8 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.xkiro_request_timeout_sec, 60.0)
-        self.assertEqual(settings.chainnode_request_timeout_sec, 60.0)
+        self.assertIsNone(provider_runtime(settings, "xkiro").request_timeout_sec)
+        self.assertIsNone(provider_runtime(settings, "chainnode").request_timeout_sec)
 
     async def test_connect_error_is_classified_without_adapter_retry(self) -> None:
         message = await self._assert_transport_failure(
@@ -100,7 +117,7 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         )
         try:
             with self.assertRaises(ProviderError) as raised:
-                await provider.chat([{"role": "user", "content": "hello"}])
+                await provider.chat(text_request("hello"))
         finally:
             await provider.aclose()
 
@@ -112,14 +129,23 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         return str(raised.exception)
 
 
-def _provider(*, timeout: float) -> OpenAICompatProvider:
-    return OpenAICompatProvider(
-        name="test",
+def _provider(*, timeout: float) -> OpenAIChatTarget:
+    spec = TargetSpec(
+        identity=ProviderTargetIdentity(
+            family="test",
+            route="text",
+            model="test-model",
+            credential_id="cred-1",
+            target_id="test:text:m1:c1",
+        ),
+        driver="openai-chat",
+        capabilities=ProviderCapabilities(route="text"),
         base_url="https://example.test/v1",
-        api_key="test-key",
-        model="test-model",
-        timeout=timeout,
+        request_timeout_sec=timeout,
+        recovery_policy=RecoveryPolicy(),
+        driver_options={"explicit_stream": False},
     )
+    return OpenAIChatDriver().build_target(spec, credential="test-key")
 
 
 if __name__ == "__main__":
