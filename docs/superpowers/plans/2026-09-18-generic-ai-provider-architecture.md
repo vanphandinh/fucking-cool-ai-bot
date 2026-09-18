@@ -116,12 +116,33 @@ driver = "openai-chat"
 """,
         encoding="utf-8",
     )
-    with pytest_or_unittest_value_error("duplicate provider id"):
+    with self.assertRaisesRegex(ValueError, "duplicate provider id"):
         load_provider_catalog(path)
 
-def test_catalog_rejects_invalid_recovery_enum(tmp_path: Path) -> None:
-    # catalog with scope="unknown"
-    ...
+def test_catalog_rejects_invalid_recovery_enum(self) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "providers.toml"
+        path.write_text(
+            """
+[[providers]]
+id = "demo"
+driver = "openai-chat"
+default_base_url = "https://example.test/v1"
+default_timeout_sec = 30
+
+[providers.routes.text]
+enabled = true
+
+[[providers.recovery]]
+status = 429
+action = "rotate_target"
+scope = "unknown"
+effect = "cooldown"
+""",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "unknown recovery scope"):
+            load_provider_catalog(path)
 ~~~
 
 Use the repository's existing \`unittest\` style rather than adding pytest.
@@ -247,11 +268,22 @@ def test_nested_provider_env_is_loaded(tmp_path: Path) -> None:
     self.assertEqual(runtime.text_models_list, ["ModelA", "ModelB"])
     self.assertEqual(runtime.request_timeout_sec, 42.0)
 
-def test_runtime_values_preserve_case_and_first_occurrence() -> None:
-    ...
+def test_runtime_values_preserve_case_and_first_occurrence(self) -> None:
+    runtime = ProviderRuntimeSettings(
+        api_keys="KeyA,keya,KeyA",
+        text_models="Model/Case,model/case,Model/Case",
+    )
+    self.assertEqual(runtime.api_keys_list, ["KeyA", "keya"])
+    self.assertEqual(runtime.text_models_list, ["Model/Case", "model/case"])
 
-def test_provider_runtime_error_does_not_expose_api_key() -> None:
-    ...
+def test_provider_runtime_error_does_not_expose_api_key(self) -> None:
+    secret = "SeCrEt-Provider-Key"
+    with self.assertRaises(ValidationError) as ctx:
+        ProviderRuntimeSettings(
+            api_keys=secret,
+            request_timeout_sec=-1,
+        )
+    self.assertNotIn(secret, str(ctx.exception))
 ~~~
 
 - [ ] **Step 2: Run focused tests and verify red**
@@ -376,11 +408,19 @@ def test_provider_identity_comes_from_target_spec() -> None:
     provider = ScriptedProvider("demo", [])
     self.assertEqual(provider_target_identity(provider), provider.spec.identity)
 
-def test_duplicate_target_detection_uses_spec_identity() -> None:
-    ...
+def test_duplicate_target_detection_uses_spec_identity(self) -> None:
+    first = ScriptedProvider("demo", [], target_id="demo:text:m1:c1")
+    second = ScriptedProvider("demo", [], target_id="demo:text:m1:c1")
+    with self.assertRaisesRegex(ValueError, "duplicate provider target"):
+        AIProviderRouter([first, second], text_provider_order=("demo",))
 
-def test_target_spec_repr_never_contains_secret() -> None:
-    ...
+def test_target_spec_repr_never_contains_secret(self) -> None:
+    secret = "SeCrEt-Value"
+    provider = ScriptedProvider("demo", [], credential="unused-test-credential")
+    provider.raw_test_secret = secret
+    rendered = repr(provider.spec) + repr(provider_target_identity(provider))
+    self.assertNotIn(secret, rendered)
+    self.assertIn("cred-1", rendered)
 ~~~
 
 - [ ] **Step 2: Run focused tests and verify red**
@@ -419,19 +459,26 @@ class AIProvider(Protocol):
     supports_tools: bool
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str:
+        raise NotImplementedError
+
     @property
-    def model(self) -> str: ...
+    def model(self) -> str:
+        raise NotImplementedError
+
     @property
-    def capabilities(self) -> ProviderCapabilities: ...
+    def capabilities(self) -> ProviderCapabilities:
+        raise NotImplementedError
 
     async def chat(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-    ) -> ChatResponse: ...
+    ) -> ChatResponse:
+        raise NotImplementedError
 
-    async def aclose(self) -> None: ...
+    async def aclose(self) -> None:
+        raise NotImplementedError
 ~~~
 
 Properties may delegate to \`spec.identity.family\`, \`spec.identity.model\`, and \`spec.capabilities\` for compatibility with the router during Milestone A.
@@ -548,7 +595,7 @@ class Driver(Protocol):
         *,
         credential: str,
     ) -> AIProvider:
-        ...
+        raise NotImplementedError
 ~~~
 
 \`OpenAIChatDriver.build_target\` returns \`OpenAIChatTarget\`.
@@ -955,10 +1002,10 @@ class AIProvider(Protocol):
     health: ProviderHealth
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        ...
+        raise NotImplementedError
 
     async def aclose(self) -> None:
-        ...
+        raise NotImplementedError
 ~~~
 
 - [ ] **Step 5: Keep an adapter shim only inside the driver until Task 9**
@@ -1087,7 +1134,10 @@ class _RequestState:
     base_request: ChatRequest
     portable_messages: list[ChatMessage]
     tool_outputs: list[str]
-    ...
+    budget: _ToolBudget
+    retry: RequestRetryState
+    unsupported_tool_models: set[tuple[str, str]]
+    successful_health_snapshot: _HealthGenerationSnapshot | None
 ~~~
 
 Do not deepcopy raw vendor dictionaries because they no longer exist.
