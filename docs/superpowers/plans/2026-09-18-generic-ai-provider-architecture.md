@@ -10,6 +10,8 @@
 
 **Spec:** \`docs/superpowers/specs/2026-09-18-generic-ai-provider-architecture-design.md\`
 
+**Lifecycle:** TEMPORARY implementation artifact. Keep this file in the repository while the implementation is in progress. After Tasks 1-12 are complete and the final verification suite is green, delete this plan file in the final implementation cleanup commit. Do not delete it earlier, because executors and reviewers use it as the task checklist.
+
 ## Global Constraints
 
 - Preserve current text/vision provider ordering defaults: \`chainnode,xkiro\`.
@@ -23,6 +25,7 @@
 - Do not add dynamic external Python plugin discovery in this implementation.
 - Do not query provider model catalogs during normal startup or request handling.
 - Each task must follow red-green-refactor and end with an independently testable commit.
+- This implementation plan is temporary repository state and must be deleted only after the entire implementation and final verification are complete.
 
 ---
 
@@ -1390,6 +1393,22 @@ Before opening a PR:
 - [ ] Existing tool-call continuation and cross-provider portability behavior is unchanged.
 - [ ] Existing target/model/credential rotation counters remain unchanged.
 - [ ] Full CI-equivalent offline verification passes on Python 3.11 and 3.12 in CI.
+
+## Temporary Plan Cleanup
+
+After all implementation tasks are complete and every command in the Final Review Checklist passes:
+
+- [ ] Delete `docs/superpowers/plans/2026-09-18-generic-ai-provider-architecture.md`.
+- [ ] Run `python scripts/check_markdown_links.py` to ensure no active document links to the deleted temporary plan.
+- [ ] Run `git grep -n '2026-09-18-generic-ai-provider-architecture.md' -- . ':!docs/superpowers/plans/2026-09-18-generic-ai-provider-architecture.md'` and require no stale references.
+- [ ] Commit the deletion together with any stale-reference cleanup using:
+
+~~~bash
+git add -A
+git commit -m "chore: remove completed AI provider implementation plan"
+~~~
+
+The design spec is not part of this temporary-plan deletion unless a later instruction explicitly removes it.
 
 ## Suggested PR Decomposition
 
