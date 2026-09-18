@@ -1,12 +1,14 @@
-"""Provider-specific resource recovery policy for concrete routing targets."""
+"""Provider-agnostic resource recovery policy for concrete routing targets."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from types import MappingProxyType
+from typing import Mapping
 
 from .base import ProviderError
-from .target import ProviderTargetIdentity
+from .target import TargetSpec
 
 
 class RecoveryAction(str, Enum):
@@ -37,47 +39,25 @@ class RecoveryDecision:
     health_effect: HealthEffect
 
 
-def classify_recovery(
-    identity: ProviderTargetIdentity,
-    error: ProviderError,
-) -> RecoveryDecision:
-    """Classify non-transport failures without teaching the router provider quirks."""
+TRANSPORT_RECORD_ONLY = RecoveryDecision(
+    RecoveryAction.STOP,
+    HealthScope.TARGET,
+    HealthEffect.RECORD_ONLY,
+)
 
-    if getattr(error, "transport_kind", None) is not None:
-        return RecoveryDecision(
-            RecoveryAction.STOP,
-            HealthScope.TARGET,
-            HealthEffect.RECORD_ONLY,
-        )
 
+def default_recovery_decision(error: ProviderError) -> RecoveryDecision:
     status = error.status_code
     if status == 429:
-        scope = (
-            HealthScope.CREDENTIAL
-            if identity.family == "xkiro"
-            else HealthScope.MODEL
-        )
         return RecoveryDecision(
             RecoveryAction.ROTATE_TARGET,
-            scope,
+            HealthScope.MODEL,
             HealthEffect.COOLDOWN,
         )
     if status == 401:
         return RecoveryDecision(
             RecoveryAction.ROTATE_TARGET,
             HealthScope.CREDENTIAL,
-            HealthEffect.DISABLE,
-        )
-    if status == 402 and identity.family == "xkiro":
-        return RecoveryDecision(
-            RecoveryAction.ROTATE_TARGET,
-            HealthScope.CREDENTIAL,
-            HealthEffect.DISABLE,
-        )
-    if status == 403 and identity.family == "xkiro":
-        return RecoveryDecision(
-            RecoveryAction.ROTATE_TARGET,
-            HealthScope.ENTITLEMENT,
             HealthEffect.DISABLE,
         )
     if status == 404:
@@ -99,11 +79,31 @@ def classify_recovery(
             HealthEffect.TRANSIENT,
         )
 
-    # Preserve the historical behavior for malformed/non-transient provider
-    # responses: leave this family and let ordered provider fallback proceed.
     effect = HealthEffect.TRANSIENT if error.transient else HealthEffect.RECORD_ONLY
     return RecoveryDecision(
         RecoveryAction.FALLBACK_FAMILY,
         HealthScope.FAMILY,
         effect,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryPolicy:
+    overrides: Mapping[int, RecoveryDecision] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def decision_for(self, error: ProviderError) -> RecoveryDecision:
+        if getattr(error, "transport_kind", None) is not None:
+            return TRANSPORT_RECORD_ONLY
+        if error.status_code is not None:
+            override = self.overrides.get(error.status_code)
+            if override is not None:
+                return override
+        return default_recovery_decision(error)
+
+
+def classify_recovery(spec: TargetSpec, error: ProviderError) -> RecoveryDecision:
+    """Classify a failure using only the target's declarative recovery policy."""
+
+    return spec.recovery_policy.decision_for(error)

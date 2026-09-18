@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
+
+
+def _cooldown_delay(retry_after: float | None) -> float:
+    if retry_after is None or not math.isfinite(retry_after) or retry_after < 0:
+        return 60.0
+    return retry_after
 
 
 @dataclass
@@ -58,9 +65,7 @@ class ProviderHealth:
 
         self._advance_direct_generation()
         self.last_error = (message or "")[:300]
-        self.cooldown_until = time.monotonic() + max(
-            0.0, retry_after if retry_after is not None else 60.0
-        )
+        self.cooldown_until = time.monotonic() + _cooldown_delay(retry_after)
 
     def record_transient_error(self, message: str) -> None:
         """Record a generic transient health failure using existing bounded semantics."""
@@ -133,9 +138,7 @@ class ProviderHealth:
             self.disabled = True
             return
         if status_code == 429:
-            self.cooldown_until = now + max(
-                0.0, retry_after if retry_after is not None else 60.0
-            )
+            self.cooldown_until = now + _cooldown_delay(retry_after)
             return
         if transient:
             self.consecutive_transient_failures += 1

@@ -3,8 +3,20 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.ai.base import ChatResponse, ToolCall
+from app.ai.capabilities import ProviderCapabilities
+from app.ai.contracts import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    TextPart,
+    ToolCallPart as ToolCall,
+    ToolDefinition,
+    ToolResultPart,
+)
+from app.ai.health import ProviderHealth
+from app.ai.recovery import RecoveryPolicy
 from app.ai.router import AIProviderRouter, CompletionResult, _execute_tool_batch
+from app.ai.target import ProviderTargetIdentity, TargetSpec
 from app.core.job_control import JobStopped
 
 
@@ -13,20 +25,36 @@ class _BatchProvider:
     supports_tools = True
 
     def __init__(self) -> None:
+        self.spec = TargetSpec(
+            identity=ProviderTargetIdentity(
+                family="batch",
+                route="text",
+                model="batch-model",
+                credential_id="cred-1",
+                target_id="batch:text:m1:c1",
+            ),
+            driver="fake",
+            capabilities=ProviderCapabilities(route="text"),
+            base_url="https://example.invalid/v1",
+            request_timeout_sec=60.0,
+            recovery_policy=RecoveryPolicy(),
+        )
+        self.capabilities = self.spec.capabilities
+        self.health = ProviderHealth()
         self.calls = 0
-        self.synthesis_messages: list[dict] = []
+        self.synthesis_request: ChatRequest | None = None
 
-    async def chat(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResponse:
+    async def chat(self, request: ChatRequest) -> ChatResponse:
         self.calls += 1
         if self.calls == 1:
             return ChatResponse(
-                tool_calls=[
+                tool_calls=(
                     ToolCall("call_a", "fetch_url", {"url": "a"}),
                     ToolCall("call_b", "fetch_url", {"url": "b"}),
                     ToolCall("call_c", "fetch_url", {"url": "c"}),
-                ]
+                )
             )
-        self.synthesis_messages = messages
+        self.synthesis_request = request
         return ChatResponse(content="done")
 
 
@@ -54,21 +82,46 @@ class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 active -= 1
 
         result = await router.complete(
-            [{"role": "user", "content": "read three URLs"}],
-            [{"type": "function", "function": {"name": "fetch_url"}}],
+            ChatRequest(
+                messages=(
+                    ChatMessage("user", (TextPart("read three URLs"),)),
+                ),
+                tools=(
+                    ToolDefinition(
+                        name="fetch_url",
+                        description="Fetch URL",
+                        parameters={"type": "object", "properties": {}},
+                    ),
+                ),
+            ),
             execute,
         )
 
         self.assertEqual(result, CompletionResult("done", "batch", ()))
         self.assertEqual(max_active, 2)
         self.assertEqual(completion_order, ["b", "c", "a"])
+        self.assertIsNotNone(provider.synthesis_request)
+        assert provider.synthesis_request is not None
+        messages = provider.synthesis_request.messages
         self.assertFalse(
-            any(message.get("role") == "tool" for message in provider.synthesis_messages)
+            any(
+                isinstance(part, ToolResultPart)
+                for message in messages
+                for part in message.parts
+            )
         )
         self.assertFalse(
-            any(message.get("tool_calls") for message in provider.synthesis_messages)
+            any(
+                isinstance(part, ToolCall)
+                for message in messages
+                for part in message.parts
+            )
         )
-        evidence = str(provider.synthesis_messages[-1].get("content") or "")
+        evidence = "".join(
+            part.text
+            for part in messages[-1].parts
+            if isinstance(part, TextPart)
+        )
         positions = [evidence.index(f"result-{label}") for label in ("a", "b", "c")]
         self.assertEqual(positions, sorted(positions))
 
@@ -90,15 +143,13 @@ class ToolBatchConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 sibling_cancelled.set()
                 raise
 
-        calls = [
+        calls = (
             ToolCall("call_stop", "stop", {}),
             ToolCall("call_sibling", "sibling", {}),
-        ]
+        )
         with self.assertRaises(JobStopped):
             await _execute_tool_batch(calls, execute)
 
-        # Returning from the batch on cancellation must mean no owned child is still
-        # running. Otherwise a Stop can leave a tool mutating state after job teardown.
         await asyncio.sleep(0)
         self.assertTrue(sibling_cancelled.is_set())
         self.assertFalse(sibling_finished.is_set())

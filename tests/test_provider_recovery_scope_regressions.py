@@ -10,9 +10,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-from app.ai.base import ChatResponse, ProviderError
+from app.ai.base import ProviderError
+from app.ai.contracts import ChatResponse
 from app.ai.router import AIProviderRouter
-from tests.provider_fakes import ScriptedProvider, noop_tool
+from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 def _target(
@@ -48,8 +49,8 @@ def _router(
     )
 
 
-def _messages() -> list[dict]:
-    return [{"role": "user", "content": "hello"}]
+def _request():
+    return text_request()
 
 
 class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
@@ -80,7 +81,7 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
             text_order=("xkiro", "backup"),
         )
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result.content, "xkiro-ok")
         self.assertEqual(result.provider, "xkiro")
@@ -88,9 +89,9 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 0)
         self.assertEqual(result.credential_failovers, 1)
-        self.assertEqual(len(denied.calls), 1)
-        self.assertEqual(len(sibling.calls), 1)
-        self.assertEqual(backup.calls, [])
+        self.assertEqual(len(denied.requests), 1)
+        self.assertEqual(len(sibling.requests), 1)
+        self.assertEqual(backup.requests, [])
 
     async def test_xkiro_402_disables_credential_across_requests(self) -> None:
         key1 = _target(
@@ -116,13 +117,13 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router([key1, key2], text_order=("xkiro",))
 
-        first = await router.complete(_messages(), None, noop_tool)
-        second = await router.complete(_messages(), None, noop_tool)
+        first = await router.complete(_request(), noop_tool)
+        second = await router.complete(_request(), noop_tool)
 
         self.assertEqual(first.content, "first-ok")
         self.assertEqual(second.content, "second-ok")
-        self.assertEqual(len(key1.calls), 1)
-        self.assertEqual(len(key2.calls), 2)
+        self.assertEqual(len(key1.requests), 1)
+        self.assertEqual(len(key2.requests), 2)
 
     async def test_404_disables_model_across_credential_siblings(self) -> None:
         model_a_key1 = _target(
@@ -151,12 +152,12 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
             text_order=("xkiro",),
         )
 
-        result = await router.complete(_messages(), None, noop_tool)
+        result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result.content, "model-b-ok")
-        self.assertEqual(len(model_a_key1.calls), 1)
-        self.assertEqual(model_a_key2.calls, [])
-        self.assertEqual(len(model_b_key1.calls), 1)
+        self.assertEqual(len(model_a_key1.requests), 1)
+        self.assertEqual(model_a_key2.requests, [])
+        self.assertEqual(len(model_b_key1.requests), 1)
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
 
@@ -186,13 +187,13 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         try:
-            result = await router.complete(_messages(), None, noop_tool)
+            result = await router.complete(_request(), noop_tool)
         except Exception as exc:  # noqa: BLE001
             self.fail(f"healthy model should remain reachable within hop budget: {exc}")
 
         self.assertEqual(result.content, "healthy")
-        self.assertEqual(sum(len(target.calls) for target in invalid), 1)
-        self.assertEqual(len(healthy.calls), 1)
+        self.assertEqual(sum(len(target.requests) for target in invalid), 1)
+        self.assertEqual(len(healthy.requests), 1)
 
 
 if __name__ == "__main__":

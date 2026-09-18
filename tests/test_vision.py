@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import unittest
 from types import SimpleNamespace
 
 import httpx
 
-from app.ai.base import OpenAICompatProvider, ProviderError
+from app.ai.base import ProviderError
+from app.ai.contracts import ChatMessage, ChatRequest, ImagePart, TextPart
+from app.ai.drivers.openai_chat import OpenAIChatDriver
+from app.ai.recovery import RecoveryPolicy
+from app.ai.target import ProviderTargetIdentity, TargetSpec
 from app.ai.capabilities import ProviderCapabilities
 from app.ai.health import ProviderHealth
-from app.ai.multimodal import build_user_content
+from app.ai.multimodal import build_user_parts
 from app.ai.router import AIProviderRouter, build_provider_router
 from app.bot.media import ImageTooLarge, TelegramMediaLoader
 from app.config import Settings
 from app.core.request import ImageAttachment, UserRequest
+from tests.provider_fakes import ScriptedProvider
 
 
 class VisionRequestTests(unittest.TestCase):
@@ -37,21 +41,22 @@ class VisionRequestTests(unittest.TestCase):
 
 
 class MultimodalPayloadTests(unittest.TestCase):
-    def test_text_payload_stays_string(self) -> None:
-        content = build_user_content(UserRequest(text="hello", quoted_text="old"))
-        self.assertIsInstance(content, str)
-        self.assertIn("old", content)
-        self.assertIn("hello", content)
+    def test_text_payload_uses_canonical_text_part(self) -> None:
+        content = build_user_parts(UserRequest(text="hello", quoted_text="old"))
+        self.assertEqual(len(content), 1)
+        self.assertIsInstance(content[0], TextPart)
+        self.assertIn("old", content[0].text)
+        self.assertIn("hello", content[0].text)
 
-    def test_png_data_url_round_trip(self) -> None:
+    def test_png_bytes_remain_raw_until_driver_serialization(self) -> None:
         raw = b"\x89PNG\r\n"
-        content = build_user_content(
+        content = build_user_parts(
             UserRequest(text="read", images=(ImageAttachment("image/png", raw),))
         )
-        self.assertIsInstance(content, list)
-        image_url = content[-1]["image_url"]["url"]
-        self.assertTrue(image_url.startswith("data:image/png;base64,"))
-        self.assertEqual(base64.b64decode(image_url.split(",", 1)[1]), raw)
+        self.assertEqual([type(part) for part in content], [TextPart, ImagePart])
+        self.assertEqual(content[-1].mime_type, "image/png")
+        self.assertEqual(content[-1].data, raw)
+        self.assertNotIn("base64", repr(content))
 
     def test_reply_image_precedes_question_and_current_image(self) -> None:
         request = UserRequest(
@@ -62,13 +67,15 @@ class MultimodalPayloadTests(unittest.TestCase):
                 ImageAttachment("image/webp", b"current", "current"),
             ),
         )
-        content = build_user_content(request)
+        content = build_user_parts(request)
         self.assertEqual(
-            [part["type"] for part in content],
-            ["text", "image_url", "text", "image_url"],
+            [type(part) for part in content],
+            [TextPart, ImagePart, TextPart, ImagePart],
         )
-        self.assertIn("quoted", content[0]["text"])
-        self.assertIn("compare", content[2]["text"])
+        self.assertIn("quoted", content[0].text)
+        self.assertEqual(content[1].data, b"reply")
+        self.assertIn("compare", content[2].text)
+        self.assertEqual(content[3].data, b"current")
 
 
 class CapabilityTests(unittest.TestCase):
@@ -84,20 +91,9 @@ class CapabilityTests(unittest.TestCase):
         self.assertFalse(cap.accepts(requires_vision=False, image_count=0))
 
     def test_router_separates_text_and_vision_slots(self) -> None:
-        class P:
-            def __init__(
-                self,
-                name: str,
-                route: str,
-                vision: bool,
-                max_images: int,
-            ) -> None:
-                self.name = name
-                self.capabilities = ProviderCapabilities(route, vision, max_images)
-
-        text = P("test", "text", False, 0)
-        vision = P("test", "vision", True, 1)
-        router = AIProviderRouter([text, vision])  # type: ignore[list-item]
+        text = ScriptedProvider("test", [])
+        vision = ScriptedProvider("test", [], route="vision", max_images=1)
+        router = AIProviderRouter([text, vision])
         self.assertEqual(router.capable_providers(requires_vision=False), [text])
         self.assertEqual(
             router.capable_providers(requires_vision=True, image_count=1),
@@ -130,9 +126,13 @@ class HealthTests(unittest.TestCase):
 class VisionConfigTests(unittest.TestCase):
     def _xkiro_settings(self, **overrides) -> Settings:
         values = {
-            "xkiro_api_keys": "test-key",
-            "xkiro_text_models": "test-text-model",
-            "xkiro_vision_models": "test-vision-model",
+            "ai_providers": {
+                "xkiro": {
+                    "api_keys": "test-key",
+                    "text_models": "test-text-model",
+                    "vision_models": "test-vision-model",
+                }
+            }
         }
         values.update(overrides)
         return Settings(_env_file=None, **values)
@@ -188,16 +188,35 @@ class ProviderErrorPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 json={"error": {"message": f"invalid image data:image/png;base64,{secret}"}},
             )
 
-        provider = OpenAICompatProvider(
-            "vision", "https://example.org/v1", "test-key", "test-model"
+        spec = TargetSpec(
+            identity=ProviderTargetIdentity(
+                family="vision",
+                route="vision",
+                model="test-model",
+                credential_id="cred-1",
+                target_id="vision:vision:m1:c1",
+            ),
+            driver="openai-chat",
+            capabilities=ProviderCapabilities(
+                route="vision", supports_vision=True, max_images=1
+            ),
+            base_url="https://example.org/v1",
+            request_timeout_sec=60.0,
+            recovery_policy=RecoveryPolicy(),
+            driver_options={"explicit_stream": False},
         )
+        provider = OpenAIChatDriver().build_target(spec, credential="test-key")
         await provider.aclose()
         provider._client = httpx.AsyncClient(
             base_url="https://example.org/v1/", transport=httpx.MockTransport(respond)
         )
         try:
             with self.assertRaises(ProviderError) as ctx:
-                await provider.chat([{"role": "user", "content": "image"}])
+                await provider.chat(
+                    ChatRequest(
+                        messages=(ChatMessage("user", (TextPart("image"),)),)
+                    )
+                )
             self.assertNotIn(secret, str(ctx.exception))
         finally:
             await provider.aclose()

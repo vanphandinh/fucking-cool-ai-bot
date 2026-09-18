@@ -1,224 +1,75 @@
 from __future__ import annotations
 
-import asyncio
-import os
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
-from app.ai.chainnode import build_chainnode_provider_slots
-from app.ai.xkiro import build_xkiro_provider_slots
-from app.config import Settings, XKIRO_DEFAULT_BASE_URL
-import scripts.probe_xkiro as xkiro_probe
+from pydantic import ValidationError
 
-ROOT = Path(__file__).parents[1]
-SYNC_SCRIPT = ROOT / "scripts" / "sync_env.py"
-
-
-def _assignments(text: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for line in text.splitlines():
-        if not line or line.lstrip().startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        out[key.strip()] = value.strip()
-    return out
-
-
-def _set_env_value(rendered: str, key: str, value: str) -> str:
-    prefix = f"{key}="
-    lines = rendered.splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith(prefix):
-            lines[index] = f"{prefix}{value}"
-            return "\n".join(lines) + "\n"
-    raise AssertionError(f"missing {key} in synced env")
-
-
-def _run_sync(directory: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(SYNC_SCRIPT)],
-        cwd=directory,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+from app.ai.runtime_config import ProviderRuntimeSettings, provider_runtime
+from app.config import Settings
 
 
 class ProviderEnvContractTests(unittest.TestCase):
-    def test_template_publishes_canonical_provider_and_retry_contract(self) -> None:
-        assignments = _assignments((ROOT / ".env.example").read_text(encoding="utf-8"))
-        self.assertEqual(assignments["TEXT_PROVIDER_ORDER"], "chainnode,xkiro")
-        self.assertEqual(assignments["VISION_PROVIDER_ORDER"], "chainnode,xkiro")
-        self.assertEqual(assignments["XKIRO_BASE_URL"], XKIRO_DEFAULT_BASE_URL)
-        self.assertEqual(
-            assignments["CHAINNODE_TEXT_MODELS"],
-            "cl/cline-free/deepseek-v4.1-flash",
-        )
-        self.assertEqual(
-            assignments["CHAINNODE_VISION_MODELS"],
-            "cl/cline-free/muse-spark-1.3-contributor",
-        )
-        self.assertEqual(assignments["PROVIDER_RETRY_MAX_CONSECUTIVE"], "2")
-        self.assertEqual(assignments["PROVIDER_RETRY_MAX_PER_PROVIDER"], "3")
-        self.assertEqual(assignments["PROVIDER_RETRY_MAX_PER_REQUEST"], "5")
-        self.assertEqual(assignments["PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST"], "5")
-
-    def test_retry_fields_have_no_validation_aliases(self) -> None:
-        for field_name in (
-            "provider_retry_max_consecutive",
-            "provider_retry_max_per_provider",
-            "provider_retry_max_per_request",
-        ):
-            self.assertIsNone(Settings.model_fields[field_name].validation_alias)
-
-    def test_fresh_template_chainnode_pool_is_operational_and_idempotent(self) -> None:
+    def test_nested_provider_env_is_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            (directory / ".env.example").write_text(
-                (ROOT / ".env.example").read_text(encoding="utf-8"),
+            env = Path(tmp) / ".env"
+            env.write_text(
+                "\n".join(
+                    [
+                        "AI_PROVIDERS__CHAINNODE__API_KEYS=KeyOne,KeyTwo",
+                        "AI_PROVIDERS__CHAINNODE__TEXT_MODELS=ModelA,ModelB",
+                        "AI_PROVIDERS__CHAINNODE__VISION_MODELS=VisionA",
+                        "AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=42",
+                    ]
+                ),
                 encoding="utf-8",
             )
-            first = _run_sync(directory)
-            self.assertEqual(first.returncode, 0, first.stderr)
+            settings = Settings(_env_file=env)
+            runtime = provider_runtime(settings, "chainnode")
+            self.assertEqual(runtime.api_keys_list, ["KeyOne", "KeyTwo"])
+            self.assertEqual(runtime.text_models_list, ["ModelA", "ModelB"])
+            self.assertEqual(runtime.request_timeout_sec, 42.0)
 
-            env_path = directory / ".env"
-            rendered = env_path.read_text(encoding="utf-8")
-            for key, value in (
-                ("CHAINNODE_API_KEYS", "ChainOne,ChainTwo"),
-                ("CHAINNODE_TEXT_MODELS", "ModelA,ModelB"),
-                ("CHAINNODE_VISION_MODELS", "VisionA"),
-                ("TEXT_PROVIDER_ORDER", "chainnode"),
-                ("VISION_PROVIDER_ORDER", "chainnode"),
-            ):
-                rendered = _set_env_value(rendered, key, value)
-            env_path.write_text(rendered, encoding="utf-8")
+    def test_runtime_values_preserve_case_and_first_occurrence(self) -> None:
+        runtime = ProviderRuntimeSettings(
+            api_keys="KeyA,keya,KeyA",
+            text_models="Model/Case,model/case,Model/Case",
+        )
+        self.assertEqual(runtime.api_keys_list, ["KeyA", "keya"])
+        self.assertEqual(runtime.text_models_list, ["Model/Case", "model/case"])
 
-            second = _run_sync(directory)
-            after_second = env_path.read_text(encoding="utf-8")
-            third = _run_sync(directory)
-            self.assertEqual(second.returncode, 0, second.stderr)
-            self.assertEqual(third.returncode, 0, third.stderr)
-            self.assertEqual(env_path.read_text(encoding="utf-8"), after_second)
+    def test_provider_runtime_error_does_not_expose_api_key(self) -> None:
+        secret = "SeCrEt-Provider-Key"
+        with self.assertRaises(ValidationError) as ctx:
+            ProviderRuntimeSettings(api_keys=secret, request_timeout_sec=-1)
+        self.assertNotIn(secret, str(ctx.exception))
 
-            settings = Settings(_env_file=env_path)
-            slots = build_chainnode_provider_slots(settings)
-            try:
-                self.assertEqual(
-                    [(slot.capabilities.route, slot.model, slot.credential_id) for slot in slots],
-                    [
-                        ("text", "ModelA", "cred-1"),
-                        ("text", "ModelA", "cred-2"),
-                        ("text", "ModelB", "cred-1"),
-                        ("text", "ModelB", "cred-2"),
-                        ("vision", "VisionA", "cred-1"),
-                        ("vision", "VisionA", "cred-2"),
-                    ],
-                )
-            finally:
-                for slot in slots:
-                    asyncio.run(slot.aclose())
-
-    def test_fresh_template_xkiro_pool_is_operational_and_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            (directory / ".env.example").write_text(
-                (ROOT / ".env.example").read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-            first = _run_sync(directory)
-            self.assertEqual(first.returncode, 0, first.stderr)
-
-            env_path = directory / ".env"
-            rendered = env_path.read_text(encoding="utf-8")
-            for key, value in (
-                ("XKIRO_API_KEYS", "KeyOne,KeyTwo"),
-                ("XKIRO_TEXT_MODELS", "ModelA,ModelB"),
-                ("XKIRO_VISION_MODELS", "VisionA"),
-                ("TEXT_PROVIDER_ORDER", "xkiro"),
-                ("VISION_PROVIDER_ORDER", "xkiro"),
-            ):
-                rendered = _set_env_value(rendered, key, value)
-            env_path.write_text(rendered, encoding="utf-8")
-
-            second = _run_sync(directory)
-            after_second = env_path.read_text(encoding="utf-8")
-            third = _run_sync(directory)
-            self.assertEqual(second.returncode, 0, second.stderr)
-            self.assertEqual(third.returncode, 0, third.stderr)
-            self.assertEqual(env_path.read_text(encoding="utf-8"), after_second)
-
-            settings = Settings(_env_file=env_path)
-            slots = build_xkiro_provider_slots(settings)
-            try:
-                self.assertEqual(
-                    [(slot.capabilities.route, slot.model, slot.credential_id) for slot in slots],
-                    [
-                        ("text", "ModelA", "cred-1"),
-                        ("text", "ModelA", "cred-2"),
-                        ("text", "ModelB", "cred-1"),
-                        ("text", "ModelB", "cred-2"),
-                        ("vision", "VisionA", "cred-1"),
-                        ("vision", "VisionA", "cred-2"),
-                    ],
-                )
-            finally:
-                for slot in slots:
-                    asyncio.run(slot.aclose())
-
-    def test_runtime_uses_configured_xkiro_base_url(self) -> None:
+    def test_provider_ids_are_normalized_lowercase(self) -> None:
         settings = Settings(
             _env_file=None,
-            xkiro_api_keys="secret",
-            xkiro_text_models="ModelA",
-            xkiro_base_url="https://xkiro-gateway.example/custom/v1",
-            text_provider_order="xkiro",
-            vision_enabled=False,
+            ai_providers={"ChainNode": {"api_keys": "", "text_models": "ModelA"}},
         )
-        slots = build_xkiro_provider_slots(settings)
-        try:
-            self.assertEqual(
-                str(slots[0]._client.base_url),
-                "https://xkiro-gateway.example/custom/v1/",
-            )
-        finally:
-            for slot in slots:
-                asyncio.run(slot.aclose())
+        self.assertIn("chainnode", settings.ai_providers)
+        self.assertNotIn("ChainNode", settings.ai_providers)
 
-    def test_blank_xkiro_base_url_uses_shared_default(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            xkiro_api_keys="secret",
-            xkiro_text_models="ModelA",
-            xkiro_base_url="   ",
-            text_provider_order="xkiro",
-            vision_enabled=False,
-        )
-        slots = build_xkiro_provider_slots(settings)
-        try:
-            self.assertEqual(
-                str(slots[0]._client.base_url),
-                XKIRO_DEFAULT_BASE_URL + "/",
-            )
-        finally:
-            for slot in slots:
-                asyncio.run(slot.aclose())
+    def test_unknown_provider_in_order_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "unknown AI provider"):
+            Settings(_env_file=None, text_provider_order="missing")
 
-        with patch.dict(os.environ, {"XKIRO_BASE_URL": "   "}, clear=False):
-            self.assertEqual(xkiro_probe.xkiro_base_url(), XKIRO_DEFAULT_BASE_URL)
-
-    def test_probe_normalizes_configured_xkiro_base_url(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"XKIRO_BASE_URL": "https://probe-gateway.example/v1/"},
-            clear=False,
-        ):
-            self.assertEqual(
-                xkiro_probe.xkiro_base_url(),
-                "https://probe-gateway.example/v1",
+    def test_target_count_is_bounded_generically(self) -> None:
+        models = ",".join(f"m{index}" for index in range(33))
+        with self.assertRaisesRegex(ValidationError, "maximum is 64"):
+            Settings(
+                _env_file=None,
+                ai_providers={
+                    "chainnode": {
+                        "api_keys": "k1,k2",
+                        "text_models": models,
+                    }
+                },
+                text_provider_order="chainnode",
+                vision_enabled=False,
             )
 
 

@@ -73,3 +73,8 @@ jobs:
       - name: Build production image
         if: matrix.python == '3.12'
         run: docker build --tag fcai-audit:${{ github.sha }} .
+      - name: Smoke production image configuration
+        if: matrix.python == '3.12'
+        run: |
+          docker run --rm --entrypoint python fcai-audit:${{ github.sha }} \
+            -c "from app.config import Settings; Settings(_env_file=None); print('Production image configuration OK')"

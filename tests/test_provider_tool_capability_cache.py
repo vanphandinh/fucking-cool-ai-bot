@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 import unittest
 
 import httpx
 
 from app.ai.router import AIProviderRouter
-from app.ai.xkiro import make_xkiro_provider
+from tests.openai_target_fakes import make_catalog_target
+from tests.provider_fakes import fetch_url_definition, text_request
 
 
 class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
@@ -37,12 +37,12 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
             second_requests.append(payload)
             return _text_response(request, "second plain")
 
-        first_provider = _make_xkiro_target(
+        first_provider = _make_target(
             api_key="key-one",
             credential_id="cred-1",
             target_id="xkiro:text:m1:c1",
         )
-        second_provider = _make_xkiro_target(
+        second_provider = _make_target(
             api_key="key-two",
             credential_id="cred-2",
             target_id="xkiro:text:m1:c2",
@@ -62,15 +62,13 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             first_result = await router.complete(
-                [{"role": "user", "content": "answer with tools if supported"}],
-                [_fetch_url_tool()],
-                noop_tool,
+                text_request("answer with tools if supported", tools=(fetch_url_definition(),)),
+                    noop_tool,
             )
             first_provider.health.record_disabled("force credential sibling")
             second_result = await router.complete(
-                [{"role": "user", "content": "answer with tools if supported"}],
-                [_fetch_url_tool()],
-                noop_tool,
+                text_request("answer with tools if supported", tools=(fetch_url_definition(),)),
+                    noop_tool,
             )
         finally:
             await first_provider.aclose()
@@ -89,21 +87,11 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-def _settings() -> SimpleNamespace:
-    return SimpleNamespace(
-        xkiro_api_keys_list=["unused"],
-        xkiro_text_models_list=["shared-model"],
-        xkiro_vision_models_list=["shared-model"],
-        xkiro_base_url="https://api.xkiro.com/v1",
-        xkiro_request_timeout_sec=30.0,
-    )
-
-
-def _make_xkiro_target(*, api_key: str, credential_id: str, target_id: str):
-    return make_xkiro_provider(
-        _settings(),
-        api_key=api_key,
+def _make_target(*, api_key: str, credential_id: str, target_id: str):
+    return make_catalog_target(
+        "xkiro",
         model="shared-model",
+        credential=api_key,
         credential_id=credential_id,
         target_id=target_id,
     )
@@ -126,20 +114,6 @@ def _text_response(request: httpx.Request, content: str) -> httpx.Response:
         },
         request=request,
     )
-
-
-def _fetch_url_tool() -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "fetch_url",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
-        },
-    }
 
 
 if __name__ == "__main__":

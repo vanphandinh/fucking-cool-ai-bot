@@ -31,7 +31,7 @@ class ChainnodeVisionProbeTests(unittest.TestCase):
         module = _load_probe()
         with patch.dict(
             os.environ,
-            {"CHAINNODE_API_KEYS": "  VisionKeyOne  , VisionKeyTwo ,  "},
+            {"AI_PROVIDERS__CHAINNODE__API_KEYS": "  VisionKeyOne  , VisionKeyTwo ,  "},
             clear=False,
         ):
             self.assertEqual(module.chainnode_probe_credential(), "VisionKeyOne")

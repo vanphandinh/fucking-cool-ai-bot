@@ -207,7 +207,7 @@ class ImageSearchConfigAndToolTests(unittest.TestCase):
         self.assertEqual(settings.image_search_max_results, 4)
 
     def test_orchestrator_exposes_separate_image_search_tool(self) -> None:
-        names = [tool["function"]["name"] for tool in orchestrator.TOOLS]
+        names = [tool.name for tool in orchestrator.TOOLS]
         self.assertIn("web_search", names)
         self.assertIn("image_search", names)
 

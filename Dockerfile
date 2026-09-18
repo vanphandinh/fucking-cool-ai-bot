@@ -12,8 +12,9 @@ COPY requirements.txt .
 RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2' \
     && python -m pip install --no-cache-dir -r requirements.txt
 
-# Copy mã nguồn
+# Copy mã nguồn và provider catalog runtime
 COPY app ./app
+COPY config ./config
 
 # Chạy bằng user non-root
 RUN useradd --create-home --uid 10001 appuser \

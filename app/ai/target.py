@@ -1,18 +1,19 @@
-"""Stable, secret-free identity for concrete provider routing targets."""
+"""Stable, secret-free identity and metadata for concrete provider targets."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Mapping
+
+from .capabilities import ProviderCapabilities
+
+if TYPE_CHECKING:
+    from .recovery import RecoveryPolicy
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderTargetIdentity:
-    """Identify one concrete family/route/model/credential combination.
-
-    ``credential_id`` and ``target_id`` are opaque aliases only.  Raw API keys
-    must never be copied into either field because these identities may appear
-    in logs, status output, exceptions, and test diagnostics.
-    """
+    """Identify one concrete family/route/model/credential combination."""
 
     family: str
     route: str
@@ -37,20 +38,20 @@ class ProviderTargetIdentity:
         return (self.family, self.model, self.credential_id)
 
 
-def provider_target_identity(provider: object) -> ProviderTargetIdentity:
-    """Return a safe identity for an adapter, including legacy single targets."""
+@dataclass(frozen=True, slots=True)
+class TargetSpec:
+    """Explicit immutable metadata for one concrete routing target."""
 
-    family = str(getattr(provider, "name", "")).strip()
-    capabilities = getattr(provider, "capabilities", None)
-    route = str(getattr(capabilities, "route", "text") or "text").strip()
-    model = str(getattr(provider, "model", "") or "").strip()
-    credential_id = str(getattr(provider, "credential_id", "cred-1") or "cred-1").strip()
-    explicit_target_id = str(getattr(provider, "target_id", "") or "").strip()
-    target_id = explicit_target_id or f"{family}:{route}:{model}:{credential_id}"
-    return ProviderTargetIdentity(
-        family=family,
-        route=route,
-        model=model,
-        credential_id=credential_id,
-        target_id=target_id,
-    )
+    identity: ProviderTargetIdentity
+    driver: str
+    capabilities: ProviderCapabilities
+    base_url: str
+    request_timeout_sec: float
+    recovery_policy: RecoveryPolicy
+    driver_options: Mapping[str, object] = field(default_factory=dict)
+
+
+def provider_target_identity(provider: object) -> ProviderTargetIdentity:
+    """Return the explicit secret-free identity attached to a target."""
+
+    return provider.spec.identity  # type: ignore[attr-defined]

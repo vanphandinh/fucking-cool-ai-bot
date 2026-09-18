@@ -22,11 +22,17 @@ class CanonicalEnvVocabularyTests(unittest.TestCase):
         retired = "CHAINNODE_API_" + "KEY"
         self.assertEqual(scanner.scan_text(f"{retired}=secret\n"), (retired,))
 
-    def test_scan_text_does_not_flag_plural_canonical_identifier(self) -> None:
+    def test_generic_nested_provider_namespace_is_accepted(self) -> None:
         scanner = self._scanner()
-        retired = "CHAINNODE_API_" + "KEY"
-        canonical = retired + "S"
-        self.assertEqual(scanner.scan_text(f"{canonical}=secret\n"), ())
+        self.assertEqual(
+            scanner.scan_text("AI_PROVIDERS__CHAINNODE__API_KEYS=secret\n"),
+            (),
+        )
+
+    def test_scan_text_flags_plural_legacy_identifier_after_cleanup(self) -> None:
+        scanner = self._scanner()
+        retired = "CHAINNODE_API_" + "KEYS"
+        self.assertEqual(scanner.scan_text(f"{retired}=secret\n"), (retired,))
 
     def test_scan_text_flags_previous_retry_attribute(self) -> None:
         scanner = self._scanner()

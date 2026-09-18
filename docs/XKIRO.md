@@ -5,21 +5,21 @@ xKiro là secondary AI provider cho text và vision. Chainnode giữ vai trò pr
 ## Current configuration
 
 ```env
-XKIRO_API_KEYS=
-XKIRO_BASE_URL=https://api.xkiro.com/v1
-XKIRO_TEXT_MODELS=
-XKIRO_VISION_MODELS=
-XKIRO_REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__XKIRO__API_KEYS=
+AI_PROVIDERS__XKIRO__BASE_URL=https://api.xkiro.com/v1
+AI_PROVIDERS__XKIRO__TEXT_MODELS=
+AI_PROVIDERS__XKIRO__VISION_MODELS=
+AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC=60.0
 
 TEXT_PROVIDER_ORDER=chainnode,xkiro
 VISION_PROVIDER_ORDER=chainnode,xkiro
 ```
 
-`XKIRO_API_KEYS`, `XKIRO_TEXT_MODELS`, và `XKIRO_VISION_MODELS` là canonical runtime pools. Model pools được để trống trong `.env.example` vì model IDs phải được live-qualified trước khi đưa vào deployment.
+`AI_PROVIDERS__XKIRO__API_KEYS`, `AI_PROVIDERS__XKIRO__TEXT_MODELS`, và `AI_PROVIDERS__XKIRO__VISION_MODELS` là canonical runtime pools. Model pools được để trống trong `.env.example` vì model IDs phải được live-qualified trước khi đưa vào deployment.
 
-`XKIRO_BASE_URL` mặc định là `https://api.xkiro.com/v1`. Runtime gọi OpenAI-compatible endpoint dưới base URL này và gửi `stream=false`. `XKIRO_REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây.
+`AI_PROVIDERS__XKIRO__BASE_URL` mặc định là `https://api.xkiro.com/v1`. Runtime gọi OpenAI-compatible endpoint dưới base URL này và gửi `stream=false`. `AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây.
 
-Nếu xKiro được chọn cho text và credential pool không rỗng, `XKIRO_TEXT_MODELS` phải có ít nhất một model. Nếu vision bật và xKiro được chọn cho vision, `XKIRO_VISION_MODELS` cũng phải có ít nhất một model. Whitespace-only credentials/models được coi là absent.
+Nếu xKiro được chọn cho text và credential pool không rỗng, `AI_PROVIDERS__XKIRO__TEXT_MODELS` phải có ít nhất một model. Nếu vision bật và xKiro được chọn cho vision, `AI_PROVIDERS__XKIRO__VISION_MODELS` cũng phải có ít nhất một model. Whitespace-only credentials/models được coi là absent.
 
 ## Target expansion
 
@@ -36,7 +36,7 @@ Raw credentials không được đưa vào target IDs, logs hoặc errors. Tổn
 
 ## Live qualification
 
-`GET <XKIRO_BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code xKiro runtime model IDs trong source; các model đã qualify được cấu hình qua plural deployment pools.
+`GET <AI_PROVIDERS__XKIRO__BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code xKiro runtime model IDs trong source; các model đã qualify được cấu hình qua plural deployment pools.
 
 Text candidate phải pass catalog gates:
 
@@ -52,20 +52,20 @@ Vision candidate còn phải có `capabilities.vision == true`. Candidate sau đ
 
 ## Probe authentication
 
-Qualification probe dùng canonical pool `XKIRO_API_KEYS`. Vì probe là single-credential qualification tool, nó split pool theo dấu phẩy, trim whitespace, bỏ phần tử blank, giữ nguyên order/case và dùng credential hợp lệ đầu tiên.
+Qualification probe dùng canonical pool `AI_PROVIDERS__XKIRO__API_KEYS`. Vì probe là single-credential qualification tool, nó split pool theo dấu phẩy, trim whitespace, bỏ phần tử blank, giữ nguyên order/case và dùng credential hợp lệ đầu tiên.
 
 ```bash
-export XKIRO_API_KEYS='...'
-export XKIRO_BASE_URL='https://api.xkiro.com/v1'
+export AI_PROVIDERS__XKIRO__API_KEYS='...'
+export AI_PROVIDERS__XKIRO__BASE_URL='https://api.xkiro.com/v1'
 python scripts/probe_xkiro.py \
   --text-model '<candidate-text-id>' \
   --vision-model '<candidate-vision-id>' \
   --image './known-test-image.png'
 ```
 
-Nếu `XKIRO_BASE_URL` unset hoặc blank, probe dùng shared default `https://api.xkiro.com/v1`. Probe emit JSONL, không log API key/Authorization header, và xử lý `429 Retry-After` trong bounded wait/retry policy.
+Nếu `AI_PROVIDERS__XKIRO__BASE_URL` unset hoặc blank, probe dùng shared default `https://api.xkiro.com/v1`. Probe emit JSONL, không log API key/Authorization header, và xử lý `429 Retry-After` trong bounded wait/retry policy.
 
-Chỉ sau khi candidate pass mọi gate mới cấu hình model ID vào `XKIRO_TEXT_MODELS` hoặc `XKIRO_VISION_MODELS`.
+Chỉ sau khi candidate pass mọi gate mới cấu hình model ID vào `AI_PROVIDERS__XKIRO__TEXT_MODELS` hoặc `AI_PROVIDERS__XKIRO__VISION_MODELS`.
 
 ## Recovery scopes
 
@@ -81,8 +81,8 @@ Completed tools không được chạy lại khi target/provider rotate; retry, 
 
 ## Rollout and smoke
 
-1. Cấu hình `XKIRO_API_KEYS` và live-qualify current text/vision candidates; probe dùng credential non-blank đầu tiên trong pool.
-2. Cấu hình `XKIRO_TEXT_MODELS`, `XKIRO_VISION_MODELS` và xác nhận `XKIRO_BASE_URL`.
+1. Cấu hình `AI_PROVIDERS__XKIRO__API_KEYS` và live-qualify current text/vision candidates; probe dùng credential non-blank đầu tiên trong pool.
+2. Cấu hình `AI_PROVIDERS__XKIRO__TEXT_MODELS`, `AI_PROVIDERS__XKIRO__VISION_MODELS` và xác nhận `AI_PROVIDERS__XKIRO__BASE_URL`.
 3. Giữ provider order mong muốn, ví dụ:
 
 ```env
@@ -102,7 +102,12 @@ VISION_PROVIDER_ORDER=chainnode
 
 ## Credential safety
 
-- không commit `XKIRO_API_KEYS` hoặc bất kỳ raw credential nào;
+- không commit `AI_PROVIDERS__XKIRO__API_KEYS` hoặc bất kỳ raw credential nào;
 - không in raw credentials/Authorization headers;
 - target identity chỉ dùng opaque aliases như `cred-1`;
 - deployment `.env` phải giữ owner-only permissions.
+
+
+## Generic provider architecture
+
+xKiro là một `ProviderProfile` trong `config/ai-providers.toml` dùng `openai-chat` driver. Các khác biệt recovery 402/403/429 là declarative catalog data; router và `recovery.py` không branch theo vendor.

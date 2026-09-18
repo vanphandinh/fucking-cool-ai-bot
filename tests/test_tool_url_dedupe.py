@@ -11,7 +11,7 @@ from app.search.url_service import UrlReadResult
 
 
 class _EquivalentUrlRouter:
-    async def complete(self, messages, tools, tool_executor, **kwargs):
+    async def complete(self, request, tool_executor, **kwargs):
         first = await tool_executor(
             "fetch_url",
             {"url": "https://example.org/article?utm_source=tool#section", "mode": "auto"},
@@ -25,7 +25,7 @@ class _EquivalentUrlRouter:
 
 
 class _ConcurrentEquivalentUrlRouter:
-    async def complete(self, messages, tools, tool_executor, **kwargs):
+    async def complete(self, request, tool_executor, **kwargs):
         self.outputs = await asyncio.gather(
             tool_executor(
                 "fetch_url",

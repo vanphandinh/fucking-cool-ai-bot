@@ -26,12 +26,8 @@ class ProviderConstructionRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unused_vision_slot_is_not_validated_or_built(self) -> None:
         settings = Settings(
             _env_file=None,
-            xkiro_api_keys="test-key",
-            xkiro_text_models="test-text-model",
-            text_provider_order="xkiro",
-            vision_provider_order="",
-            vision_enabled=True,
-            xkiro_vision_models="",
+            ai_providers={"xkiro":{"api_keys":"test-key","text_models":"test-text-model","vision_models":""}},
+            text_provider_order="xkiro", vision_provider_order="", vision_enabled=True,
         )
 
         try:
@@ -50,12 +46,8 @@ class ProviderConstructionRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unused_text_slot_is_not_validated_or_built(self) -> None:
         settings = Settings(
             _env_file=None,
-            xkiro_api_keys="test-key",
-            text_provider_order="",
-            vision_provider_order="xkiro",
-            vision_enabled=True,
-            xkiro_text_models="",
-            xkiro_vision_models="test-vision-model",
+            ai_providers={"xkiro":{"api_keys":"test-key","text_models":"","vision_models":"test-vision-model"}},
+            text_provider_order="", vision_provider_order="xkiro", vision_enabled=True,
         )
 
         try:
@@ -171,8 +163,7 @@ class ShutdownRegressionTests(unittest.IsolatedAsyncioTestCase):
                     Settings(
                         _env_file=None,
                         bot_token="123:test",
-                        xkiro_api_keys="test-key",
-                        xkiro_text_models="test-text-model",
+                        ai_providers={"xkiro":{"api_keys":"test-key","text_models":"test-text-model"}},
                         vision_enabled=False,
                     )
                 )

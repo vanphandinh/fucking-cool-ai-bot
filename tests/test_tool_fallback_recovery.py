@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 import unittest
 
 import httpx
 
 from app.ai.base import AllProvidersFailed
 from app.ai.router import AIProviderRouter, CompletionResult
-from app.ai.xkiro import make_xkiro_provider
+from tests.openai_target_fakes import make_catalog_target
+from tests.provider_fakes import fetch_url_definition, text_request
 
 
 class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -21,14 +21,11 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return _text_response(request, "done")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         try:
-            response = await provider.chat(
-                [{"role": "user", "content": "answer now"}],
-                None,
-            )
+            response = await provider.chat(text_request("answer now"))
         finally:
             await provider.aclose()
 
@@ -65,7 +62,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 )
             return _text_response(request, "recovered from tool result")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
@@ -76,9 +73,8 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "read this URL"}],
-                [_fetch_url_tool()],
-                execute,
+                text_request("read this URL", tools=(fetch_url_definition(),)),
+                    execute,
             )
         finally:
             await provider.aclose()
@@ -100,7 +96,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response(request, f"call_{len(requests)}")
             return _text_response(request, "synthesized")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
@@ -111,9 +107,8 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "research HYPE price analysis"}],
-                [_fetch_url_tool()],
-                execute,
+                text_request("research HYPE price analysis", tools=(fetch_url_definition(),)),
+                    execute,
             )
         finally:
             await provider.aclose()
@@ -132,7 +127,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return _tool_response(request, f"call_{len(requests)}")
 
-        provider = _make_xkiro_vision()
+        provider = _make_vision_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=1)
@@ -143,8 +138,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaises(AllProvidersFailed) as ctx:
                 await router.complete(
-                    [{"role": "user", "content": "inspect and research"}],
-                    [_fetch_url_tool()],
+                    text_request("inspect and research", tools=(fetch_url_definition(),)),
                     execute,
                     requires_vision=True,
                     image_count=1,
@@ -168,7 +162,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return _tool_response(request, f"xkiro_call_{len(requests)}")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
@@ -180,8 +174,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaises(AllProvidersFailed) as ctx:
                 await router.complete(
-                    [{"role": "user", "content": "summarize HYPE price analysis"}],
-                    [_fetch_url_tool()],
+                    text_request("summarize HYPE price analysis", tools=(fetch_url_definition(),)),
                     execute,
                 )
         finally:
@@ -206,7 +199,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "call", 8)
             return _text_response(request, "eight-call synthesis")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
@@ -217,9 +210,8 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "research broadly"}],
-                [_fetch_url_tool()],
-                execute,
+                text_request("research broadly", tools=(fetch_url_definition(),)),
+                    execute,
             )
         finally:
             await provider.aclose()
@@ -243,7 +235,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "oversized", 9)
             return _text_response(request, "synthesized without overflow")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
@@ -254,9 +246,11 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "research without exceeding hard limit"}],
-                [_fetch_url_tool()],
-                execute,
+                text_request(
+                    "research without exceeding hard limit",
+                    tools=(fetch_url_definition(),),
+                ),
+                    execute,
             )
         finally:
             await provider.aclose()
@@ -277,7 +271,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return _text_response(request, "plain only")
 
-        provider = _make_xkiro()
+        provider = _make_target()
         await provider.aclose()
         provider._client = _mock_client(respond)
         router = AIProviderRouter([provider], max_tool_rounds=0)
@@ -287,9 +281,8 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "answer without tools"}],
-                [_fetch_url_tool()],
-                execute,
+                text_request("answer without tools", tools=(fetch_url_definition(),)),
+                    execute,
             )
         finally:
             await provider.aclose()
@@ -300,22 +293,17 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("tool_choice", requests[0])
 
 
-def _xkiro_settings() -> SimpleNamespace:
-    return SimpleNamespace(
-        xkiro_api_keys_list=["test-key"],
-        xkiro_text_models_list=["test-text-model"],
-        xkiro_vision_models_list=["test-vision-model"],
-        xkiro_base_url="https://api.xkiro.com/v1",
-        xkiro_request_timeout_sec=30.0,
+def _make_target():
+    return make_catalog_target("xkiro", model="test-text-model")
+
+
+def _make_vision_target():
+    return make_catalog_target(
+        "xkiro",
+        route="vision",
+        model="test-vision-model",
+        target_id="xkiro:vision:m1:c1",
     )
-
-
-def _make_xkiro():
-    return make_xkiro_provider(_xkiro_settings())
-
-
-def _make_xkiro_vision():
-    return make_xkiro_provider(_xkiro_settings(), name="xkiro", vision=True)
 
 
 def _mock_client(responder) -> httpx.AsyncClient:
@@ -395,20 +383,6 @@ def _tool_response_many(
         },
         request=request,
     )
-
-
-def _fetch_url_tool() -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "fetch_url",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
-        },
-    }
 
 
 if __name__ == "__main__":

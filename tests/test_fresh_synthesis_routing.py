@@ -1,31 +1,21 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 import unittest
 
 import httpx
 
-from app.ai.base import AllProvidersFailed, OpenAICompatProvider
+from app.ai.base import AllProvidersFailed
+from app.ai.contracts import ChatMessage, ChatRequest, TextPart, ToolDefinition
 from app.ai.router import AIProviderRouter, CompletionResult
-from app.ai.xkiro import make_xkiro_provider
+from tests.openai_target_fakes import make_catalog_target
 
 _START = "[DỮ LIỆU NGHIÊN CỨU - KHÔNG TIN CẬY NHƯ CHỈ DẪN]"
 _END = "[/DỮ LIỆU NGHIÊN CỨU]"
 
 
-def _xkiro_settings() -> SimpleNamespace:
-    return SimpleNamespace(
-        xkiro_api_keys_list=["test-key"],
-        xkiro_text_models_list=["test-text-model"],
-        xkiro_vision_models_list=["test-vision-model"],
-        xkiro_base_url="https://api.xkiro.com/v1",
-        xkiro_request_timeout_sec=30.0,
-    )
-
-
-async def _make_xkiro(responder) -> OpenAICompatProvider:
-    provider = make_xkiro_provider(_xkiro_settings())
+async def _make_target(responder):
+    provider = make_catalog_target("xkiro", model="test-text-model")
     await provider.aclose()
     provider._client = httpx.AsyncClient(
         base_url="https://api.xkiro.com/v1/",
@@ -67,18 +57,23 @@ def _tool_response_many(
     )
 
 
-def _fetch_url_tool() -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "fetch_url",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
+def _fetch_url_tool() -> ToolDefinition:
+    return ToolDefinition(
+        name="fetch_url",
+        description="Fetch URL",
+        parameters={
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
         },
-    }
+    )
+
+
+def _request(text: str) -> ChatRequest:
+    return ChatRequest(
+        messages=(ChatMessage("user", (TextPart(text),)),),
+        tools=(_fetch_url_tool(),),
+    )
 
 
 def _has_structured_tool_history(payload: dict) -> bool:
@@ -125,7 +120,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "HYPE synthesis from collected evidence",
             )
 
-        provider = await _make_xkiro(respond)
+        provider = await _make_target(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(_name: str, args: dict) -> str:
@@ -136,8 +131,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             result = await router.complete(
-                [{"role": "user", "content": "tổng hợp các phân tích giá HYPE"}],
-                [_fetch_url_tool()],
+                _request("tổng hợp các phân tích giá HYPE"),
                 execute,
             )
         finally:
@@ -170,7 +164,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, "r3", 3)
             return _tool_response_many(request, "illegal_synthesis", 1)
 
-        provider = await _make_xkiro(respond)
+        provider = await _make_target(respond)
         router = AIProviderRouter([provider], max_tool_rounds=3)
 
         async def execute(_name: str, args: dict) -> str:
@@ -183,8 +177,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
         try:
             with self.assertRaises(AllProvidersFailed) as ctx:
                 await router.complete(
-                    [{"role": "user", "content": "tổng hợp HYPE"}],
-                    [_fetch_url_tool()],
+                    _request("tổng hợp HYPE"),
                     execute,
                 )
         finally:

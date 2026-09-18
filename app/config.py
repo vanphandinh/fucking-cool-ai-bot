@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
-
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .ai.catalog import load_provider_catalog
+from .ai.runtime_config import (
+    MAX_AI_PROVIDER_TARGETS,
+    ProviderRuntimeSettings,
+    provider_runtime,
+)
+
 _SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
-_MAX_AI_PROVIDER_TARGETS = 64
-XKIRO_DEFAULT_BASE_URL = "https://api.xkiro.com/v1"
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -38,24 +42,11 @@ def parse_unique_csv(raw: str | None) -> list[str]:
     return out
 
 
-def parse_unique_csv_preserve_case(raw: str | None) -> list[str]:
-    """Parse sensitive/model values without lowercasing or exposing them."""
-
-    out: list[str] = []
-    seen: set[str] = set()
-    for part in (raw or "").split(","):
-        value = part.strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        out.append(value)
-    return out
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_nested_delimiter="__",
         extra="ignore",
         hide_input_in_errors=True,
     )
@@ -66,25 +57,7 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     learn_group_id_mode: bool = False
 
-    # Provider-specific AI credentials/models. Runtime config is plural-only.
-    chainnode_api_keys: str = ""
-    chainnode_base_url: str = "https://dn.chainno.de/v1"
-    chainnode_text_models: str = ""
-    chainnode_vision_models: str = ""
-    chainnode_request_timeout_sec: float = Field(
-        default=60.0,
-        gt=0,
-        allow_inf_nan=False,
-    )
-    xkiro_api_keys: str = ""
-    xkiro_base_url: str = XKIRO_DEFAULT_BASE_URL
-    xkiro_text_models: str = ""
-    xkiro_vision_models: str = ""
-    xkiro_request_timeout_sec: float = Field(
-        default=60.0,
-        gt=0,
-        allow_inf_nan=False,
-    )
+    ai_providers: dict[str, ProviderRuntimeSettings] = Field(default_factory=dict)
     text_provider_order: str = "chainnode,xkiro"
     provider_retry_max_consecutive: int = Field(default=2, ge=1, le=5)
     provider_retry_max_per_provider: int = Field(default=3, ge=1, le=10)
@@ -153,6 +126,13 @@ class Settings(BaseSettings):
     tool_call_total_timeout_sec: float = Field(default=45, gt=0, allow_inf_nan=False)
     log_level: str = "INFO"
 
+    @field_validator("ai_providers", mode="before")
+    @classmethod
+    def _normalize_provider_ids(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        return {str(key).strip().lower(): item for key, item in value.items()}
+
     @field_validator("search_backend")
     @classmethod
     def _check_search_backend(cls, value: str) -> str:
@@ -179,68 +159,50 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_provider_and_timeout_config(self) -> "Settings":
-        chainnode_keys = self.chainnode_api_keys_list
-        if (
-            chainnode_keys
-            and "chainnode" in self.text_provider_order_list
-            and not self.chainnode_text_models_list
-        ):
-            raise ValueError(
-                "CHAINNODE_TEXT_MODELS là bắt buộc khi Chainnode được bật trong "
-                "TEXT_PROVIDER_ORDER"
-            )
-
-        if (
-            self.vision_enabled
-            and chainnode_keys
-            and "chainnode" in self.vision_provider_order_list
-            and not self.chainnode_vision_models_list
-        ):
-            raise ValueError(
-                "CHAINNODE_VISION_MODELS là bắt buộc khi Chainnode được bật trong "
-                "VISION_PROVIDER_ORDER"
-            )
-
-        if (
-            self.xkiro_api_keys_list
-            and "xkiro" in self.text_provider_order_list
-            and not self.xkiro_text_models_list
-        ):
-            raise ValueError(
-                "XKIRO_TEXT_MODELS là bắt buộc khi xKiro được bật trong "
-                "TEXT_PROVIDER_ORDER"
-            )
-
-        if (
-            self.vision_enabled
-            and self.xkiro_api_keys_list
-            and "xkiro" in self.vision_provider_order_list
-            and not self.xkiro_vision_models_list
-        ):
-            raise ValueError(
-                "XKIRO_VISION_MODELS là bắt buộc khi xKiro được bật trong "
-                "VISION_PROVIDER_ORDER"
-            )
+        catalog = load_provider_catalog()
+        text_order = self.text_provider_order_list
+        vision_order = self.vision_provider_order_list
+        referenced = tuple(dict.fromkeys((*text_order, *vision_order)))
+        for provider_id in referenced:
+            catalog.require(provider_id)
 
         target_count = 0
-        chainnode_key_count = len(chainnode_keys)
-        if chainnode_key_count:
-            if "chainnode" in self.text_provider_order_list:
-                target_count += chainnode_key_count * len(self.chainnode_text_models_list)
-            if self.vision_enabled and "chainnode" in self.vision_provider_order_list:
-                target_count += chainnode_key_count * len(self.chainnode_vision_models_list)
+        for provider_id in referenced:
+            profile = catalog.require(provider_id)
+            runtime = provider_runtime(self, provider_id)
+            credentials = runtime.api_keys_list
+            if not credentials:
+                continue
+            credential_count = len(credentials)
 
-        xkiro_key_count = len(self.xkiro_api_keys_list)
-        if xkiro_key_count:
-            if "xkiro" in self.text_provider_order_list:
-                target_count += xkiro_key_count * len(self.xkiro_text_models_list)
-            if self.vision_enabled and "xkiro" in self.vision_provider_order_list:
-                target_count += xkiro_key_count * len(self.xkiro_vision_models_list)
+            text_route = profile.routes.get("text")
+            if provider_id in text_order and text_route is not None and text_route.enabled:
+                if not runtime.text_models_list:
+                    raise ValueError(
+                        f"AI_PROVIDERS__{provider_id.upper()}__TEXT_MODELS is required "
+                        "when the provider has credentials and participates in TEXT_PROVIDER_ORDER"
+                    )
+                target_count += credential_count * len(runtime.text_models_list)
 
-        if target_count > _MAX_AI_PROVIDER_TARGETS:
+            vision_route = profile.routes.get("vision")
+            if (
+                self.vision_enabled
+                and provider_id in vision_order
+                and vision_route is not None
+                and vision_route.enabled
+            ):
+                if not runtime.vision_models_list:
+                    raise ValueError(
+                        f"AI_PROVIDERS__{provider_id.upper()}__VISION_MODELS is required "
+                        "when the provider has credentials and participates in "
+                        "VISION_PROVIDER_ORDER"
+                    )
+                target_count += credential_count * len(runtime.vision_models_list)
+
+        if target_count > MAX_AI_PROVIDER_TARGETS:
             raise ValueError(
                 f"AI provider target pool expands to {target_count} enabled targets; "
-                f"maximum is {_MAX_AI_PROVIDER_TARGETS}"
+                f"maximum is {MAX_AI_PROVIDER_TARGETS}"
             )
 
         if self.provider_retry_max_per_provider < self.provider_retry_max_consecutive:
@@ -302,29 +264,6 @@ class Settings(BaseSettings):
     def vision_provider_order_list(self) -> list[str]:
         return parse_unique_csv(self.vision_provider_order)
 
-    @property
-    def chainnode_api_keys_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.chainnode_api_keys)
-
-    @property
-    def chainnode_text_models_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.chainnode_text_models)
-
-    @property
-    def chainnode_vision_models_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.chainnode_vision_models)
-
-    @property
-    def xkiro_api_keys_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.xkiro_api_keys)
-
-    @property
-    def xkiro_text_models_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.xkiro_text_models)
-
-    @property
-    def xkiro_vision_models_list(self) -> list[str]:
-        return parse_unique_csv_preserve_case(self.xkiro_vision_models)
 
 
 @lru_cache

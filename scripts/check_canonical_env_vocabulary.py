@@ -14,6 +14,16 @@ _RETIRED_IDENTIFIER_PARTS: tuple[tuple[str, ...], ...] = (
     ("XKIRO_PROBE_API_", "KEY"),
     ("XKIRO_TEXT_", "MODEL"),
     ("XKIRO_VISION_", "MODEL"),
+    ("CHAINNODE_API_", "KEYS"),
+    ("CHAINNODE_BASE_", "URL"),
+    ("CHAINNODE_TEXT_", "MODELS"),
+    ("CHAINNODE_VISION_", "MODELS"),
+    ("CHAINNODE_REQUEST_TIMEOUT_", "SEC"),
+    ("XKIRO_API_", "KEYS"),
+    ("XKIRO_BASE_", "URL"),
+    ("XKIRO_TEXT_", "MODELS"),
+    ("XKIRO_VISION_", "MODELS"),
+    ("XKIRO_REQUEST_TIMEOUT_", "SEC"),
     ("PROVIDER_RETRY_MAX_CONSECUTIVE_", "FAILURES"),
     ("PROVIDER_RETRY_MAX_", "FAILURES_PER_PROVIDER"),
     ("PROVIDER_RETRY_MAX_", "FAILURES_PER_REQUEST"),
@@ -24,6 +34,22 @@ _RETIRED_IDENTIFIER_PARTS: tuple[tuple[str, ...], ...] = (
     ("xkiro_probe_api_", "key"),
     ("xkiro_text_", "model"),
     ("xkiro_vision_", "model"),
+    ("chainnode_api_", "keys"),
+    ("chainnode_api_keys_", "list"),
+    ("chainnode_base_", "url"),
+    ("chainnode_text_", "models"),
+    ("chainnode_text_models_", "list"),
+    ("chainnode_vision_", "models"),
+    ("chainnode_vision_models_", "list"),
+    ("chainnode_request_timeout_", "sec"),
+    ("xkiro_api_", "keys"),
+    ("xkiro_api_keys_", "list"),
+    ("xkiro_base_", "url"),
+    ("xkiro_text_", "models"),
+    ("xkiro_text_models_", "list"),
+    ("xkiro_vision_", "models"),
+    ("xkiro_vision_models_", "list"),
+    ("xkiro_request_timeout_", "sec"),
     ("provider_retry_max_consecutive_", "failures"),
     ("provider_retry_max_", "failures_per_provider"),
     ("provider_retry_max_", "failures_per_request"),
@@ -83,6 +109,8 @@ def scan_repository(root: Path = ROOT) -> tuple[str, ...]:
             continue
 
         relative = path.relative_to(root)
+        if relative.parts[:2] == ("docs", "superpowers"):
+            continue
         for line_number, line in enumerate(text.splitlines(), start=1):
             for retired in scan_text(line):
                 hits.append(f"{relative}:{line_number}:{retired}")

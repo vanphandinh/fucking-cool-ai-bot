@@ -5,23 +5,29 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import nullcontext
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from ..config import Settings
 from .base import (
     AllProvidersFailed,
-    ChatResponse,
     NoCapableProvider,
     ProviderError,
-    ToolCall,
     TransportFailureKind,
+)
+from .contracts import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    TextPart,
+    ToolCallPart,
+    ToolDefinition,
+    ToolResultPart,
 )
 from .capabilities import ProviderCapabilities
 from .provider import AIProvider
-from .recovery import HealthScope, RecoveryAction, classify_recovery
-from .registry import build_registered_providers
+from .recovery import HealthEffect, HealthScope, RecoveryAction, classify_recovery
+from .target_builder import build_provider_targets
 from .retry import (
     ProviderRetryPolicy,
     RequestRetryState,
@@ -87,20 +93,17 @@ class _ToolBudget:
 
 @dataclass
 class _RequestState:
-    base_messages: list[dict]
-    portable_messages: list[dict]
+    base_request: ChatRequest
+    portable_messages: list[ChatMessage]
     tool_outputs: list[str]
     budget: _ToolBudget
     retry: RequestRetryState
-    unsupported_tool_models: set[tuple[str, str]]
+    unsupported_tool_models: set[tuple[str, str, str]]
     successful_health_snapshot: _HealthGenerationSnapshot | None
 
 
-def _capabilities(provider: object) -> ProviderCapabilities:
-    value = getattr(provider, "capabilities", None)
-    if isinstance(value, ProviderCapabilities):
-        return value
-    return ProviderCapabilities()
+def _capabilities(provider: AIProvider) -> ProviderCapabilities:
+    return provider.spec.capabilities
 
 
 def _adapter_available(provider: object) -> bool:
@@ -125,15 +128,29 @@ def _record_adapter_success(
         health.record_success_if_generation(expected_generation)
 
 
-def _record_adapter_error(provider: object, error: ProviderError) -> None:
+def _record_adapter_effect(
+    provider: object,
+    message: str,
+    *,
+    effect: HealthEffect,
+    retry_after: float | None,
+) -> None:
     health = getattr(provider, "health", None)
-    if health is not None:
-        health.record_error(
-            str(error),
-            status_code=error.status_code,
-            retry_after=error.retry_after,
-            transient=error.transient,
-        )
+    if health is None:
+        return
+    if effect == HealthEffect.DISABLE:
+        health.record_disabled(message)
+        return
+    if effect == HealthEffect.COOLDOWN:
+        health.record_cooldown(message, retry_after=retry_after)
+        return
+    if effect == HealthEffect.TRANSIENT:
+        health.record_transient_error(message)
+        return
+    if effect == HealthEffect.RECORD_ONLY:
+        health.record_observation(message)
+        return
+    raise ValueError(f"unknown health effect: {effect!r}")
 
 
 def _flush_pending_family_health_errors(
@@ -171,7 +188,9 @@ def _flush_all_pending_health_errors(
     *,
     exclude_family: str | None = None,
 ) -> None:
-    families = tuple(dict.fromkeys(candidate.name for candidate in candidates))
+    families = tuple(
+        dict.fromkeys(provider_target_identity(candidate).family for candidate in candidates)
+    )
     for family in families:
         if family == exclude_family:
             continue
@@ -184,7 +203,7 @@ def _cyclic_indices(size: int, start: int):
 
 
 async def _execute_tool_batch(
-    tool_calls: list[ToolCall],
+    tool_calls: tuple[ToolCallPart, ...],
     tool_executor: ToolExecutor,
     *,
     operations=None,
@@ -192,7 +211,7 @@ async def _execute_tool_batch(
 ) -> list[str]:
     semaphore = asyncio.Semaphore(_MAX_PARALLEL_TOOL_CALLS)
 
-    async def run(index: int, tc: ToolCall) -> str:
+    async def run(index: int, tc: ToolCallPart) -> str:
         async with semaphore:
             if operations is not None:
                 await operations.control.checkpoint()
@@ -203,7 +222,7 @@ async def _execute_tool_batch(
             )
             try:
                 with budget_context:
-                    output = await tool_executor(tc.name, tc.arguments)
+                    output = await tool_executor(tc.name, dict(tc.arguments))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -246,7 +265,9 @@ class AIProviderRouter:
             target_ids.add(identity.target_id)
 
         self.providers = providers
-        default_order = tuple(dict.fromkeys(provider.name for provider in providers))
+        default_order = tuple(
+            dict.fromkeys(provider_target_identity(provider).family for provider in providers)
+        )
         self.text_provider_order = (
             default_order if text_provider_order is None else text_provider_order
         )
@@ -256,7 +277,7 @@ class AIProviderRouter:
         self.max_tool_rounds = max_tool_rounds
         self.retry_policy = retry_policy or ProviderRetryPolicy()
         self.scoped_health = ScopedHealthRegistry()
-        self._unsupported_tool_models: set[tuple[str, str]] = set()
+        self._unsupported_tool_models: set[tuple[str, str, str]] = set()
 
     def provider_order(self, requires_vision: bool) -> tuple[str, ...]:
         if requires_vision:
@@ -272,7 +293,7 @@ class AIProviderRouter:
         out: list[AIProvider] = []
         for provider_name in self.provider_order(requires_vision):
             for provider in self.providers:
-                if provider.name != provider_name:
+                if provider_target_identity(provider).family != provider_name:
                     continue
                 if _capabilities(provider).accepts(
                     requires_vision=requires_vision,
@@ -286,7 +307,9 @@ class AIProviderRouter:
             requires_vision=requires_vision,
             image_count=1 if requires_vision else 0,
         )
-        return tuple(dict.fromkeys(provider.name for provider in providers))
+        return tuple(
+            dict.fromkeys(provider_target_identity(provider).family for provider in providers)
+        )
 
     def max_supported_images(self) -> int:
         providers = self.capable_providers(requires_vision=True, image_count=1)
@@ -306,13 +329,15 @@ class AIProviderRouter:
         state: _RequestState,
         identity: ProviderTargetIdentity,
     ) -> bool:
-        return any(
-            sibling_identity.family == identity.family
-            and sibling_identity.target_id != identity.target_id
-            and self._candidate_eligible(candidate, state)
-            for candidate in candidates
-            for sibling_identity in (provider_target_identity(candidate),)
-        )
+        for candidate in candidates:
+            sibling_identity = provider_target_identity(candidate)
+            if sibling_identity.family != identity.family:
+                continue
+            if sibling_identity.target_id == identity.target_id:
+                continue
+            if self._candidate_eligible(candidate, state):
+                return True
+        return False
 
     def _health_snapshot(
         self,
@@ -346,8 +371,7 @@ class AIProviderRouter:
 
     async def complete(
         self,
-        messages: list[dict],
-        tools: list[dict] | None,
+        request: ChatRequest,
         tool_executor: ToolExecutor,
         *,
         requires_vision: bool = False,
@@ -363,9 +387,14 @@ class AIProviderRouter:
         if not candidates:
             raise NoCapableProvider("Không có AI provider nào phù hợp capability của request")
 
+        portable_base_messages = tuple(message.portable() for message in request.messages)
+        portable_base_request = ChatRequest(
+            messages=portable_base_messages,
+            tools=request.tools,
+        )
         state = _RequestState(
-            base_messages=deepcopy(messages),
-            portable_messages=deepcopy(messages),
+            base_request=portable_base_request,
+            portable_messages=list(portable_base_messages),
             tool_outputs=[],
             budget=_ToolBudget(),
             retry=RequestRetryState(self.retry_policy),
@@ -386,7 +415,7 @@ class AIProviderRouter:
             for index in _cyclic_indices(len(candidates), cursor):
                 provider = candidates[index]
                 identity = provider_target_identity(provider)
-                if identity.family == exclude_next_family:
+                if exclude_next_family == identity.family:
                     continue
                 if self._candidate_eligible(provider, state):
                     selected = (index, provider)
@@ -411,7 +440,7 @@ class AIProviderRouter:
             try:
                 text = await self._attempt_provider(
                     provider,
-                    tools,
+                    request.tools,
                     tool_executor,
                     state,
                     candidates=candidates,
@@ -422,6 +451,7 @@ class AIProviderRouter:
                 continue
             except ProviderError as exc:
                 last_error = exc
+                recovery_budget_exhausted = False
                 if is_cyclic_retryable_transport(exc):
                     exclude_next_family = identity.family
                     if not state.retry.can_attempt(identity.family):
@@ -433,8 +463,13 @@ class AIProviderRouter:
                         identity.family,
                         identity.target_id,
                     )
-                    decision = classify_recovery(identity, exc)
-                    _record_adapter_error(provider, exc)
+                    decision = classify_recovery(provider.spec, exc)
+                    _record_adapter_effect(
+                        provider,
+                        str(exc),
+                        effect=decision.health_effect,
+                        retry_after=exc.retry_after,
+                    )
                     self.scoped_health.record_effect(
                         decision.health_scope,
                         identity,
@@ -444,18 +479,26 @@ class AIProviderRouter:
                     )
                     state.retry.block_target(identity.target_id)
                     if decision.action == RecoveryAction.ROTATE_TARGET:
-                        if not (
-                            self._has_eligible_sibling(candidates, state, identity)
-                            and state.retry.consume_recovery_hop()
-                        ):
+                        if not self._has_eligible_sibling(candidates, state, identity):
                             state.retry.block_family(identity.family)
                     else:
                         state.retry.block_family(identity.family)
+
+                    recovery_target_available = any(
+                        self._candidate_eligible(candidate, state)
+                        for candidate in candidates
+                    )
+                    recovery_budget_exhausted = (
+                        recovery_target_available
+                        and not state.retry.consume_recovery_hop()
+                    )
                 logger.warning(
                     "AI target %s lỗi: %s",
                     identity.target_id,
                     exc,
                 )
+                if recovery_budget_exhausted:
+                    break
                 cursor = (index + 1) % len(candidates)
                 continue
 
@@ -493,40 +536,47 @@ class AIProviderRouter:
     async def _attempt_provider(
         self,
         provider: AIProvider,
-        tools: list[dict] | None,
+        tools: tuple[ToolDefinition, ...],
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
         operations=None,
     ) -> str:
-        if state.budget.exhausted(self.max_tool_rounds):
+        identity = provider_target_identity(provider)
+        tool_capability_key = (identity.family, identity.route, identity.model)
+        structured_tools_available = (
+            _capabilities(provider).supports_tools
+            and tool_capability_key not in state.unsupported_tool_models
+        )
+        if (
+            state.budget.exhausted(self.max_tool_rounds)
+            or (state.tool_outputs and not structured_tools_available)
+        ):
             provider_messages = build_fresh_synthesis_messages(
-                state.base_messages,
+                state.base_request.messages,
                 state.tool_outputs,
             )
         else:
-            provider_messages = deepcopy(state.portable_messages)
+            provider_messages = list(state.portable_messages)
 
-        identity = provider_target_identity(provider)
         already_plain = False
         last_error: ProviderError | None = None
 
         for pass_no in (0, 1):
-            local_msgs = deepcopy(provider_messages)
+            local_msgs = list(provider_messages)
             use_tools = (
                 tools
                 if (
-                    provider.supports_tools
-                    and identity.model_key not in state.unsupported_tool_models
+                    structured_tools_available
                     and pass_no == 0
                     and not state.budget.exhausted(self.max_tool_rounds)
                 )
-                else None
+                else ()
             )
-            if use_tools is None and already_plain:
+            if not use_tools and already_plain:
                 break
-            if use_tools is None:
+            if not use_tools:
                 already_plain = True
             try:
                 return await self._complete_with_provider(
@@ -542,9 +592,14 @@ class AIProviderRouter:
                 last_error = exc
                 if len(local_msgs) > len(provider_messages):
                     provider_messages = local_msgs
-                if exc.unsupported_tools and provider.supports_tools:
-                    provider.supports_tools = False
-                    state.unsupported_tool_models.add(identity.model_key)
+                if exc.unsupported_tools:
+                    state.unsupported_tool_models.add(tool_capability_key)
+                    structured_tools_available = False
+                    if state.tool_outputs:
+                        provider_messages = build_fresh_synthesis_messages(
+                            state.base_request.messages,
+                            state.tool_outputs,
+                        )
                     continue
                 if exc.retry_without_tools:
                     continue
@@ -552,13 +607,13 @@ class AIProviderRouter:
 
         if last_error is not None:
             raise last_error
-        raise ProviderError(f"{provider.name}: không thể hoàn tất provider-local recovery")
+        raise ProviderError(f"{identity.family}: không thể hoàn tất provider-local recovery")
 
     async def _chat_with_retry(
         self,
         provider: AIProvider,
-        messages: list[dict],
-        tools: list[dict] | None,
+        messages: list[ChatMessage],
+        tools: tuple[ToolDefinition, ...],
         state: _RequestState,
         *,
         candidates: tuple[AIProvider, ...],
@@ -570,7 +625,9 @@ class AIProviderRouter:
             if not self._candidate_eligible(provider, state):
                 raise _TargetBecameUnavailable
             health_snapshot = self._health_snapshot(provider, identity)
-            response = await provider.chat(messages, tools)
+            response = await provider.chat(
+                ChatRequest(messages=tuple(messages), tools=tools)
+            )
             return response, health_snapshot
 
         while True:
@@ -580,13 +637,13 @@ class AIProviderRouter:
                         response, health_snapshot = await send_once()
                     else:
                         response, health_snapshot = await operations.run(
-                            f"AI {provider.name}",
+                            f"AI {identity.family}",
                             send_once,
                             timeout_sec=operations.ai_timeout,
                         )
                 except TimeoutError:
                     raise ProviderError(
-                        f"{provider.name}: AI attempt timeout",
+                        f"{identity.family}: AI attempt timeout",
                         transient=True,
                         transport_kind=TransportFailureKind.READ_TIMEOUT,
                     ) from None
@@ -636,8 +693,8 @@ class AIProviderRouter:
     async def _complete_with_provider(
         self,
         provider: AIProvider,
-        messages: list[dict],
-        tools: list[dict] | None,
+        messages: list[ChatMessage],
+        tools: tuple[ToolDefinition, ...],
         tool_executor: ToolExecutor,
         state: _RequestState,
         *,
@@ -648,10 +705,10 @@ class AIProviderRouter:
         while True:
             if active_tools and state.budget.exhausted(self.max_tool_rounds):
                 messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
+                    state.base_request.messages,
                     state.tool_outputs,
                 )
-                active_tools = None
+                active_tools = ()
 
             resp = await self._chat_with_retry(
                 provider,
@@ -664,11 +721,13 @@ class AIProviderRouter:
             if not resp.tool_calls:
                 text = (resp.content or "").strip()
                 if not text:
-                    raise ProviderError(f"{provider.name}: model trả về nội dung rỗng")
+                    raise ProviderError(
+                    f"{provider_target_identity(provider).family}: model trả về nội dung rỗng"
+                )
                 return text
             if not active_tools:
                 raise ProviderError(
-                    f"{provider.name}: model gọi tool khi tools đã tắt",
+                    f"{provider_target_identity(provider).family}: model gọi tool khi tools đã tắt",
                     transient=False,
                 )
 
@@ -676,18 +735,25 @@ class AIProviderRouter:
             if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
                 state.budget.close()
                 messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
+                    state.base_request.messages,
                     state.tool_outputs,
                 )
-                active_tools = None
+                active_tools = ()
                 continue
 
             state.budget.rounds += 1
             state.budget.calls += requested_calls
-            messages.append(_assistant_tool_message(resp, include_provider_metadata=True))
-            state.portable_messages.append(
-                _assistant_tool_message(resp, include_provider_metadata=False)
+            assistant_parts = (
+                ((TextPart(resp.content),) if resp.content else ())
+                + tuple(resp.tool_calls)
             )
+            assistant_message = ChatMessage(
+                role="assistant",
+                parts=assistant_parts,
+                provider_state=resp.provider_state,
+            )
+            messages.append(assistant_message)
+            state.portable_messages.append(assistant_message.portable())
 
             base_index = len(state.tool_outputs)
             state.tool_outputs.extend([""] * requested_calls)
@@ -702,66 +768,26 @@ class AIProviderRouter:
                 retain=retain,
             )
             for tc, output in zip(resp.tool_calls, outputs, strict=True):
-                tool_message = {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": output,
-                }
-                messages.append(deepcopy(tool_message))
+                tool_message = ChatMessage(
+                    role="tool",
+                    parts=(ToolResultPart(tc.id, output),),
+                )
+                messages.append(tool_message)
                 state.portable_messages.append(tool_message)
 
             if state.budget.exhausted(self.max_tool_rounds):
                 messages[:] = build_fresh_synthesis_messages(
-                    state.base_messages,
+                    state.base_request.messages,
                     state.tool_outputs,
                 )
-                active_tools = None
-
-
-def _tool_call_message(
-    tc: ToolCall,
-    *,
-    include_provider_metadata: bool = True,
-) -> dict:
-    out = {
-        "id": tc.id,
-        "type": "function",
-        "function": {"name": tc.name, "arguments": _json_dumps(tc.arguments)},
-    }
-    if include_provider_metadata and tc.extra_content is not None:
-        out["extra_content"] = deepcopy(tc.extra_content)
-    return out
-
-
-def _assistant_tool_message(
-    resp: ChatResponse,
-    *,
-    include_provider_metadata: bool = True,
-) -> dict:
-    out = {
-        "role": "assistant",
-        "content": resp.content or "",
-        "tool_calls": [
-            _tool_call_message(tc, include_provider_metadata=include_provider_metadata)
-            for tc in resp.tool_calls
-        ],
-    }
-    if include_provider_metadata:
-        out.update(deepcopy(resp.assistant_metadata))
-    return out
-
-
-def _json_dumps(data: dict) -> str:
-    import json
-
-    return json.dumps(data, ensure_ascii=False)
+                active_tools = ()
 
 
 def build_provider_router(settings: Settings) -> AIProviderRouter:
     text_order = tuple(settings.text_provider_order_list)
     vision_order = tuple(settings.vision_provider_order_list)
     registered_names = tuple(dict.fromkeys((*text_order, *vision_order)))
-    providers = build_registered_providers(settings, registered_names)
+    providers = build_provider_targets(settings, registered_names)
     retry_policy = ProviderRetryPolicy(
         max_consecutive_failures=settings.provider_retry_max_consecutive,
         max_failures_per_provider=settings.provider_retry_max_per_provider,

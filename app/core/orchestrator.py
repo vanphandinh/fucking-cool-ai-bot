@@ -6,7 +6,8 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from ..ai.multimodal import build_user_content
+from ..ai.contracts import ChatMessage, ChatRequest, TextPart, ToolDefinition
+from ..ai.multimodal import build_user_parts
 from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import image_service, service as search_service, url_service
@@ -15,65 +16,60 @@ from .source_policy import canonicalize_source_url, select_diverse_sources
 
 _VN_TZ = timezone(timedelta(hours=7))
 
-TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "description": (
-                "Tìm kiếm web khi câu trả lời cần thông tin bên ngoài conversation, đặc biệt "
-                "thông tin mới/hiện tại, kiểm chứng hoặc tìm nguồn. Không dùng chỉ để dịch, "
-                "tóm tắt, viết lại, sửa ngữ pháp, trích xuất hoặc định dạng nội dung người dùng "
-                "đã cung cấp đầy đủ."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string", "description": "Từ khóa tìm kiếm."}},
-                "required": ["query"],
+TOOLS: tuple[ToolDefinition, ...] = (
+    ToolDefinition(
+        name="web_search",
+        description=(
+            "Tìm kiếm web khi câu trả lời cần thông tin bên ngoài conversation, đặc biệt "
+            "thông tin mới/hiện tại, kiểm chứng hoặc tìm nguồn. Không dùng chỉ để dịch, "
+            "tóm tắt, viết lại, sửa ngữ pháp, trích xuất hoặc định dạng nội dung người dùng "
+            "đã cung cấp đầy đủ."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Từ khóa tìm kiếm."}
             },
+            "required": ["query"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "image_search",
-            "description": (
-                "Tìm hình ảnh trên Internet khi user chủ động yêu cầu tìm, xem hoặc cung cấp "
-                "ảnh/ảnh tham khảo. Không dùng chỉ vì user đã gửi ảnh để phân tích."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string", "description": "Từ khóa tìm hình ảnh."}},
-                "required": ["query"],
+    ),
+    ToolDefinition(
+        name="image_search",
+        description=(
+            "Tìm hình ảnh trên Internet khi user chủ động yêu cầu tìm, xem hoặc cung cấp "
+            "ảnh/ảnh tham khảo. Không dùng chỉ vì user đã gửi ảnh để phân tích."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Từ khóa tìm hình ảnh."}
             },
+            "required": ["query"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_url",
-            "description": (
-                "Đọc một URL cụ thể do user cung cấp hoặc lấy từ web_search. Ưu tiên tool này "
-                "trước web_search khi đã có URL. Với X/Twitter status, hệ thống tự dùng X-specific "
-                "resolver; dùng mode=x_thread chỉ khi user yêu cầu đọc cả X/thread."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL http/https."},
-                    "mode": {
-                        "type": "string",
-                        "enum": ["auto", "x_thread"],
-                        "description": (
-                            "Mặc định auto; x_thread chỉ dùng cho toàn thread X/Twitter."
-                        ),
-                    },
+    ),
+    ToolDefinition(
+        name="fetch_url",
+        description=(
+            "Đọc một URL cụ thể do user cung cấp hoặc lấy từ web_search. Ưu tiên tool này "
+            "trước web_search khi đã có URL. Với X/Twitter status, hệ thống tự dùng X-specific "
+            "resolver; dùng mode=x_thread chỉ khi user yêu cầu đọc cả X/thread."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL http/https."},
+                "mode": {
+                    "type": "string",
+                    "enum": ["auto", "x_thread"],
+                    "description": (
+                        "Mặc định auto; x_thread chỉ dùng cho toàn thread X/Twitter."
+                    ),
                 },
-                "required": ["url"],
             },
+            "required": ["url"],
         },
-    },
-]
+    ),
+)
 
 
 @dataclass
@@ -151,13 +147,20 @@ class Orchestrator:
         if request is None:
             request = UserRequest(text=question or "", quoted_text=quoted)
 
-        messages: list[dict] = [{"role": "system", "content": self.system_prompt()}]
+        messages: list[ChatMessage] = [
+            ChatMessage("system", (TextPart(self.system_prompt()),))
+        ]
         for entry in (history or [])[-(self.settings.max_context_turns * 2) :]:
             if not isinstance(entry, dict):
                 continue
             if entry.get("role") in ("user", "assistant") and entry.get("content"):
-                messages.append({"role": entry["role"], "content": (entry["content"] or "")[:2000]})
-        messages.append({"role": "user", "content": build_user_content(request)})
+                messages.append(
+                    ChatMessage(
+                        entry["role"],
+                        (TextPart((entry["content"] or "")[:2000]),),
+                    )
+                )
+        messages.append(ChatMessage("user", build_user_parts(request)))
 
         searched = False
         sources: list[dict] = []
@@ -240,8 +243,7 @@ class Orchestrator:
 
         try:
             result = await self.router.complete(
-                messages,
-                TOOLS,
+                ChatRequest(messages=tuple(messages), tools=TOOLS),
                 tool_executor,
                 requires_vision=request.requires_vision,
                 image_count=len(request.images),

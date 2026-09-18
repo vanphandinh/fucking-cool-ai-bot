@@ -48,7 +48,10 @@ async def _close_providers(provider_router) -> None:
         try:
             await provider.aclose()
         except Exception:  # noqa: BLE001
-            logger.debug("Đóng provider %s lỗi (bỏ qua)", provider.name)
+            logger.debug(
+                "Đóng provider target %s lỗi (bỏ qua)",
+                provider.spec.identity.target_id,
+            )
 
 
 async def _shutdown_question_controls(manager, presenter) -> None:

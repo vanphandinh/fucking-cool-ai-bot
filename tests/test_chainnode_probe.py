@@ -30,7 +30,7 @@ class ChainnodeProbeTests(unittest.TestCase):
         module = _load_probe()
         with patch.dict(
             os.environ,
-            {"CHAINNODE_API_KEYS": "  KeyOne  , KeyTwo ,  "},
+            {"AI_PROVIDERS__CHAINNODE__API_KEYS": "  KeyOne  , KeyTwo ,  "},
             clear=False,
         ):
             self.assertEqual(module.chainnode_probe_credential(), "KeyOne")
