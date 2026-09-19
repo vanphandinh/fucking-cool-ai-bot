@@ -108,12 +108,12 @@ class ProviderPortabilityTests(unittest.IsolatedAsyncioTestCase):
             all(not message.provider_state for message in second.requests[0].messages)
         )
 
-    async def test_fallback_cannot_reset_eight_tool_call_limit(self) -> None:
+    async def test_fallback_cannot_reset_twelve_tool_call_limit(self) -> None:
         first = ScriptedProvider(
             "first",
             [
-                tool_response(2, "a"),
-                tool_response(2, "b"),
+                tool_response(4, "a"),
+                tool_response(4, "b"),
                 tool_response(2, "c"),
                 ProviderError("first failed", transient=False),
             ],
@@ -144,7 +144,7 @@ class ProviderPortabilityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.provider, "second")
         self.assertEqual(result.fallbacks, ("second",))
-        self.assertEqual(executed, 6)
+        self.assertEqual(executed, 10)
         self.assertEqual(second.requests[-1].tools, ())
 
     async def test_closed_budget_fallback_uses_generic_fresh_synthesis(self) -> None:

@@ -453,7 +453,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
                                 name="fetch_url",
                                 arguments={"url": f"https://example.com/{index}"},
                             )
-                            for index in range(8)
+                            for index in range(12)
                         ]
                     ),
                     ProviderError("quota", status_code=429, transient=True),
@@ -484,7 +484,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.content, "bounded synthesis")
-        self.assertEqual(executed, 8)
+        self.assertEqual(executed, 12)
         self.assertEqual(b.requests[0].tools, ())
 
 
