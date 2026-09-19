@@ -40,7 +40,7 @@ from .target import ProviderTargetIdentity, provider_target_identity
 
 logger = logging.getLogger(__name__)
 ToolExecutor = Callable[[str, dict], Awaitable[str]]
-_MAX_TOOL_CALLS_TOTAL = 8
+_MAX_TOOL_CALLS_TOTAL = 12
 _MAX_PARALLEL_TOOL_CALLS = 2
 _HEALTH_SCOPES = (
     HealthScope.FAMILY,
@@ -251,7 +251,7 @@ class AIProviderRouter:
     def __init__(
         self,
         providers: list[AIProvider],
-        max_tool_rounds: int = 4,
+        max_tool_rounds: int = 5,
         *,
         text_provider_order: tuple[str, ...] | None = None,
         vision_provider_order: tuple[str, ...] | None = None,

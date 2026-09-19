@@ -196,8 +196,8 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
             if len(requests) == 1:
-                return _tool_response_many(request, "call", 8)
-            return _text_response(request, "eight-call synthesis")
+                return _tool_response_many(request, "call", 12)
+            return _text_response(request, "twelve-call synthesis")
 
         provider = _make_target()
         await provider.aclose()
@@ -218,9 +218,9 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("eight-call synthesis", "xkiro", ()),
+            CompletionResult("twelve-call synthesis", "xkiro", ()),
         )
-        self.assertEqual(executed, ["fetch_url"] * 8)
+        self.assertEqual(executed, ["fetch_url"] * 12)
         self.assertEqual(len(requests), 2)
         self.assertNotIn("tools", requests[1])
         self.assertNotIn("tool_choice", requests[1])
@@ -232,7 +232,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
             if len(requests) == 1:
-                return _tool_response_many(request, "oversized", 9)
+                return _tool_response_many(request, "oversized", 13)
             return _text_response(request, "synthesized without overflow")
 
         provider = _make_target()

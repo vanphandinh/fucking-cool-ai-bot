@@ -14,6 +14,49 @@ from tests.provider_fakes import fetch_url_definition, text_request
 
 
 class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_batch_at_total_call_limit_executes_before_synthesis(self) -> None:
+        requests: list[dict] = []
+        executed: list[str] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            if len(requests) == 1:
+                return _tool_response_many(request, 12)
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "done",
+                            }
+                        }
+                    ]
+                },
+                request=request,
+            )
+
+        provider = _provider("xkiro", respond)
+        router = AIProviderRouter([provider], max_tool_rounds=5)
+
+        async def execute(_name: str, args: dict) -> str:
+            url = str(args["url"])
+            executed.append(url)
+            return f"result:{url}"
+
+        try:
+            result = await router.complete(
+                text_request("research broadly", tools=(fetch_url_definition(),)),
+                execute,
+            )
+        finally:
+            await provider.aclose()
+
+        self.assertEqual(result.content, "done")
+        self.assertEqual(len(executed), 12)
+        self.assertEqual(len(requests), 2)
+
     async def test_oversized_batch_closes_tools_and_synthesis_violation_is_terminal(
         self,
     ) -> None:
@@ -23,7 +66,7 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
             payload = json.loads(request.content)
             requests.append(payload)
             if len(requests) == 1:
-                return _tool_response_many(request, 9)
+                return _tool_response_many(request, 13)
             return _tool_response_many(request, 1)
 
         provider = _provider("xkiro", respond)

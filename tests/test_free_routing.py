@@ -10,14 +10,14 @@ from app.config import Settings
 
 
 class ProviderDeploymentDefaultsTests(unittest.TestCase):
-    def test_defaults_keep_chainnode_primary_xkiro_fallback_and_existing_limits(self) -> None:
+    def test_defaults_keep_chainnode_primary_xkiro_fallback_and_updated_limits(self) -> None:
         settings = Settings(_env_file=None)
 
         self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
         self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
         self.assertEqual(settings.max_images_per_request, 1)
         self.assertEqual(settings.max_context_turns, 6)
-        self.assertEqual(settings.max_tool_rounds, 2)
+        self.assertEqual(settings.max_tool_rounds, 5)
 
     def test_no_credentials_builds_no_active_slots_but_preserves_order(self) -> None:
         router = build_provider_router(Settings(_env_file=None))

@@ -59,7 +59,7 @@ Search auto mode keeps shared cache behavior but does not share one live singlef
 
 ## State preservation
 
-Renewal continues the same coroutine and request state. It does not restart the orchestrator. In particular, renewal does not reset:
+Renewal continues the same coroutine and request state. It does not restart the orchestrator. The default tool budget is 5 rounds with a hard cap of 12 individual tool calls per question; both counters are request-scoped across renewals. In particular, renewal does not reset:
 
 - provider retry counters or provider health;
 - tool-call counters/rounds;
