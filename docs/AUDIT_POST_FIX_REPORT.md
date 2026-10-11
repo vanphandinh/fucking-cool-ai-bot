@@ -65,6 +65,20 @@ snapshot and terminal status presenter. Configuration derives from Settings,
 authorization, provider/tool text serialization, outbound URL fetch, Telegram
 acknowledgement and cancellation, and diagnostic logging.
 
+**2026-10-12 AUD-04 warning cooldown follow-up:** merge review exposed an
+additional variable-cooldown regression (`10s` warning followed by a `90s`
+check after 11 seconds, with intervening cleanup). The regression failed
+before the patch. A 120-second bounded timestamp lookback now preserves the
+comparison; a longer cooldown observed before expiry extends retention from
+the original warning timestamp without sliding on denied calls. Once a short
+warning has aged beyond the bounded lookback and has been removed, a newly
+requested longer cooldown cannot recover its past timestamp. This is an
+explicit finite-memory limitation for the otherwise unbounded cooldown API.
+All **18 focused tests** pass; **593 tests** pass on Windows Python 3.13
+(2 skipped) and offline Docker Python 3.12 (0 skipped). Warning churn
+(100 distinct users/second for 400 seconds) retains 12,000 warning entries,
+and idle cleanup removes them after 121 seconds. GitHub CI remains pending.
+
 ## B. Detailed findings and disposition
 
 ### NEW-01 — LOW — Legacy topic locks retain distinct keys indefinitely
@@ -162,7 +176,7 @@ acknowledgement and cancellation, and diagnostic logging.
 | AUD-01 | MEDIUM | **FIXED + VERIFIED:** `app/core/job_control.py`, `app/core/job_manager.py:225-295`, `app/bot/question_runner.py:125-255`, `app/bot/job_status.py`, `app/core/stats.py`. Confirmed Telegram prefix acknowledgement is tracked via `sent_parts/total_parts`; terminal `PARTIALLY_DELIVERED` records only acknowledged prefix with incomplete marker and an idempotent partial counter. Confirmed prefix has no automatic replay; controlled and legacy paths preserved. | `tests/test_audit_delivery_regressions.py`, delivery/manager/status, shutdown/callback and chronological history tests; Python 3.12 suite PASS. Transport ambiguity still prevents exactly-once network delivery. |
 | AUD-02 | MEDIUM | **FIXED + VERIFIED:** `app/ai/router.py:54-70,205-245` converts tool exceptions into stable error categories instead of provider-visible `str(exc)`; cancellation and tool ordering preserved. Related raw logging at reader/legacy/image-result/startup boundaries sanitized. | `tests/test_audit_tool_error_privacy.py`, `tests/test_audit_reader_error_privacy.py`, `tests/test_audit_legacy_logging_privacy.py`; sentinel-leak and concurrency regressions PASS. |
 | AUD-03 | LOW | **FIXED + VERIFIED:** `scripts/check_markdown_links.py:72-86` renders source paths using POSIX separators while resolving real paths with `Path`. | `tests/test_markdown_links.py`; link checker PASS on Windows and Python 3.12 image. |
-| AUD-04 | LOW | **FIXED + VERIFIED (local Windows Python 3.13 and Docker Python 3.12, 2026-10-12):** `app/core/rate_limiter.py` now expires request and warning state using a min-heap with independent deadlines, version-token lazy invalidation and compaction at `2 * live_expirations + 64`. Denied requests cannot extend request retention; public behavior and 60-second window are preserved. The earlier 256-key/5-second sweep was insufficient and is superseded. | `tests/test_audit_retention_regressions.py`: 15 PASS; 40,000-user churn: 23,800 stale-era keys **before** fix versus 6,000 live keys **after**, then 1 after idle cleanup. Full host suite: 590 PASS (2 skipped); Docker Python 3.12 suite: 590 PASS (0 skipped) on retry after one unrelated timing-sensitive failure; Ruff, compileall and diff check PASS. |
+| AUD-04 | LOW | **FIXED + VERIFIED locally (Windows Python 3.13 and Docker Python 3.12, 2026-10-12):** `app/core/rate_limiter.py` expires request and warning state with independent min-heap deadlines, lazy invalidation and compaction at `2 * live_expirations + 64`. Denied requests do not extend request retention. The 60-second sliding request window is unchanged. Warning history now has a bounded 120-second minimum lookback and may extend from the original warning time if a longer cooldown is requested while history remains. A cooldown increase first requested after the history is evicted cannot be reconstructed. | `tests/test_audit_retention_regressions.py`: **18 PASS**, including the initially failing variable-cooldown regression; 40,000-user request churn: 6,000 live keys then 1 after idle. Warning churn: 12,000 live history entries then 0 after idle. Full suite: Windows Python 3.13 **593 PASS (2 skipped)**; Docker Python 3.12 **593 PASS (0 skipped)**. Hosted CI and production verification pending. |
 | AUD-05 | LOW | **FIXED + VERIFIED:** `app/core/context.py:14-130`, `app/config.py`, `app/main.py`, `.env.example`; 2048 conversation-key LRU and 24-hour inactivity TTL, preserving topic separation and ordered exchange semantics. | `tests/test_audit_retention_regressions.py`, `tests/test_controlled_memory_order.py` and topic isolation tests PASS. |
 | AUD-06 | INFO | **UNVERIFIED** within local scope; see NEW-02. No speculative crawler-side patch applied. | Local code/Compose review PASS; isolated service navigation and network egress verification NOT RUN. |
 
@@ -225,6 +239,7 @@ the complete 180-file tracked baseline inventory.
 
 | Environment / command | Observed outcome | Notes |
 | --- | --- | --- |
+| **2026-10-12 AUD-04 warning cooldown follow-up** | **PASS: 18 focused tests; 593 full tests on each runtime** | Windows Python 3.13: 2 skipped, 43.600s. Docker Python 3.12 (`--network none`): 0 skipped, 27.321s. Earlier 15/590 rows below are historical runs before the three new regressions. 120-second bounded warning lookback and 150-second extension verified. |
 | **2026-10-12 AUD-04: Windows Python 3.13 `python tests/run_tests.py`** | **PASS: 590 tests, 2 skipped, 47.170s** | Current AUD-04 heap patch and expanded regression tests. |
 | **2026-10-12 AUD-04 focused retention tests** | **PASS: 15 tests** | Previously failed sustained-churn (23,800 vs 6,000), idle cleanup (445 vs 1), and denied-spam retention checks now pass; warning/heap/Telegram integration also covered. |
 | **2026-10-12 AUD-04 Ruff, compileall, diff check** | **PASS** | Host Python 3.13 and current tracked code; rerun after documentation updates. |

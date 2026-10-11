@@ -141,15 +141,55 @@ class RateLimiterRetentionTests(unittest.TestCase):
         clock.advance(9.999)
         self.assertFalse(limiter.should_warn(11, cooldown_sec=10))
         clock.now = 110.0
-        self.assertTrue(limiter.should_warn(11, cooldown_sec=60))
+        self.assertFalse(limiter.should_warn(11, cooldown_sec=60))
         self.assertFalse(limiter.should_warn(12, cooldown_sec=90))
         clock.advance(50)
-        self.assertFalse(limiter.should_warn(11, cooldown_sec=60))
-        clock.now = 170.0
         self.assertTrue(limiter.should_warn(11, cooldown_sec=60))
+        clock.now = 170.0
+        self.assertFalse(limiter.should_warn(11, cooldown_sec=60))
         self.assertFalse(limiter.should_warn(12, cooldown_sec=90))
         clock.advance(20)
         self.assertTrue(limiter.should_warn(12, cooldown_sec=90))
+
+    def test_longer_cooldown_uses_previous_warning_after_short_cooldown_expires(self):
+        clock = _Clock()
+        limiter = RateLimiter(1, clock=clock)
+        self.assertTrue(limiter.should_warn(42, cooldown_sec=10))
+        clock.advance(11)
+        # Another user's request performs idle cleanup before user 42 returns.
+        limiter.allow(99)
+        self.assertFalse(limiter.should_warn(42, cooldown_sec=90))
+        clock.advance(79)
+        self.assertTrue(limiter.should_warn(42, cooldown_sec=90))
+
+    def test_suppressed_warning_extends_lookback_to_requested_cooldown(self):
+        clock = _Clock()
+        limiter = RateLimiter(1, clock=clock)
+        self.assertTrue(limiter.should_warn(42, cooldown_sec=10))
+        clock.advance(119)
+        self.assertFalse(limiter.should_warn(42, cooldown_sec=150))
+        clock.advance(2)
+        limiter.allow(99)  # expire unrelated entries
+        self.assertFalse(limiter.should_warn(42, cooldown_sec=150))
+        clock.advance(29)
+        self.assertTrue(limiter.should_warn(42, cooldown_sec=150))
+
+    def test_warning_history_is_bounded_under_sustained_churn(self):
+        clock = _Clock()
+        limiter = RateLimiter(1, clock=clock)
+        for second in range(400):
+            for offset in range(100):
+                self.assertTrue(limiter.should_warn(second * 100 + offset))
+            if second < 399:
+                clock.advance(1)
+        self.assertEqual(len(limiter._last_warn), 12_000)
+        self.assertLessEqual(
+            len(limiter._expiry_heap),
+            2 * len(limiter._warning_expirations) + 64,
+        )
+        clock.advance(121)
+        limiter.allow(40_000)
+        self.assertEqual(limiter._last_warn, {})
 
     def test_disabled_limit_does_not_write_request_stamps(self):
         clock = _Clock()
@@ -157,7 +197,7 @@ class RateLimiterRetentionTests(unittest.TestCase):
         self.assertEqual(limiter.allow(42), (False, 60.0))
         self.assertEqual(limiter._stamps, {})
         self.assertTrue(limiter.should_warn(42))
-        clock.advance(31)
+        clock.advance(121)
         limiter.allow(99)
         self.assertNotIn(42, limiter._last_warn)
         self.assertEqual(limiter._stamps, {})

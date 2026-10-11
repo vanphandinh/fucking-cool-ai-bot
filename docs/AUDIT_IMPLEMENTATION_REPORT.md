@@ -89,6 +89,37 @@ production/VPS validation remain unexecuted. **AUD-04 is FIXED + VERIFIED
 in both local Windows Python 3.13 and Docker Python 3.12**, with release gates
 still outstanding.
 
+### AUD-04 warning cooldown follow-up — 2026-10-12
+
+Merge-readiness review found a same-user variable-cooldown regression: after
+`should_warn(42, 10)` at t=100, a different user's request at t=111 could
+expire the warning and `should_warn(42, 90)` then returned `True` instead of
+`False`. The deterministic regression **failed before this follow-up patch**.
+
+`should_warn()` now retains the last warning timestamp for a minimum bounded
+**120-second lookback**, so a later request for a longer cooldown can compare
+against the original warning. When a suppressed call requests an even longer
+cooldown, it extends the expiration deadline relative to the **original
+warning time**, never relative to the suppressed call; spam cannot endlessly
+renew state. Requests and warnings still expire independently, and heap
+compaction is unchanged. The finite-history tradeoff is explicit: if an
+earlier short-cooldown warning was removed after 120 idle seconds, a
+previously unseen longer cooldown cannot retroactively recover it. This is
+inherent to finite retention with an otherwise unbounded `cooldown_sec` API.
+Production Telegram callers use the unchanged 30-second default.
+
+The focused regression suite now has **18 PASS**. A deterministic warning
+churn of 100 new users/second for 400 seconds retained **12,000** warning
+timestamps (120 seconds of traffic), then removed them all after 121 idle
+seconds and one unrelated call. Full post-patch suites: Windows Python 3.13
+**593 PASS (2 skipped, 43.600s)**; offline Docker Python 3.12 **593 PASS
+(0 skipped, 27.321s)**. After refreshing the index, GitNexus
+`detect-changes --scope all` reported **4 files, 19 changed symbols,
+0 reported affected flows, LOW risk** for this fix. The analyzer also warned
+about truncated flow exploration, so zero reported flows is not proof that
+no runtime path can be affected; direct Telegram handler tests passed.
+GitHub CI and live Telegram/VPS checks remain pending.
+
 ## Validation and remaining engineering risk
 
 The comprehensive evidence matrix is in
