@@ -20,6 +20,7 @@ class _Stats:
         self.fallback_calls = 0
         self.answer_calls = 0
         self.search_calls = 0
+        self.partial_calls = 0
 
     def record_fallbacks(self, fallbacks):
         self.fallback_calls += 1
@@ -29,6 +30,9 @@ class _Stats:
 
     def record_search(self):
         self.search_calls += 1
+
+    def record_partial_delivery(self):
+        self.partial_calls += 1
 
 
 class _DeliveryBot:
@@ -137,7 +141,7 @@ class QuestionDeliveryShutdownTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats.search_calls, 1)
         self.assertEqual(self.manager.owned_task_count, 0)
 
-    async def test_partial_multipart_failure_does_not_commit_memory_or_success_stats(self):
+    async def test_partial_multipart_failure_commits_acknowledged_prefix_only(self):
         bot = _FailSecondPrimaryBot()
         answer = self._answer("A" * 5000)
         job_id, memory, stats = await self._submit(bot=bot, answer=answer)
@@ -145,9 +149,15 @@ class QuestionDeliveryShutdownTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.manager.wait(job_id), timeout=1)
 
         snapshot = self.manager.snapshot(job_id)
-        self.assertEqual(snapshot.state, "FAILED")
+        self.assertEqual(snapshot.state, "PARTIALLY_DELIVERED")
+        self.assertEqual((snapshot.sent_parts, snapshot.total_parts), (1, 2))
         self.assertEqual(bot.calls, 2)
-        self.assertEqual(memory.exchanges, [])
+        self.assertEqual(len(memory.exchanges), 1)
+        self.assertEqual(memory.exchanges[0][0], -100)
+        self.assertEqual(memory.exchanges[0][1], "question")
+        self.assertEqual(memory.exchanges[0][3], 1)
+        self.assertEqual(memory.exchanges[0][2], "A" * 3900 + "\n[...] Câu trả lời chưa hoàn chỉnh")
+        self.assertEqual(stats.partial_calls, 1)
         self.assertEqual(stats.fallback_calls, 0)
         self.assertEqual(stats.answer_calls, 0)
         self.assertEqual(stats.search_calls, 0)

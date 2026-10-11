@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+import math
+import time
+from collections import OrderedDict
 from typing import Any
+from typing import Callable
 
 ConversationKey = int | tuple[int, int]
 
@@ -11,10 +14,47 @@ ConversationKey = int | tuple[int, int]
 class ChatMemory:
     """Giữ N lượt hỏi-đáp gần nhất cho mỗi chat hoặc forum topic, trong RAM."""
 
-    def __init__(self, max_turns_per_chat: int = 10) -> None:
+    def __init__(
+        self,
+        max_turns_per_chat: int = 10,
+        *,
+        max_conversations: int = 2048,
+        ttl_sec: float = 86400.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if max_turns_per_chat < 1 or max_conversations < 1:
+            raise ValueError("conversation and turn limits must be positive")
+        if not math.isfinite(ttl_sec) or ttl_sec <= 0:
+            raise ValueError("ttl_sec must be finite and positive")
         self._max = max_turns_per_chat
+        self._capacity = max_conversations
+        self._ttl = ttl_sec
+        self._clock = clock
         self._sequence = 0
-        self._store: dict[ConversationKey, list[dict[str, Any]]] = defaultdict(list)
+        self._store: OrderedDict[ConversationKey, list[dict[str, Any]]] = OrderedDict()
+        self._accessed: dict[ConversationKey, float] = {}
+
+    def _expire(self, now: float) -> None:
+        while self._store:
+            oldest = next(iter(self._store))
+            if now - self._accessed[oldest] < self._ttl:
+                break
+            self._store.popitem(last=False)
+            self._accessed.pop(oldest, None)
+
+    def _touch(self, key: ConversationKey, *, create: bool) -> bool:
+        now = self._clock()
+        self._expire(now)
+        if key not in self._store:
+            if not create:
+                return False
+            self._store[key] = []
+        self._store.move_to_end(key)
+        self._accessed[key] = now
+        while len(self._store) > self._capacity:
+            oldest, _ = self._store.popitem(last=False)
+            self._accessed.pop(oldest, None)
+        return True
 
     def _next_sequence(self) -> int:
         self._sequence += 1
@@ -45,6 +85,7 @@ class ChatMemory:
         content = (content or "").strip()
         if not content:
             return
+        self._touch(conversation_key, create=True)
         self._store[conversation_key].append(
             {
                 "role": role,
@@ -69,6 +110,7 @@ class ChatMemory:
         assistant = (assistant_content or "").strip()
         if not user or not assistant:
             return
+        self._touch(conversation_key, create=True)
         entries = self._store[conversation_key]
         sequence = self._next_sequence()
         entries.append(
@@ -97,6 +139,8 @@ class ChatMemory:
         limit: int | None = None,
     ) -> list[dict[str, str]]:
         """Trả về danh sách ({role, content}) từ cũ tới mới."""
+        if not self._touch(conversation_key, create=False):
+            return []
         if limit is None:
             limit = self._max
         if limit <= 0:

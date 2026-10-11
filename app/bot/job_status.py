@@ -10,7 +10,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .job_callbacks import make_callback_data
 
-_TERMINAL = frozenset({"COMPLETED", "CANCELLED", "FAILED"})
+_TERMINAL = frozenset({"COMPLETED", "PARTIALLY_DELIVERED", "CANCELLED", "FAILED"})
 _STATUS_RETRY_BASE_SEC = 0.5
 _STATUS_RETRY_MAX_SEC = 30.0
 _TERMINAL_STATUS_MAX_RETRIES = 5
@@ -84,6 +84,12 @@ def render_job_status(
         text = f"📤 Đang gửi kết quả.\nĐã chạy: {ran}."
     elif snapshot.state == "COMPLETED":
         text = f"✅ Hoàn tất.\nTổng thời gian: {ran}."
+    elif snapshot.state == "PARTIALLY_DELIVERED":
+        text = (
+            f"⚠️ Chỉ gửi được {snapshot.sent_parts}/{snapshot.total_parts} phần câu trả lời. "
+            "Các phần đã gửi sẽ không tự động gửi lại.\n"
+            f"Tổng thời gian: {ran}."
+        )
     elif snapshot.state == "CANCELLED":
         text = f"⛔ Đã dừng theo yêu cầu.\nTổng thời gian: {ran}."
     else:

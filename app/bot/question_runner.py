@@ -123,37 +123,10 @@ class QuestionProcessor:
 
     async def deliver(self, record, answer) -> None:
         parts = split_telegram_html(answer.text, 3900) or ["..."]
-        await self._send_answer_parts(record, parts)
-
-        self.stats.record_fallbacks(answer.fallbacks)
-        record_target_recovery = getattr(self.stats, "record_target_recovery", None)
-        if callable(record_target_recovery):
-            record_target_recovery(
-                target_rotations=getattr(answer, "target_rotations", 0),
-                model_rotations=getattr(answer, "model_rotations", 0),
-                credential_failovers=getattr(answer, "credential_failovers", 0),
-            )
-        self.stats.record_answer(answer.provider)
-        if answer.searched:
-            self.stats.record_search()
-
-        request = record.prepared_request
-        image_count = len(request.images) if request is not None else 0
-        memory_text = (
-            f"[kèm {image_count} ảnh] {record.submission.question}"
-            if image_count
-            else record.submission.question
+        record.total_parts = len(parts)
+        await self._send_answer_parts(
+            record, parts, on_last_ack=lambda: self._commit_full(record, answer)
         )
-        key = conversation_key(record.submission.chat_id, record.submission.topic_id)
-        self.memory.push_exchange(
-            key,
-            memory_text,
-            telegram_html_to_plain(answer.text),
-            order_key=record.submission.request_message_id,
-        )
-        # Primary answer + success accounting + memory are the completion boundary.
-        # Everything below is best-effort enrichment and must never cause replay.
-        record.delivery_committed = True
 
         try:
             if getattr(answer, "images", None):
@@ -176,39 +149,111 @@ class QuestionProcessor:
                         link_preview_options=LinkPreviewOptions(is_disabled=True),
                         **kwargs,
                     )
-        except Exception:  # noqa: BLE001 - extras must not turn delivered answer into AI failure
-            logger.exception(
-                "Gửi sources/images của controlled question thất bại (chat %s)",
-                record.submission.chat_id,
+        except Exception as exc:  # noqa: BLE001 - extras are best effort
+            logger.warning("Controlled question extras failed: exc_type=%s", type(exc).__name__)
+
+    def _commit_memory(self, record, answer_text: str) -> None:
+        if record.memory_committed:
+            return
+        record.memory_committed = True  # claim before attempting: at most once
+        request = record.prepared_request
+        image_count = len(request.images) if request is not None else 0
+        question = record.submission.question
+        if image_count:
+            question = f"[kèm {image_count} ảnh] {question}"
+        try:
+            self.memory.push_exchange(
+                conversation_key(record.submission.chat_id, record.submission.topic_id),
+                question,
+                answer_text,
+                order_key=record.submission.request_message_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - Telegram acknowledgment is authoritative
+            logger.error(
+                "Controlled question memory commit failed: exc_type=%s",
+                type(exc).__name__,
             )
 
-    async def _send_answer_parts(self, record, parts: list[str]) -> None:
-        preview = LinkPreviewOptions(is_disabled=True)
-        for index, part in enumerate(parts):
-            payload, needs_html = _delivery_payload(part)
-            kwargs = {
-                "chat_id": record.submission.chat_id,
-                "text": payload,
-                "link_preview_options": preview,
-            }
-            if record.submission.topic_id is not None:
-                kwargs["message_thread_id"] = record.submission.topic_id
-            if index == 0:
-                kwargs["reply_parameters"] = ReplyParameters(
-                    message_id=record.submission.request_message_id
+    def _commit_full(self, record, answer) -> None:
+        if record.delivery_committed:
+            return
+        # Set before any accounting operations. A failure here cannot undo the
+        # already acknowledged Telegram messages or trigger a replay.
+        record.delivery_committed = True
+        self._commit_memory(record, telegram_html_to_plain(answer.text))
+        try:
+            self.stats.record_fallbacks(answer.fallbacks)
+            record_target_recovery = getattr(self.stats, "record_target_recovery", None)
+            if callable(record_target_recovery):
+                record_target_recovery(
+                    target_rotations=getattr(answer, "target_rotations", 0),
+                    model_rotations=getattr(answer, "model_rotations", 0),
+                    credential_failovers=getattr(answer, "credential_failovers", 0),
                 )
-            if needs_html:
-                kwargs["parse_mode"] = "HTML"
-            try:
-                await self.bot.send_message(**kwargs)
-            except TelegramBadRequest as exc:
-                if not needs_html or not _is_html_parse_error(exc):
-                    raise
-                kwargs.pop("parse_mode", None)
-                kwargs["text"] = telegram_html_to_plain(part)
-                await self.bot.send_message(**kwargs)
-            if index + 1 < len(parts):
-                await asyncio.sleep(0.15)
+            self.stats.record_answer(answer.provider)
+            if answer.searched:
+                self.stats.record_search()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Controlled question success accounting failed: exc_type=%s",
+                type(exc).__name__,
+            )
+
+    def _commit_partial(self, record) -> None:
+        if record.partial_accounted or not 0 < record.sent_parts < record.total_parts:
+            return
+        # Prefix contains only chunks for which Telegram returned successfully.
+        prefix = "\n".join(record.acknowledged_parts)
+        marker = "\n[...] Câu trả lời chưa hoàn chỉnh"
+        # ChatMemory retains at most 4,000 characters per turn. Keep the
+        # incomplete marker even if multiple acknowledged chunks exceed it.
+        self._commit_memory(record, f"{prefix[:4000 - len(marker)]}{marker}")
+        record.partial_accounted = True
+        try:
+            self.stats.record_partial_delivery()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Controlled question partial accounting failed: exc_type=%s",
+                type(exc).__name__,
+            )
+
+    async def _send_answer_parts(self, record, parts: list[str], *, on_last_ack=None) -> None:
+        preview = LinkPreviewOptions(is_disabled=True)
+        try:
+            for index, part in enumerate(parts):
+                payload, needs_html = _delivery_payload(part)
+                kwargs = {
+                    "chat_id": record.submission.chat_id,
+                    "text": payload,
+                    "link_preview_options": preview,
+                }
+                if record.submission.topic_id is not None:
+                    kwargs["message_thread_id"] = record.submission.topic_id
+                if index == 0:
+                    kwargs["reply_parameters"] = ReplyParameters(
+                        message_id=record.submission.request_message_id
+                    )
+                if needs_html:
+                    kwargs["parse_mode"] = "HTML"
+                try:
+                    await self.bot.send_message(**kwargs)
+                except TelegramBadRequest as exc:
+                    if not needs_html or not _is_html_parse_error(exc):
+                        raise
+                    kwargs.pop("parse_mode", None)
+                    kwargs["text"] = telegram_html_to_plain(part)
+                    await self.bot.send_message(**kwargs)
+                # No await between acknowledgment, progress update and the
+                # last-part commit. Do not treat attempted sends as acknowledged.
+                record.acknowledged_parts.append(telegram_html_to_plain(part))
+                record.sent_parts += 1
+                if record.sent_parts == record.total_parts and on_last_ack:
+                    on_last_ack()
+                if index + 1 < len(parts):
+                    await asyncio.sleep(0.15)
+        except BaseException:
+            self._commit_partial(record)
+            raise
 
 
 async def submit_controlled_question(

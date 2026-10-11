@@ -154,7 +154,7 @@ def _parse_structured_tool_calls(
             )
         if name not in allowed_names:
             raise ProviderError(
-                f"{provider_name}: model gọi tool ngoài active schema: {name}",
+                f"{provider_name}: model gọi tool ngoài active schema",
                 transient=False,
             )
 

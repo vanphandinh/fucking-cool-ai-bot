@@ -6,7 +6,7 @@ import math
 import time
 from typing import Callable
 
-TERMINAL = frozenset({'COMPLETED', 'CANCELLED', 'FAILED'})
+TERMINAL = frozenset({'COMPLETED', 'PARTIALLY_DELIVERED', 'CANCELLED', 'FAILED'})
 _DEFAULT_CONSENT_TIMEOUT_SEC = 900.0
 
 

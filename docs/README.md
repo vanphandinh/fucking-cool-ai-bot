@@ -35,6 +35,8 @@ Active documentation không được dạy superseded environment/provider contr
 - xKiro runtime và qualification probe dùng canonical `AI_PROVIDERS__XKIRO__API_KEYS`; runtime còn dùng `AI_PROVIDERS__XKIRO__TEXT_MODELS`, `AI_PROVIDERS__XKIRO__VISION_MODELS` và shared `AI_PROVIDERS__XKIRO__BASE_URL`; runtime model IDs không hard-code trong source.
 - Canonical retry fields là `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; recovery-hop field là `PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST`.
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
+- Controlled multipart delivery có terminal `PARTIALLY_DELIVERED` khi Telegram xác nhận một số phần, nhưng chưa đủ; lưu prefix có đánh dấu và chỉ đếm partial metric. Không có auto-replay.
+- Conversation memory là in-memory, tối đa `MAX_CONTEXT_CONVERSATIONS=2048` keys (LRU), TTL từ truy cập cuối `CONTEXT_TTL_SEC=86400`; rate-limit records được dọn dần theo thời gian bằng monotonic clock.
 - `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy.
 - Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
 - `.env.example` là complete supported key schema. `scripts/sync_env.py` không migrate/infer/rename/copy key values; unknown `.env` assignments làm sync exit `2` trước rewrite.

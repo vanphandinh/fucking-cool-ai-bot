@@ -112,6 +112,8 @@ class Settings(BaseSettings):
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
+    max_context_conversations: int = Field(default=2048, ge=1, le=100000)
+    context_ttl_sec: float = Field(default=86400.0, gt=0, allow_inf_nan=False)
     max_tool_rounds: int = Field(default=5, ge=0)
     request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     question_timeout_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)

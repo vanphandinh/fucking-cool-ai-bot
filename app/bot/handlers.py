@@ -279,7 +279,11 @@ def build_lifecycle_router(settings: Settings) -> Router:
             await bot.leave_chat(chat_id)
             logger.info("Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s", chat_id, title)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Không tự rời chat %s được: %s", chat_id, exc)
+            logger.warning(
+                "Không tự rời chat %s được: exc_type=%s",
+                chat_id,
+                type(exc).__name__,
+            )
 
     return router
 
@@ -326,8 +330,12 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
 
     try:
         await send_first(parts[0])
-    except Exception:  # noqa: BLE001
-        logger.exception("Gửi câu trả lời đầu tiên thất bại (chat %s)", message.chat.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Gửi câu trả lời đầu tiên thất bại (chat %s): exc_type=%s",
+            message.chat.id,
+            type(exc).__name__,
+        )
         return False
 
     extra_kwargs = {}
@@ -356,8 +364,12 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
                     **extra_kwargs,
                 )
             await asyncio.sleep(0.15)
-    except Exception:  # noqa: BLE001
-        logger.exception("Gửi phần tiếp theo thất bại (chat %s)", message.chat.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Gửi phần tiếp theo thất bại (chat %s): exc_type=%s",
+            message.chat.id,
+            type(exc).__name__,
+        )
         return False
     return True
 
@@ -430,7 +442,7 @@ async def _handle_question(
                             quoted=quoted,
                         )
                 except NoCapableProvider as exc:
-                    stats.record_error(str(exc))
+                    stats.record_error(type(exc).__name__)
                     await message.reply(_NO_CAPABLE_PROVIDER_TEXT)
                     return
                 except AllProvidersFailed as exc:
@@ -440,13 +452,19 @@ async def _handle_question(
                         model_rotations=getattr(exc, "model_rotations", 0),
                         credential_failovers=getattr(exc, "credential_failovers", 0),
                     )
-                    stats.record_error(str(exc))
-                    logger.error("AI providers không thể hoàn tất request: %s", exc)
+                    stats.record_error(type(exc).__name__)
+                    logger.error(
+                        "AI providers không thể hoàn tất request: exc_type=%s",
+                        type(exc).__name__,
+                    )
                     await message.reply(_ALL_PROVIDERS_FAILED_TEXT)
                     return
                 except Exception as exc:  # noqa: BLE001
-                    stats.record_error(str(exc))
-                    logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
+                    stats.record_error(type(exc).__name__)
+                    logger.error(
+                        "Lỗi không lường trước khi xử lý câu hỏi: exc_type=%s",
+                        type(exc).__name__,
+                    )
                     await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
                     return
                 finally:
@@ -495,8 +513,12 @@ async def _handle_question(
                                 link_preview_options=LinkPreviewOptions(is_disabled=True),
                                 **extra_kwargs,
                             )
-                except Exception:  # noqa: BLE001
-                    logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "Gửi phần tiếp theo thất bại (chat %s): exc_type=%s",
+                        chat_id,
+                        type(exc).__name__,
+                    )
     except TimeoutError:
         stats.record_error("Câu hỏi quá thời gian xử lý")
         logger.warning("Câu hỏi quá thời gian xử lý (chat %s)", chat_id)

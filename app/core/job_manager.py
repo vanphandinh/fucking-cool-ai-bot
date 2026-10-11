@@ -55,6 +55,8 @@ class JobSnapshot:
     active_duration: float
     result_ready: bool
     error: str | None
+    sent_parts: int = 0
+    total_parts: int = 0
 
 
 @dataclass
@@ -70,6 +72,11 @@ class JobRecord:
     error: str | None = None
     delivered: bool = False
     delivery_committed: bool = False
+    sent_parts: int = 0
+    total_parts: int = 0
+    acknowledged_parts: list[str] = field(default_factory=list)
+    memory_committed: bool = False
+    partial_accounted: bool = False
     events: list[Any] = field(default_factory=list)
 
 
@@ -140,6 +147,8 @@ class JobManager:
             active_duration=control.active_duration,
             result_ready=record.result is not None or record.delivered,
             error=record.error,
+            sent_parts=record.sent_parts,
+            total_parts=record.total_parts,
         )
 
     def _emit(self, record: JobRecord, event: Any) -> None:
@@ -217,6 +226,23 @@ class JobManager:
         frame = frames[-1]
         return f"{frame.filename}:{frame.lineno}:{frame.name}"
 
+    @staticmethod
+    def _delivery_outcome(record: JobRecord) -> str:
+        if record.delivery_committed or (
+            record.total_parts > 0 and record.sent_parts == record.total_parts
+        ):
+            return "COMPLETED"
+        if record.sent_parts > 0:
+            return "PARTIALLY_DELIVERED"
+        return "FAILED"
+
+    async def _finish_delivery_error(self, record: JobRecord, reason: str) -> None:
+        outcome = self._delivery_outcome(record)
+        record.error = reason if outcome == "FAILED" else None
+        record.delivered = outcome == "COMPLETED"
+        await record.control.finish(outcome)
+        self._emit(record, ("state", outcome))
+
     async def _run(self, record: JobRecord) -> None:
         try:
             prepare = record.submission.prepare_request
@@ -237,21 +263,17 @@ class JobManager:
             await self._cancel_record(record)
         except asyncio.CancelledError:
             if record.control.state == "DELIVERING":
-                if record.delivery_committed:
-                    record.delivered = True
-                    await record.control.finish("COMPLETED")
-                    self._emit(record, ("state", "COMPLETED"))
-                else:
-                    record.error = "Tác vụ bị gián đoạn khi bot dừng."
-                    await record.control.finish("FAILED")
-                    self._emit(record, ("state", "FAILED"))
+                await self._finish_delivery_error(record, "Tác vụ bị gián đoạn khi bot dừng.")
             else:
                 await self._cancel_record(record)
         except UserFacingJobError as exc:
-            record.error = str(exc)[:500]
-            if record.control.state not in TERMINAL:
-                await record.control.finish("FAILED")
-            self._emit(record, ("state", "FAILED"))
+            if record.control.state == "DELIVERING":
+                await self._finish_delivery_error(record, str(exc)[:500])
+            else:
+                record.error = str(exc)[:500]
+                if record.control.state not in TERMINAL:
+                    await record.control.finish("FAILED")
+                self._emit(record, ("state", "FAILED"))
         except Exception as exc:  # noqa: BLE001 - terminal manager boundary
             logger.error(
                 "Unexpected controlled job failure job_id=%s state=%s "
@@ -261,10 +283,14 @@ class JobManager:
                 type(exc).__name__,
                 self._failure_location(exc),
             )
-            record.error = "Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé."
-            if record.control.state not in TERMINAL:
-                await record.control.finish("FAILED")
-            self._emit(record, ("state", "FAILED", type(exc).__name__))
+            reason = "Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé."
+            if record.control.state == "DELIVERING":
+                await self._finish_delivery_error(record, reason)
+            else:
+                record.error = reason
+                if record.control.state not in TERMINAL:
+                    await record.control.finish("FAILED")
+                self._emit(record, ("state", "FAILED", type(exc).__name__))
         finally:
             record.prepared_request = None
             await self._remember_terminal(record)
@@ -281,6 +307,7 @@ class JobManager:
         record.prepared_request = None
         record.operations = None
         record.result = None
+        record.acknowledged_parts.clear()
         record.events.clear()
 
     async def _remember_terminal(self, record: JobRecord) -> None:
