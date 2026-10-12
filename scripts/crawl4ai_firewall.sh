@@ -24,6 +24,25 @@ if ! [[ "$crawler_ip" =~ ^[0-9.]+$ && "$crawler_api_ip" =~ ^[0-9.]+$ && "$crawle
 fi
 if [ "$crawler_ip" = "$proxy_ip" ]; then echo 'invalid network identity' >&2; exit 1; fi
 
+# The firewall protects only the declared bridges and interface addresses.
+# Attaching a container to an extra (possibly public) Docker network would
+# bypass those rules even while the original network/IP checks still pass.
+require_exact_networks() {
+  local container="$1" expected actual
+  shift
+  expected="$(printf '%s\n' "$@" | LC_ALL=C sort)"
+  # Docker's Go template emits an initial blank line for this range/println
+  # expression. Ignore empty lines, never unexpected network names.
+  actual="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$container" | sed '/^$/d' | LC_ALL=C sort)"
+  if [ "$actual" != "$expected" ]; then
+    echo "unexpected Docker network attachment on $container: refusing to enable" >&2
+    return 1
+  fi
+}
+require_exact_networks fcai-crawl4ai fcai-crawl4ai-api fcai-crawl4ai-dns fcai-crawl4ai-proxy
+require_exact_networks fcai-crawl4ai-proxy fcai-crawl4ai-proxy fcai-crawl4ai-uplink
+require_exact_networks fcai-crawl4ai-dns fcai-crawl4ai-dns fcai-crawl4ai-uplink
+
 for network in fcai-crawl4ai-api fcai-crawl4ai-proxy fcai-crawl4ai-dns fcai-crawl4ai-uplink; do
   if [ "$(docker network inspect --format '{{.EnableIPv6}}' "$network")" != false ]; then
     echo "IPv6 must be disabled on $network" >&2

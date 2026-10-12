@@ -230,6 +230,18 @@ docker compose ps
 ```
 
 The firewall script selects Docker's iptables or nftables backend and checks the network attachments. Re-run `check` **after restarting/recreating containers**; configure firewall persistence in VPS boot provisioning. If backend detection, bridging, rules, or restart verification fails, do **not** enable Crawl4AI.
+The check rejects extra Docker network attachments on the crawler, Squid and
+CoreDNS containers: even one additional public interface would allow traffic
+outside the intended bridges. On an isolated staging engine, verify this
+negative case by temporarily attaching a disposable extra bridge to the
+crawler, confirming `crawl4ai_firewall.sh check` fails, and disconnecting it
+before rechecking. Never add an extra network to a production crawler for a test.
+On Docker Desktop, use the disposable Docker-in-Docker regression helper for
+that negative test and send its generated `%TEMP%` report for review:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_crawl4ai_dind_networks.ps1
+```
 
 On public fixture servers **controlled by this project**, configure redirects, HTML image/iframe requests and DNS rebinding to the private test sink. Run:
 

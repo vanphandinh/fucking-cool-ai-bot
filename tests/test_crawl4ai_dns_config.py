@@ -40,6 +40,10 @@ class TestCrawl4AIDnsConfig(unittest.TestCase):
             'ip saddr $dns_public_ip drop',
             'ip saddr $dns_ip drop',
             '"$dns_bridge"',
+            'require_exact_networks fcai-crawl4ai fcai-crawl4ai-api',
+            'require_exact_networks fcai-crawl4ai-proxy fcai-crawl4ai-proxy',
+            'require_exact_networks fcai-crawl4ai-dns fcai-crawl4ai-dns',
+            'unexpected Docker network attachment',
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, firewall)
