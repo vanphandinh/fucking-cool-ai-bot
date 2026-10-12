@@ -60,6 +60,11 @@ services:
     networks:
       - crawl4ai_api
       - crawl4ai_proxy
+      - crawl4ai_dns
+    # Docker's embedded resolver sends external lookups to the restricted
+    # CoreDNS service. The crawler has no route to the Internet uplink.
+    dns:
+      - ${CRAWL4AI_DNS_IP:-10.221.57.53}
     environment:
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
       CRAWL4AI_EXECUTE_JS_ENABLED: "false"
@@ -87,7 +92,35 @@ services:
       - crawl4ai_proxy
       - crawl4ai_uplink
 
+  # Resolve external names for Crawl4AI's DNS-pinning broker. This service
+  # forwards only to Docker's local DNS stub; host firewall rules prohibit
+  # raw egress from its uplink interface and any access to internal services.
+  crawl4ai-dns:
+    image: ${CRAWL4AI_DNS_IMAGE:-coredns/coredns:1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1}
+    container_name: fcai-crawl4ai-dns
+    profiles: ["crawl4ai"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    # CoreDNS' executable has a file capability for binding port 53.
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt: ["no-new-privileges:true"]
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./crawl4ai/Corefile:/etc/coredns/Corefile:ro
+    networks:
+      crawl4ai_dns:
+        ipv4_address: ${CRAWL4AI_DNS_IP:-10.221.57.53}
+      crawl4ai_uplink:
+
 networks:
+  crawl4ai_dns:
+    name: fcai-crawl4ai-dns
+    internal: true
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: ${CRAWL4AI_DNS_SUBNET:-10.221.57.0/24}
   crawl4ai_api:
     name: fcai-crawl4ai-api
     internal: true

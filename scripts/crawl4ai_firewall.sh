@@ -12,16 +12,19 @@ container_ip() {
 }
 crawler_ip="$(container_ip fcai-crawl4ai fcai-crawl4ai-proxy)"
 crawler_api_ip="$(container_ip fcai-crawl4ai fcai-crawl4ai-api)"
+crawler_dns_ip="$(container_ip fcai-crawl4ai fcai-crawl4ai-dns)"
 bot_api_ip="$(container_ip fcai-bot fcai-crawl4ai-api)"
 proxy_ip="$(container_ip fcai-crawl4ai-proxy fcai-crawl4ai-proxy)"
 proxy_public_ip="$(container_ip fcai-crawl4ai-proxy fcai-crawl4ai-uplink)"
-if ! [[ "$crawler_ip" =~ ^[0-9.]+$ && "$crawler_api_ip" =~ ^[0-9.]+$ && "$bot_api_ip" =~ ^[0-9.]+$ && "$proxy_ip" =~ ^[0-9.]+$ && "$proxy_public_ip" =~ ^[0-9.]+$ ]]; then
-  echo 'missing crawler/proxy network attachment: refusing to enable' >&2
+dns_ip="$(container_ip fcai-crawl4ai-dns fcai-crawl4ai-dns)"
+dns_public_ip="$(container_ip fcai-crawl4ai-dns fcai-crawl4ai-uplink)"
+if ! [[ "$crawler_ip" =~ ^[0-9.]+$ && "$crawler_api_ip" =~ ^[0-9.]+$ && "$crawler_dns_ip" =~ ^[0-9.]+$ && "$bot_api_ip" =~ ^[0-9.]+$ && "$proxy_ip" =~ ^[0-9.]+$ && "$proxy_public_ip" =~ ^[0-9.]+$ && "$dns_ip" =~ ^[0-9.]+$ && "$dns_public_ip" =~ ^[0-9.]+$ ]]; then
+  echo 'missing crawler/proxy/dns network attachment: refusing to enable' >&2
   exit 1
 fi
 if [ "$crawler_ip" = "$proxy_ip" ]; then echo 'invalid network identity' >&2; exit 1; fi
 
-for network in fcai-crawl4ai-api fcai-crawl4ai-proxy fcai-crawl4ai-uplink; do
+for network in fcai-crawl4ai-api fcai-crawl4ai-proxy fcai-crawl4ai-dns fcai-crawl4ai-uplink; do
   if [ "$(docker network inspect --format '{{.EnableIPv6}}' "$network")" != false ]; then
     echo "IPv6 must be disabled on $network" >&2
     exit 1
@@ -44,8 +47,9 @@ bridge_for() {
 }
 api_bridge="$(bridge_for fcai-crawl4ai-api)"
 proxy_bridge="$(bridge_for fcai-crawl4ai-proxy)"
+dns_bridge="$(bridge_for fcai-crawl4ai-dns)"
 uplink_bridge="$(bridge_for fcai-crawl4ai-uplink)"
-for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
+for bridge in "$api_bridge" "$proxy_bridge" "$dns_bridge" "$uplink_bridge"; do
   if [ ! -d "/sys/class/net/$bridge" ]; then
     echo "missing Docker bridge $bridge: refusing to enable" >&2
     exit 1
@@ -55,7 +59,7 @@ if [ "$(sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null || true)" != 1 
   echo 'bridge-netfilter must route bridged IPv4 through firewall' >&2
   exit 1
 fi
-for network in fcai-crawl4ai-api fcai-crawl4ai-proxy; do
+for network in fcai-crawl4ai-api fcai-crawl4ai-proxy fcai-crawl4ai-dns; do
   if [ "$(docker network inspect --format '{{.Internal}}' "$network")" != true ]; then
     echo "network $network must be internal" >&2
     exit 1
@@ -92,6 +96,14 @@ if [ "$mode" = iptables ]; then
     iptables -F "$chain"
     iptables -A "$chain" -s "$crawler_ip" -d "$proxy_ip" -p tcp --dport 3128 -j RETURN
     iptables -A "$chain" -s "$crawler_ip" -j DROP
+    iptables -A "$chain" -s "$crawler_dns_ip" -d "$dns_ip" -p udp --dport 53 -j RETURN
+    iptables -A "$chain" -s "$crawler_dns_ip" -d "$dns_ip" -p tcp --dport 53 -j RETURN
+    iptables -A "$chain" -s "$crawler_dns_ip" -j DROP
+    iptables -A "$chain" -s "$dns_ip" -d "$crawler_dns_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+    iptables -A "$chain" -s "$dns_ip" -j DROP
+    # The resolver may use Docker's local 127.0.0.11 DNS only. All raw
+    # uplink traffic from its own namespace is forbidden.
+    iptables -A "$chain" -s "$dns_public_ip" -j DROP
     iptables -A "$chain" -s "$crawler_api_ip" -d "$bot_api_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     iptables -A "$chain" -s "$crawler_api_ip" -j DROP
     iptables -A "$chain" -s "$bot_api_ip" -d "$crawler_api_ip" -p tcp --dport 11235 -j RETURN
@@ -110,16 +122,19 @@ if [ "$mode" = iptables ]; then
     # also drops replies from permitted public HTTP/HTTPS connections.
     iptables -A "$chain" -i "$uplink_bridge" -d "$proxy_public_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     # Catch unknown container IPs on the same bridges (restart/address churn).
-    for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
+    for bridge in "$api_bridge" "$proxy_bridge" "$dns_bridge" "$uplink_bridge"; do
       iptables -A "$chain" -i "$bridge" -j DROP
     done
     iptables -A "$chain" -j RETURN
     iptables -F "$host_chain"
     iptables -A "$host_chain" -s "$crawler_ip" -j DROP
     iptables -A "$host_chain" -s "$crawler_api_ip" -j DROP
+    iptables -A "$host_chain" -s "$crawler_dns_ip" -j DROP
+    iptables -A "$host_chain" -s "$dns_ip" -j DROP
+    iptables -A "$host_chain" -s "$dns_public_ip" -j DROP
     iptables -A "$host_chain" -s "$proxy_ip" -j DROP
     iptables -A "$host_chain" -s "$proxy_public_ip" -j DROP
-    for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
+    for bridge in "$api_bridge" "$proxy_bridge" "$dns_bridge" "$uplink_bridge"; do
       iptables -A "$host_chain" -i "$bridge" -j DROP
     done
     iptables -A "$host_chain" -j RETURN
@@ -130,6 +145,12 @@ if [ "$mode" = iptables ]; then
   [ "$(iptables -S INPUT | sed -n '2p')" = "-A INPUT -j $host_chain" ]
   iptables -C "$chain" -s "$crawler_ip" -d "$proxy_ip" -p tcp --dport 3128 -j RETURN
   iptables -C "$chain" -s "$crawler_ip" -j DROP
+  iptables -C "$chain" -s "$crawler_dns_ip" -d "$dns_ip" -p udp --dport 53 -j RETURN
+  iptables -C "$chain" -s "$crawler_dns_ip" -d "$dns_ip" -p tcp --dport 53 -j RETURN
+  iptables -C "$chain" -s "$crawler_dns_ip" -j DROP
+  iptables -C "$chain" -s "$dns_ip" -d "$crawler_dns_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+  iptables -C "$chain" -s "$dns_ip" -j DROP
+  iptables -C "$chain" -s "$dns_public_ip" -j DROP
   iptables -C "$chain" -s "$crawler_api_ip" -d "$bot_api_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
   iptables -C "$chain" -s "$crawler_api_ip" -j DROP
   iptables -C "$chain" -s "$bot_api_ip" -d "$crawler_api_ip" -p tcp --dport 11235 -j RETURN
@@ -145,9 +166,12 @@ if [ "$mode" = iptables ]; then
   iptables -C "$chain" -i "$uplink_bridge" -d "$proxy_public_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
   iptables -C "$host_chain" -s "$crawler_ip" -j DROP
   iptables -C "$host_chain" -s "$crawler_api_ip" -j DROP
+  iptables -C "$host_chain" -s "$crawler_dns_ip" -j DROP
+  iptables -C "$host_chain" -s "$dns_ip" -j DROP
+  iptables -C "$host_chain" -s "$dns_public_ip" -j DROP
   iptables -C "$host_chain" -s "$proxy_ip" -j DROP
   iptables -C "$host_chain" -s "$proxy_public_ip" -j DROP
-  for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
+  for bridge in "$api_bridge" "$proxy_bridge" "$dns_bridge" "$uplink_bridge"; do
     iptables -C "$chain" -i "$bridge" -j DROP
     iptables -C "$host_chain" -i "$bridge" -j DROP
   done
@@ -165,6 +189,12 @@ table inet fcai_crawl4ai {
     type filter hook forward priority -201; policy accept;
     ip saddr $crawler_ip ip daddr $proxy_ip tcp dport 3128 accept
     ip saddr $crawler_ip drop
+    ip saddr $crawler_dns_ip ip daddr $dns_ip udp dport 53 accept
+    ip saddr $crawler_dns_ip ip daddr $dns_ip tcp dport 53 accept
+    ip saddr $crawler_dns_ip drop
+    ip saddr $dns_ip ip daddr $crawler_dns_ip ct state { established, related } accept
+    ip saddr $dns_ip drop
+    ip saddr $dns_public_ip drop
     ip saddr $crawler_api_ip ip daddr $bot_api_ip ct state { established, related } accept
     ip saddr $crawler_api_ip drop
     ip saddr $bot_api_ip ip daddr $crawler_api_ip tcp dport 11235 accept
@@ -182,16 +212,21 @@ EOF
     iifname "$uplink_bridge" ip daddr $proxy_public_ip ct state { established, related } accept
     iifname "$api_bridge" drop
     iifname "$proxy_bridge" drop
+    iifname "$dns_bridge" drop
     iifname "$uplink_bridge" drop
   }
   chain input {
     type filter hook input priority -201; policy accept;
     ip saddr $crawler_ip drop
     ip saddr $crawler_api_ip drop
+    ip saddr $crawler_dns_ip drop
+    ip saddr $dns_ip drop
+    ip saddr $dns_public_ip drop
     ip saddr $proxy_ip drop
     ip saddr $proxy_public_ip drop
     iifname "$api_bridge" drop
     iifname "$proxy_bridge" drop
+    iifname "$dns_bridge" drop
     iifname "$uplink_bridge" drop
   }
 }
@@ -201,6 +236,11 @@ EOF
   listing="$(nft list table inet fcai_crawl4ai)"
   for expected in "ip saddr $crawler_ip ip daddr $proxy_ip tcp dport 3128 accept" \
     "ip saddr $crawler_ip drop" "ip saddr $crawler_api_ip drop" \
+    "ip saddr $crawler_dns_ip ip daddr $dns_ip udp dport 53 accept" \
+    "ip saddr $crawler_dns_ip ip daddr $dns_ip tcp dport 53 accept" \
+    "ip saddr $crawler_dns_ip drop" \
+    "ip saddr $dns_ip ip daddr $crawler_dns_ip ct state { established, related } accept" \
+    "ip saddr $dns_ip drop" "ip saddr $dns_public_ip drop" \
     "ip saddr $bot_api_ip ip daddr $crawler_api_ip tcp dport 11235 accept" \
     "ip saddr $bot_api_ip drop" \
     "ip saddr $proxy_ip ip daddr $crawler_ip ct state { established, related } accept" \
@@ -213,7 +253,7 @@ EOF
       echo "nftables rule missing: $expected" >&2; exit 1
     fi
   done
-  for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
+  for bridge in "$api_bridge" "$proxy_bridge" "$dns_bridge" "$uplink_bridge"; do
     if [ "$(grep -Fc "iifname \"$bridge\" drop" <<< "$listing")" -lt 2 ]; then
       echo "nftables bridge guard missing: $bridge" >&2; exit 1
     fi
@@ -227,4 +267,4 @@ EOF
     fi
   done
 fi
-echo "Crawl4AI firewall verified ($mode): crawler=$crawler_ip proxy=$proxy_ip outbound=$proxy_public_ip"
+echo "Crawl4AI firewall verified ($mode): crawler=$crawler_ip proxy=$proxy_ip dns=$dns_ip outbound=$proxy_public_ip"

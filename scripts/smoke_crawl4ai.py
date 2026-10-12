@@ -128,14 +128,20 @@ async def main() -> int:
         health.raise_for_status()
         print(f"health ok seconds={time.perf_counter() - started:.3f}")
         durations = []
+        failures = []
         for url in urls:
             try:
                 durations.append(await _crawl(client, base_url, token, url, proxy_url))
             except (httpx.HTTPError, ValueError, RuntimeError) as exc:
-                print(f"smoke FAILED after={len(durations)} url={url} "
-                      f"reason={type(exc).__name__}", file=sys.stderr)
-                return 1
-        report_timings(durations)
+                failures.append(url)
+                print(f"smoke FAILED url={url} reason={type(exc).__name__}",
+                      file=sys.stderr)
+        if durations:
+            report_timings(durations)
+        if failures:
+            print(f"smoke INCOMPLETE passed={len(durations)} failed={len(failures)} "
+                  f"total={len(urls)}", file=sys.stderr)
+            return 1
     return 0
 
 

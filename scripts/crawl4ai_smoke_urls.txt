@@ -1,0 +1,22 @@
+# Public representative sites for the opt-in Crawl4AI staging smoke.
+# Refresh this list if a site adds a challenge or becomes unavailable.
+https://example.com/
+https://www.iana.org/domains/reserved
+https://example.org/
+https://www.python.org/
+https://docs.python.org/3/
+https://example.net/
+https://www.sqlite.org/index.html
+https://www.rust-lang.org/
+https://go.dev/
+https://www.postgresql.org/
+https://www.debian.org/
+https://www.kernel.org/
+https://docs.docker.com/
+https://developer.mozilla.org/en-US/
+https://www.mozilla.org/en-US/
+https://www.wikipedia.org/
+https://www.wikimedia.org/
+https://www.iana.org/
+https://www.cloudflare.com/
+https://www.w3schools.com/

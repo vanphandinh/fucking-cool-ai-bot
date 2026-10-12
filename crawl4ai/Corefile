@@ -1,0 +1,14 @@
+# Docker's local DNS stub performs upstream resolution from this namespace.
+# This resolver is reachable only over the private crawl4ai_dns bridge.
+# Host firewall policy must be installed and verified before enabling Crawl4AI.
+.:53 {
+    errors
+    # The isolated crawler and Squid uplink have no IPv6 route. Returning an
+    # empty AAAA answer forces the DNS-pinning broker to use public IPv4.
+    template IN AAAA . {
+        rcode NOERROR
+    }
+    forward . 127.0.0.11 {
+        max_concurrent 64
+    }
+}
