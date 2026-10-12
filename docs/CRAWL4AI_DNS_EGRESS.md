@@ -80,13 +80,21 @@ environment on 2026-10-12: p50 0.910 s, p95 2.164 s, min 0.456 s, max
 2.411 s. This measures successful page extraction, not permission to enable
 production.
 
-The cached `https://example.com/` page remained available from the crawler
-while Squid was stopped. A fresh-URL outage probe was blocked by the command
-approval system before it executed. A definitive proxy-down fallback test,
-controlled DNS-rebinding fixture, nftables if used on the VPS, and the actual
-VPS firewall check remain mandatory. Keep `CRAWL4AI_ENABLED=0` until those
-staging checks pass. These observations do not validate the host firewall of
-the production VPS.
+The previously fetched `https://example.com/` page remained available from
+the crawler while Squid was stopped, so this URL could not prove fallback.
+The subsequent fresh-URL outage probe succeeded on isolated Docker-in-Docker:
+with Squid stopped, `CRAWL4AI_ENABLED=1` and `crawl4ai_ready=True`, a single
+`read_url()` call on a unique, uncached HTTPS URL logged
+`Crawl4AI URL read failed (crawl_failed); fallback generic reader` and
+returned `backend=generic_reader`, `ok=True`, with 3,845 characters. The
+test bot was given a disposable Internet bridge so its generic reader could
+reach the public page; that bridge was removed after the probe. Squid was
+restarted and the firewall `check` remained successful.
+
+Controlled DNS-rebinding fixture, nftables if used on the VPS, and the
+actual VPS firewall check remain mandatory. Keep `CRAWL4AI_ENABLED=0` until
+those staging checks pass. These observations do not validate the host
+firewall of the production VPS.
 
 ## Rollback
 
