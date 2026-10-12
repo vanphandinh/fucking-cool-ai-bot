@@ -52,12 +52,14 @@ def sink_requests() -> int:
     return docker("logs", "fcai-ssrf-sink").count("SINK_REQUEST")
 
 
-def assert_sink_untouched(label: str) -> None:
+def assert_sink_untouched(label: str, baseline: int) -> None:
     time.sleep(0.5)
     observed = sink_requests()
-    if observed:
-        raise AssertionError(f"{label}: PRIVATE REQUEST RECEIVED ({observed})")
-    print(f"{label}: private sink received zero requests")
+    if observed != baseline:
+        raise AssertionError(
+            f"{label}: PRIVATE REQUEST RECEIVED (baseline={baseline}, now={observed})"
+        )
+    print(f"{label}: private sink received zero additional requests")
 
 
 def main() -> int:
@@ -75,6 +77,12 @@ def main() -> int:
 
     firewall = Path(__file__).with_name("crawl4ai_firewall.sh")
     subprocess.run(["bash", str(firewall), "check"], check=True, timeout=30)
+    # Never replace or delete an operator's existing test sink.
+    existing = docker(
+        "ps", "-a", "--filter", "name=^/fcai-ssrf-sink$", "--format", "{{.Names}}"
+    )
+    if existing:
+        raise RuntimeError("fcai-ssrf-sink already exists; choose a clean staging test environment")
     sink_code = (
         "from http.server import BaseHTTPRequestHandler,HTTPServer; "
         "H=type('H',(BaseHTTPRequestHandler,),{'do_GET':lambda s: "
@@ -87,6 +95,17 @@ def main() -> int:
         "-c", sink_code,
     )
     try:
+        # A positive-control request from inside the sink's own network
+        # namespace proves that its log counter actually works. All later
+        # checks compare against this known baseline.
+        time.sleep(1)
+        docker(
+            "exec", "fcai-ssrf-sink", "python", "-c",
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/control',timeout=5).close()",
+        )
+        baseline = sink_requests()
+        if baseline != 1:
+            raise AssertionError(f"private sink logging is not reliable: {baseline=}")
         sink_ip = docker(
             "inspect", "--format",
             '{{with index .NetworkSettings.Networks "fcai-crawl4ai-api"}}{{.IPAddress}}{{end}}',
@@ -95,13 +114,13 @@ def main() -> int:
         sink_url = f"http://{sink_ip}:8099/ping"
         print(f"private sink: {sink_url}")
         probe_crawl(args.public_url, success_required=True)
-        assert_sink_untouched("public")
+        assert_sink_untouched("public", baseline)
         for blocked in (
             sink_url, "http://127.0.0.1:8099/ping",
             "http://10.0.0.1:8099/ping", "http://169.254.169.254/latest/meta-data/",
         ):
             probe_crawl(blocked, failure_required=True)
-        assert_sink_untouched("direct private URL")
+        assert_sink_untouched("direct private URL", baseline)
         # A direct network connection bypassing the browser proxy MUST fail.
         bypass = subprocess.run(
             ["docker", "exec", "fcai-crawl4ai", "python", "-c",
@@ -111,15 +130,18 @@ def main() -> int:
         )
         if bypass.returncode == 0:
             raise AssertionError("direct crawler connection unexpectedly succeeded")
-        assert_sink_untouched("direct connection bypass")
+        assert_sink_untouched("direct connection bypass", baseline)
         print("direct bypass: connection refused or filtered")
         for label, template in (
             ("redirect", args.redirect_url),
             ("image/iframe", args.subresource_url),
             ("DNS rebinding", args.rebind_url),
         ):
-            probe_crawl(template.replace("{sink_url}", sink_url))
-            assert_sink_untouched(label)
+            probe_crawl(
+                template.replace("{sink_url}", sink_url),
+                failure_required=(label in ("redirect", "DNS rebinding")),
+            )
+            assert_sink_untouched(label, baseline)
         subprocess.run(["bash", str(firewall), "check"], check=True, timeout=30)
         print("ISOLATION PASS: all private request counts were zero")
         return 0

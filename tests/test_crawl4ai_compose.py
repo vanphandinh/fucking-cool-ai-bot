@@ -23,6 +23,7 @@ class Crawl4AIComposeTests(unittest.TestCase):
         self.assertIn("CRAWL4AI_API_TOKEN", self.block)
         self.assertIn('CRAWL4AI_EXECUTE_JS_ENABLED: "false"', self.block)
         self.assertIn('CRAWL4AI_HOOKS_ENABLED: "false"', self.block)
+        self.assertIn('CRAWL4AI_UPSTREAM_PROXY: http://crawl4ai-proxy:3128', self.block)
         for forbidden in (
             "OPENAI_API_KEY",
             "GEMINI_API_KEY",
@@ -47,6 +48,8 @@ class Crawl4AIComposeTests(unittest.TestCase):
         squid = Path("crawl4ai/squid.conf").read_text(encoding="utf-8")
         self.assertIn("http_access deny forbidden_dst", squid)
         self.assertIn("http_access deny !Safe_ports", squid)
+        self.assertIn("acl SSL_ports port 443", squid)
+        self.assertIn("http_access deny CONNECT !SSL_ports", squid)
 
 
 if __name__ == "__main__":

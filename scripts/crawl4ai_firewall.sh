@@ -105,6 +105,10 @@ if [ "$mode" = iptables ]; then
     iptables -A "$chain" -s "$proxy_public_ip" -p tcp -m multiport --dports 80,443 -j RETURN
     iptables -A "$chain" -s "$proxy_public_ip" -j DROP
     iptables -A "$chain" -s "$proxy_ip" -j DROP
+    # Forwarded replies arrive on the uplink bridge with destination set to
+    # Squid's uplink address. Without this rule the bridge catch-all below
+    # also drops replies from permitted public HTTP/HTTPS connections.
+    iptables -A "$chain" -i "$uplink_bridge" -d "$proxy_public_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     # Catch unknown container IPs on the same bridges (restart/address churn).
     for bridge in "$api_bridge" "$proxy_bridge" "$uplink_bridge"; do
       iptables -A "$chain" -i "$bridge" -j DROP
@@ -138,6 +142,7 @@ if [ "$mode" = iptables ]; then
   iptables -C "$chain" -s "$proxy_public_ip" -p tcp -m multiport --dports 80,443 -j RETURN
   iptables -C "$chain" -s "$proxy_public_ip" -j DROP
   iptables -C "$chain" -s "$proxy_ip" -j DROP
+  iptables -C "$chain" -i "$uplink_bridge" -d "$proxy_public_ip" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
   iptables -C "$host_chain" -s "$crawler_ip" -j DROP
   iptables -C "$host_chain" -s "$crawler_api_ip" -j DROP
   iptables -C "$host_chain" -s "$proxy_ip" -j DROP
@@ -174,6 +179,7 @@ EOF
     ip saddr $proxy_public_ip tcp dport { 80, 443 } accept
     ip saddr $proxy_public_ip drop
     ip saddr $proxy_ip drop
+    iifname "$uplink_bridge" ip daddr $proxy_public_ip ct state { established, related } accept
     iifname "$api_bridge" drop
     iifname "$proxy_bridge" drop
     iifname "$uplink_bridge" drop
@@ -200,6 +206,7 @@ EOF
     "ip saddr $proxy_ip ip daddr $crawler_ip ct state { established, related } accept" \
     "ip saddr $proxy_public_ip drop" \
     "ip saddr $proxy_ip drop" "tcp dport { 80, 443 } accept" \
+    "iifname \"$uplink_bridge\" ip daddr $proxy_public_ip ct state { established, related } accept" \
     "type filter hook input priority -201" \
     "type filter hook forward priority -201"; do
     if ! grep -Fq "$expected" <<< "$listing"; then

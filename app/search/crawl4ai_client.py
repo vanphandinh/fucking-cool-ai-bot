@@ -120,22 +120,23 @@ async def _read_response_bytes(response: httpx.Response) -> bytes | None:
 
 
 def _crawl_payload(url: str, proxy_url: str) -> dict[str, object]:
-    """Fixed, server-authored REST config. Caller supplies only a validated URL."""
-    proxy = {"type": "dict", "value": {"server": proxy_url}}
+    """Fixed REST config; the image sets its trusted proxy at server startup.
+
+    Crawl4AI 0.9.3 rejects proxy_config from untrusted /crawl JSON. The
+    mandatory Squid hop is configured on the container, never in this payload.
+    """
     return {
         "urls": [url],
         "browser_config": {
             "type": "BrowserConfig",
             "params": {
                 "headless": True,
-                "proxy_config": proxy,
                 "accept_downloads": False,
-                "extra_args": ["--proxy-bypass-list=<-loopback>"],
             },
         },
         "crawler_config": {
             "type": "CrawlerRunConfig",
-            "params": {"proxy_config": proxy, "cache_mode": "bypass", "stream": False},
+            "params": {"cache_mode": "bypass", "stream": False},
         },
     }
 

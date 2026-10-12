@@ -99,10 +99,8 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["browser_config"]["type"], "BrowserConfig")
         self.assertEqual(payload["crawler_config"]["type"], "CrawlerRunConfig")
         for section in ("browser_config", "crawler_config"):
-            self.assertEqual(
-                payload[section]["params"]["proxy_config"],
-                {"type": "dict", "value": {"server": "http://crawl4ai-proxy:3128"}},
-            )
+            self.assertNotIn("proxy_config", payload[section]["params"])
+        self.assertNotIn("extra_args", payload["browser_config"]["params"])
 
     async def test_oversized_response_is_rejected_before_json_use(self):
         huge_markdown = "x" * (4 * 1024 * 1024 + 1)

@@ -64,6 +64,9 @@ services:
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
       CRAWL4AI_EXECUTE_JS_ENABLED: "false"
       CRAWL4AI_HOOKS_ENABLED: "false"
+      # The image's localhost DNS-pinning proxy chains through Squid.
+      # The REST API forbids client-provided proxy_config in version 0.9.3.
+      CRAWL4AI_UPSTREAM_PROXY: http://crawl4ai-proxy:3128
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11235/health"]
       interval: 30s

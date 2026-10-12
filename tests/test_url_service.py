@@ -59,12 +59,14 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
                             crawl4ai_api_token="secret")
         reasons = (
             "timeout",
+            "network",
             "auth",
             "rate_limited",
             "upstream_5xx",
             "malformed_json",
             "empty_content",
             "response_too_large",
+            "crawl_failed",
         )
         for reason in reasons:
             with self.subTest(reason=reason):
