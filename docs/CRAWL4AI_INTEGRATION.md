@@ -155,6 +155,35 @@ p50 **0.339 s**, p95 **0.398 s**, maximum **0.973 s**. The image's
 host's unrelated Python 3.13 install has a `virtualenv`/`filelock` conflict;
 its global `pip check` result is not an image dependency failure.
 
+An additional **live generic-reader failover** check ran `read_url()` from
+the same disposable bot image with `CRAWL4AI_ENABLED=1` supplied to the test
+process only. The isolated bot network had independent, ordinary outbound
+access; Squid was stopped in the disposable engine. Crawl4AI returned
+`http_400`, after which `read_url("https://example.com")` returned
+`backend=generic_reader`, `ok=True`, with 171 characters of real fetched
+content. The earlier baseline with Crawl4AI disabled also read the page
+successfully. Squid was restarted, a controlled fixture crawl succeeded
+again, and the iptables firewall check passed. The private sink's log had
+no new HTTP request. This confirms live fallback in the Docker Desktop
+test topology; staging networking and latency still require verification.
+
+The independent **Docker nftables backend** was also exercised in a second,
+disposable Docker-in-Docker engine (Docker 29.9.0, nftables 1.1.6). Three
+project-named bridge networks and small Python HTTP fixture containers
+represented the bot, crawler and proxy; the actual Crawl4AI image and Squid
+were **not** launched in this nftables-only check. The firewall script's
+`apply` and `check` commands both passed. The bot reached the crawler's
+port 11235, the crawler reached the proxy's port 3128, and the proxy loaded
+`https://example.com` over public HTTPS. Attempts from the crawler to the
+bot (11235) and proxy (80), and from the proxy to the bot's private address
+or the metadata address 169.254.169.254, timed out. The bot fixture's access
+log remained empty. Direct crawler access to public IP 1.1.1.1:80 returned
+`Network unreachable`. Following a crawler-container restart, `check` passed
+and the allowed proxy connection still worked. This establishes that the
+generated nftables rules can be applied and enforce these selected packet
+paths in Docker Desktop; a real Crawl4AI/Squid run and the chosen VPS
+firewall backend must still pass the full isolated staging suite.
+
 For a disposable *existing* Docker-in-Docker test network, create the varied
 fixture with `--host 0.0.0.0` inside its own container. The fixture binds only
 to loopback by default when started outside Docker. Generate its manifest with:
@@ -167,11 +196,13 @@ python scripts/crawl4ai_varied_fixture.py --manifest-base http://11.23.0.51
 production crawler or a test run on the public Internet to that address.
 
 **Still required:** repeat DNS rebinding and positive/negative subresource
-instrumentation on the target staging host, validate nftables if that backend
-is used, verify bot-level generic-reader fallback during a live proxy outage,
-verify pool reuse on the staging host, and run the representative 20-URL smoke
-test against real sites. The Docker Desktop hot-pool reuse test is complete;
-it does not prove the permanent browser's egress posture on staging.
+instrumentation on the target staging host, validate the actual VPS firewall
+backend (including nftables if selected), repeat live generic-reader
+proxy-outage fallback on
+staging, verify pool reuse on the staging host, and run the representative
+20-URL smoke test against real sites. The Docker Desktop hot-pool reuse and
+live fallback checks are complete; these do not prove the permanent
+browser's egress posture or availability on staging.
 Keep `CRAWL4AI_ENABLED=0` until these gates pass.
 
 For the existing isolated Docker-in-Docker setup on Windows, collect further
@@ -240,7 +271,8 @@ Only after all security and smoke gates pass, set `CRAWL4AI_ENABLED=1` and recre
 
 ```bash
 docker compose up -d --no-deps --force-recreate bot
-docker compose exec bot python scripts/smoke_crawl4ai.py
+docker compose cp ./scripts/smoke_crawl4ai.py bot:/tmp/smoke_crawl4ai.py
+docker compose exec -e PYTHONPATH=/app bot python /tmp/smoke_crawl4ai.py
 ```
 
 `crawl4ai` has no hard `depends_on` relationship from the bot. The bot remains functional when the Crawl4AI profile is stopped or unavailable.
@@ -248,11 +280,13 @@ docker compose exec bot python scripts/smoke_crawl4ai.py
 For an additional JS-heavy representative page:
 
 ```bash
-CRAWL4AI_SMOKE_JS_URL=https://example-js-heavy-site.invalid \
-  docker compose exec bot python scripts/smoke_crawl4ai.py
+docker compose exec -e PYTHONPATH=/app \
+  -e CRAWL4AI_SMOKE_JS_URL=https://example-js-heavy-site.invalid \
+  bot python /tmp/smoke_crawl4ai.py
 ```
 
 Use a real public representative URL instead of the placeholder above.
+Copy the runner again after any bot container recreation.
 
 ## Runtime behavior
 
