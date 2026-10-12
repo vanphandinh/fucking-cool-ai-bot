@@ -17,6 +17,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", help="URL hosted by the controlled test fixture")
     parser.add_argument("--expect", choices=("success", "blocked"), required=True)
+    parser.add_argument("--contains", default="Controlled public fixture",
+                        help="Text required in a successful crawl's Markdown")
     args = parser.parse_args()
 
     token = os.environ.get("CRAWL4AI_TEST_TOKEN", "")
@@ -72,6 +74,7 @@ def main() -> int:
         f"status={http_status} success={success} "
         f"error_type={type(result_error).__name__ if result_error else 'none'}"
     )
+    contains_fixture = False
     if success:
         markdown = first.get("markdown")
         text = (
@@ -79,9 +82,10 @@ def main() -> int:
             if isinstance(markdown, dict)
             else str(markdown or "")
         )
-        print("contains_fixture=" + str("Controlled public fixture" in text))
+        contains_fixture = args.contains in text
+        print("contains_fixture=" + str(contains_fixture))
     expected = args.expect == "success"
-    return 0 if success == expected else 1
+    return 0 if success == expected and (not expected or contains_fixture) else 1
 
 
 if __name__ == "__main__":

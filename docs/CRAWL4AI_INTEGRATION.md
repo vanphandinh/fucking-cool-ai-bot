@@ -121,10 +121,57 @@ returned a successful `UrlReadResult`. With Squid restored, `read_url()` used
 the real crawler and never called that stub. This proves fallback dispatch,
 **not** successful live generic HTTP retrieval on the staging bot network.
 
+### Extended isolated smoke checks (2026-10-12)
+
+A disposable test fixture (`scripts/crawl4ai_varied_fixture.py`) supplied
+**20 distinct routes** on the isolated Docker-in-Docker uplink: 12 static HTML,
+four pages with rendered JavaScript, two pages loading public image/iframe
+resources, and two public redirects. The pinned REST `/crawl` API successfully
+extracted the required marker from **20/20** pages (p50 **0.65 s**, p95
+**0.75 s**, wall-clock per probe). A separate crawl confirmed that the
+JavaScript-injected `FCAI JS RENDERED` text appeared in Markdown. Server logs
+recorded actual `GET /image.png` and `GET /frame` requests. Crawl4AI logs
+confirmed repeated reuse of the same **hot pool** browser.
+
+After reuse, a controlled redirect and a page with private image/iframe URLs
+were rejected by `/crawl` (`success=False`). The private request sink log had
+**no additional requests**, and `crawl4ai_firewall.sh check` continued to pass
+with iptables. At the resource snapshot, the crawler used **505.5 MiB RAM**.
+The disposable bot test container had to be restarted after its scheduled
+`sleep 3600` command ended; the firewall check failed closed while that bot
+was absent and passed again once it was restarted.
+
+The 20 routes exercise distinct local page behaviors, **not 20 independent
+representative websites**. They are not a substitute for the full staging
+acceptance test against diverse public sites. The isolated host uses the
+iptables backend; nftables remains unverified on the intended VPS.
+
+A further end-to-end run built the current production `Dockerfile` into an
+isolated, disposable bot image, then executed the actual
+`scripts/smoke_crawl4ai.py --urls-file` runner from the running bot network
+namespace (with `CRAWL4AI_ENABLED=0`). All **20/20 controlled URLs passed**:
+p50 **0.339 s**, p95 **0.398 s**, maximum **0.973 s**. The image's
+`python -m pip check` reported `No broken requirements found`. The Windows
+host's unrelated Python 3.13 install has a `virtualenv`/`filelock` conflict;
+its global `pip check` result is not an image dependency failure.
+
+For a disposable *existing* Docker-in-Docker test network, create the varied
+fixture with `--host 0.0.0.0` inside its own container. The fixture binds only
+to loopback by default when started outside Docker. Generate its manifest with:
+
+```bash
+python scripts/crawl4ai_varied_fixture.py --manifest-base http://11.23.0.51
+```
+
+`11.23.0.51` is an **isolated test-network address only**; never direct a
+production crawler or a test run on the public Internet to that address.
+
 **Still required:** repeat DNS rebinding and positive/negative subresource
 instrumentation on the target staging host, validate nftables if that backend
 is used, verify bot-level generic-reader fallback during a live proxy outage,
-test permanent-browser reuse, and run the representative 20-URL smoke test.
+verify pool reuse on the staging host, and run the representative 20-URL smoke
+test against real sites. The Docker Desktop hot-pool reuse test is complete;
+it does not prove the permanent browser's egress posture on staging.
 Keep `CRAWL4AI_ENABLED=0` until these gates pass.
 
 For the existing isolated Docker-in-Docker setup on Windows, collect further
@@ -164,6 +211,30 @@ python scripts/test_crawl4ai_isolation.py \
 ```
 
 Substitute real controlled hostnames. Verify **zero sink HTTP requests** in direct-private, redirect, rebinding, image/iframe and proxy bypass cases. Also test loopback, metadata address, proxy outage and crawler timeout, with generic-reader fallback. Complete a sample of **at least 20 representative URLs**; record extraction, fallback, latency and RAM/CPU. Confirm the fixed REST `BrowserConfig`/`CrawlerRunConfig` proxy shape against the actual Crawl4AI **0.9.3** image. Unit tests do not prove live isolation.
+
+Prepare a UTF-8 file with **at least 20 distinct, public, representative URLs**,
+including static, JavaScript-heavy, redirects and pages loading ordinary
+subresources. One URL per line; comments beginning with `#` are allowed.
+Keep Crawl4AI disabled in the bot configuration while running this direct,
+explicit staging probe:
+
+```bash
+docker compose cp ./staging-urls.txt bot:/tmp/crawl4ai-smoke-urls.txt
+docker compose cp ./scripts/smoke_crawl4ai.py bot:/tmp/smoke_crawl4ai.py
+docker compose exec -e PYTHONPATH=/app bot python /tmp/smoke_crawl4ai.py --urls-file /tmp/crawl4ai-smoke-urls.txt
+```
+
+The production image copies `app/` and `config/`, not `scripts/`, so both
+the manifest and the smoke runner must be copied into the running bot
+container. Only perform this explicit staging check with the trusted private
+Crawl4AI and Squid containers already running; it does not toggle the bot's
+`CRAWL4AI_ENABLED` setting.
+
+The probe checks the private endpoint and proxy configuration, rejects
+malformed/private URLs, requires nonempty Markdown from each result, rejects
+forbidden returned destinations, and prints success counts and p50/p95 times.
+Any URL failure exits nonzero. A 20-URL success is still insufficient unless
+the dedicated SSRF sink and firewall checks also pass.
 
 Only after all security and smoke gates pass, set `CRAWL4AI_ENABLED=1` and recreate the bot:
 
