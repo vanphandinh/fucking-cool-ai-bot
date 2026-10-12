@@ -62,6 +62,74 @@ def assert_sink_untouched(label: str, baseline: int) -> None:
     print(f"{label}: private sink received zero additional requests")
 
 
+def probe_direct_chromium(*urls: str) -> None:
+    """Prove an actual unproxied Chromium cannot reach controlled test targets.
+
+    A raw urllib socket check alone does not exercise the browser's networking
+    stack, so require Chromium to launch and each navigation to fail at egress.
+    """
+    browser_probe = """
+import asyncio
+import sys
+from playwright.async_api import (
+    Error as BrowserError,
+    TimeoutError as BrowserTimeout,
+    async_playwright,
+)
+
+async def check():
+    async with async_playwright() as pw:
+        try:
+            browser = await pw.chromium.launch(headless=True, args=['--no-sandbox'])
+        except Exception as exc:
+            print('BROWSER_START_FAILED', type(exc).__name__, file=sys.stderr)
+            return 2
+        print('BROWSER_STARTED', flush=True)
+        try:
+            page = await browser.new_page()
+            for url in sys.argv[1:]:
+                try:
+                    response = await page.goto(url, timeout=6000, wait_until='domcontentloaded')
+                except BrowserError as exc:
+                    message = str(exc)
+                    if not isinstance(exc, BrowserTimeout) and not any(
+                        marker in message for marker in (
+                            'net::ERR_ADDRESS_UNREACHABLE',
+                            'net::ERR_TIMED_OUT',
+                            'net::ERR_CONNECTION_TIMED_OUT',
+                            'net::ERR_CONNECTION_REFUSED',
+                        )
+                    ):
+                        print('BROWSER_UNEXPECTED_ERROR', type(exc).__name__, file=sys.stderr)
+                        return 2
+                    print('BROWSER_EGRESS_BLOCKED', flush=True)
+                    continue
+                print(
+                    'BROWSER_DIRECT_ACCESS',
+                    response.status if response else 'no-response',
+                    file=sys.stderr,
+                )
+                return 1
+            return 0
+        finally:
+            await browser.close()
+
+raise SystemExit(asyncio.run(check()))
+"""
+    result = subprocess.run(
+        ["docker", "exec", "fcai-crawl4ai", "python", "-c", browser_probe, *urls],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    if (result.returncode or "BROWSER_STARTED" not in result.stdout
+            or result.stdout.count("BROWSER_EGRESS_BLOCKED") != len(urls)):
+        raise AssertionError(
+            "unproxied Chromium bypass test failed: "
+            f"exit={result.returncode} output={result.stdout.strip()} "
+            f"error={result.stderr.strip()}"
+        )
+    print(f"unproxied Chromium: {len(urls)} controlled destinations blocked")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--public-url", required=True)
@@ -132,6 +200,8 @@ def main() -> int:
             raise AssertionError("direct crawler connection unexpectedly succeeded")
         assert_sink_untouched("direct connection bypass", baseline)
         print("direct bypass: connection refused or filtered")
+        probe_direct_chromium(sink_url, args.public_url)
+        assert_sink_untouched("unproxied Chromium bypass", baseline)
         for label, template in (
             ("redirect", args.redirect_url),
             ("image/iframe", args.subresource_url),
