@@ -109,6 +109,8 @@ async def _amain(settings: Settings) -> int:
             logger.warning(
                 "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
             )
+        if settings.crawl4ai_enabled and not settings.crawl4ai_ready:
+            logger.warning("Crawl4AI isolation configuration unavailable; generic reader")
 
         try:
             bot = Bot(token=settings.bot_token, default=DefaultBotProperties())

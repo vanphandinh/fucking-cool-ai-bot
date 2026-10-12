@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    networks:
+      - default
+      - crawl4ai_api
 
   # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
   # - Bật theo yêu cầu bằng profile:  docker compose --profile searxng up -d
@@ -54,6 +57,9 @@ services:
     init: true
     stop_grace_period: 30s
     shm_size: "${CRAWL4AI_SHM_SIZE:-512m}"
+    networks:
+      - crawl4ai_api
+      - crawl4ai_proxy
     environment:
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
       CRAWL4AI_EXECUTE_JS_ENABLED: "false"
@@ -64,6 +70,32 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+
+  # Only this service has an Internet-connected Docker network.
+  crawl4ai-proxy:
+    image: ${CRAWL4AI_PROXY_IMAGE:-ubuntu/squid:6.10-24.10_edge@sha256:e0a69e6c6f6a9f5bf1fb4edd6afa9c0aec23ea89ff8f3077dd5c55e7772438f0}
+    container_name: fcai-crawl4ai-proxy
+    profiles: ["crawl4ai"]
+    restart: unless-stopped
+    init: true
+    volumes:
+      - ./crawl4ai/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - crawl4ai_proxy
+      - crawl4ai_uplink
+
+networks:
+  crawl4ai_api:
+    name: fcai-crawl4ai-api
+    internal: true
+    enable_ipv6: false
+  crawl4ai_proxy:
+    name: fcai-crawl4ai-proxy
+    internal: true
+    enable_ipv6: false
+  crawl4ai_uplink:
+    name: fcai-crawl4ai-uplink
+    enable_ipv6: false
 
 volumes:
   searxng-cache:

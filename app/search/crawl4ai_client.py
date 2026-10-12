@@ -119,15 +119,36 @@ async def _read_response_bytes(response: httpx.Response) -> bytes | None:
     return b"".join(chunks)
 
 
+def _crawl_payload(url: str, proxy_url: str) -> dict[str, object]:
+    """Fixed, server-authored REST config. Caller supplies only a validated URL."""
+    proxy = {"type": "dict", "value": {"server": proxy_url}}
+    return {
+        "urls": [url],
+        "browser_config": {
+            "type": "BrowserConfig",
+            "params": {
+                "headless": True,
+                "proxy_config": proxy,
+                "accept_downloads": False,
+                "extra_args": ["--proxy-bypass-list=<-loopback>"],
+            },
+        },
+        "crawler_config": {
+            "type": "CrawlerRunConfig",
+            "params": {"proxy_config": proxy, "cache_mode": "bypass", "stream": False},
+        },
+    }
+
+
 async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     """Read one public URL through Crawl4AI without retries or user-controlled config."""
     source_url = url
+    if not settings.crawl4ai_ready:
+        return _failed(source_url, "disabled")
+    if reader.validate_public_url(url) is not None:
+        return _failed(source_url, "blocked_url")
     client = await _get_client(settings)
-    payload = {
-        "urls": [url],
-        "browser_config": {},
-        "crawler_config": {},
-    }
+    payload = _crawl_payload(url, settings.crawl4ai_egress_proxy_url.strip())
     headers = {"Authorization": f"Bearer {settings.crawl4ai_api_token}"}
     endpoint = f"{settings.crawl4ai_url.rstrip('/')}/crawl"
 
@@ -183,13 +204,12 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
     if not text:
         return _failed(source_url, "empty_content")
 
-    candidate = item.get("redirected_url") or item.get("url")
-    if (
-        isinstance(candidate, str)
-        and candidate.strip()
-        and reader.validate_public_url(candidate.strip()) is None
-    ):
-        source_url = candidate.strip()
+    for key in ("url", "redirected_url"):
+        candidate = item.get(key)
+        if candidate is not None:
+            if not isinstance(candidate, str) or reader.validate_public_url(candidate) is not None:
+                return _failed(url, "blocked_redirect")
+            source_url = candidate
 
     return Crawl4AIReadResult(
         text=text[: settings.crawl4ai_max_chars],

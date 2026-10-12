@@ -1,0 +1,131 @@
+"""Opt-in staging test of the real Crawl4AI container and a private request sink.
+
+All fixture URLs MUST be hosted on public infrastructure controlled by this
+project. The test never performs third-party SSRF probes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def docker(*args: str, check: bool = True) -> str:
+    completed = subprocess.run(
+        ["docker", *args], check=False, capture_output=True, text=True, timeout=120
+    )
+    if check and completed.returncode:
+        raise RuntimeError(completed.stderr.strip())
+    return (completed.stdout + completed.stderr).strip()
+
+
+def probe_crawl(url: str, *, success_required: bool = False,
+                failure_required: bool = False) -> None:
+    code = (
+        "import asyncio,sys; from app.config import Settings; "
+        "from app.search.crawl4ai_client import read_page; "
+        "r=asyncio.run(read_page(sys.argv[1],Settings())); "
+        "print('ok='+str(r.ok)+' reason='+r.reason); "
+        "sys.exit(0 if r.ok else 1)"
+    )
+    result = subprocess.run(
+        [
+            "docker", "exec", "-e", "CRAWL4AI_ENABLED=1",
+            "-e", "CRAWL4AI_EGRESS_PROXY_URL=http://crawl4ai-proxy:3128",
+            "fcai-bot", "python", "-c", code, url,
+        ],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    if success_required and result.returncode:
+        raise AssertionError(
+            f"public crawl failed: {result.stdout.strip()} {result.stderr.strip()}"
+        )
+    if failure_required and result.returncode == 0:
+        raise AssertionError("blocked URL was reported as a successful crawl")
+    print(f"crawl exit={result.returncode} {result.stdout.strip()}")
+
+
+def sink_requests() -> int:
+    return docker("logs", "fcai-ssrf-sink").count("SINK_REQUEST")
+
+
+def assert_sink_untouched(label: str) -> None:
+    time.sleep(0.5)
+    observed = sink_requests()
+    if observed:
+        raise AssertionError(f"{label}: PRIVATE REQUEST RECEIVED ({observed})")
+    print(f"{label}: private sink received zero requests")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--public-url", required=True)
+    parser.add_argument("--redirect-url", required=True,
+                        help="Controlled public fixture redirecting to {sink_url}")
+    parser.add_argument("--subresource-url", required=True,
+                        help="Controlled public HTML fixture loading {sink_url} as img/iframe")
+    parser.add_argument("--rebind-url", required=True,
+                        help="Controlled DNS fixture re-resolving public to private sink")
+    args = parser.parse_args()
+    if sys.platform != "linux":
+        raise RuntimeError("isolated Docker firewall tests must run on the Linux staging VPS")
+
+    firewall = Path(__file__).with_name("crawl4ai_firewall.sh")
+    subprocess.run(["bash", str(firewall), "check"], check=True, timeout=30)
+    sink_code = (
+        "from http.server import BaseHTTPRequestHandler,HTTPServer; "
+        "H=type('H',(BaseHTTPRequestHandler,),{'do_GET':lambda s: "
+        "(print('SINK_REQUEST',s.path,flush=True),s.send_response(204),s.end_headers())}); "
+        "HTTPServer(('0.0.0.0',8099),H).serve_forever()"
+    )
+    docker(
+        "run", "--rm", "-d", "--name", "fcai-ssrf-sink",
+        "--network", "fcai-crawl4ai-api", "python:3.12-alpine", "python", "-u",
+        "-c", sink_code,
+    )
+    try:
+        sink_ip = docker(
+            "inspect", "--format",
+            '{{with index .NetworkSettings.Networks "fcai-crawl4ai-api"}}{{.IPAddress}}{{end}}',
+            "fcai-ssrf-sink",
+        )
+        sink_url = f"http://{sink_ip}:8099/ping"
+        print(f"private sink: {sink_url}")
+        probe_crawl(args.public_url, success_required=True)
+        assert_sink_untouched("public")
+        for blocked in (
+            sink_url, "http://127.0.0.1:8099/ping",
+            "http://10.0.0.1:8099/ping", "http://169.254.169.254/latest/meta-data/",
+        ):
+            probe_crawl(blocked, failure_required=True)
+        assert_sink_untouched("direct private URL")
+        # A direct network connection bypassing the browser proxy MUST fail.
+        bypass = subprocess.run(
+            ["docker", "exec", "fcai-crawl4ai", "python", "-c",
+             "import sys,urllib.request; urllib.request.urlopen(sys.argv[1],timeout=3)",
+             sink_url],
+            check=False, capture_output=True, text=True, timeout=20,
+        )
+        if bypass.returncode == 0:
+            raise AssertionError("direct crawler connection unexpectedly succeeded")
+        assert_sink_untouched("direct connection bypass")
+        print("direct bypass: connection refused or filtered")
+        for label, template in (
+            ("redirect", args.redirect_url),
+            ("image/iframe", args.subresource_url),
+            ("DNS rebinding", args.rebind_url),
+        ):
+            probe_crawl(template.replace("{sink_url}", sink_url))
+            assert_sink_untouched(label)
+        subprocess.run(["bash", str(firewall), "check"], check=True, timeout=30)
+        print("ISOLATION PASS: all private request counts were zero")
+        return 0
+    finally:
+        docker("rm", "-f", "fcai-ssrf-sink", check=False)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -12,6 +12,9 @@ The production path uses `POST /crawl`. Do not switch production to `/md?f=fit`,
 ## Security invariants
 
 - image pinned to `unclecode/crawl4ai:0.9.3`;
+- Crawl4AI is disabled by default and requires the Linux staging isolation gate before activation;
+- the fixed browser/run config specifies Squid; the crawler has only private Docker networks;
+- the proxy alone attaches to the uplink, with host firewall rules blocking non-public destinations;
 - no host `11235` port mapping;
 - bearer token required between bot and Crawl4AI;
 - bot validates the user URL with `validate_public_url()` before the private service call;
@@ -36,24 +39,49 @@ openssl rand -hex 32
 Recommended values:
 
 ```dotenv
-CRAWL4AI_ENABLED=1
+CRAWL4AI_ENABLED=0
 CRAWL4AI_URL=http://crawl4ai:11235
 CRAWL4AI_API_TOKEN=<random-secret>
+CRAWL4AI_EGRESS_PROXY_URL=http://crawl4ai-proxy:3128
 CRAWL4AI_TIMEOUT_SEC=25.0
 CRAWL4AI_MAX_CHARS=12000
 CRAWL4AI_IMAGE=unclecode/crawl4ai:0.9.3
+CRAWL4AI_PROXY_IMAGE=ubuntu/squid:6.10-24.10_edge@sha256:e0a69e6c6f6a9f5bf1fb4edd6afa9c0aec23ea89ff8f3077dd5c55e7772438f0
 CRAWL4AI_SHM_SIZE=512m
 ```
 
-If `CRAWL4AI_ENABLED=1` but URL or token is blank, the bot logs a warning and keeps using the generic reader instead of failing startup. The `CRAWL4AI_TIMEOUT_SEC < QUESTION_TIMEOUT_SEC` budget check is enforced when Crawl4AI is actually active (enabled with non-empty URL and token), so disabled/unconfigured deployments keep their existing timeout behavior.
+If enabled but the token, fixed crawler endpoint, or fixed proxy endpoint is absent or incorrect, the bot logs a coarse warning and keeps using the generic reader. The timeout budget check is enforced for a configured crawler. No user-supplied browser configuration is accepted.
 
 ## Deploy
 
-```bash
-docker compose --profile searxng --profile crawl4ai pull
-docker compose --profile searxng --profile crawl4ai up -d --build
+Leave `CRAWL4AI_ENABLED=0` on the initial deploy. On a dedicated **Linux staging VPS** with Docker Compose and root firewall access:
 
+```bash
+docker compose --profile crawl4ai pull
+docker compose --profile crawl4ai up -d --build
+sudo bash scripts/crawl4ai_firewall.sh apply
+sudo bash scripts/crawl4ai_firewall.sh check
 docker compose ps
+```
+
+The firewall script selects Docker's iptables or nftables backend and checks the network attachments. Re-run `check` **after restarting/recreating containers**; configure firewall persistence in VPS boot provisioning. If backend detection, bridging, rules, or restart verification fails, do **not** enable Crawl4AI.
+
+On public fixture servers **controlled by this project**, configure redirects, HTML image/iframe requests and DNS rebinding to the private test sink. Run:
+
+```bash
+python scripts/test_crawl4ai_isolation.py \
+  --public-url 'https://controlled.example.test/' \
+  --redirect-url 'https://controlled.example.test/redirect?to={sink_url}' \
+  --subresource-url 'https://controlled.example.test/subresources?src={sink_url}' \
+  --rebind-url 'http://controlled-rebind.example.test/'
+```
+
+Substitute real controlled hostnames. Verify **zero sink HTTP requests** in direct-private, redirect, rebinding, image/iframe and proxy bypass cases. Also test loopback, metadata address, proxy outage and crawler timeout, with generic-reader fallback. Complete a sample of **at least 20 representative URLs**; record extraction, fallback, latency and RAM/CPU. Confirm the fixed REST `BrowserConfig`/`CrawlerRunConfig` proxy shape against the actual Crawl4AI **0.9.3** image. Unit tests do not prove live isolation.
+
+Only after all security and smoke gates pass, set `CRAWL4AI_ENABLED=1` and recreate the bot:
+
+```bash
+docker compose up -d --no-deps --force-recreate bot
 docker compose exec bot python scripts/smoke_crawl4ai.py
 ```
 
@@ -80,7 +108,7 @@ For an ordinary public page:
 6. timeout, network error, 401/403, 429, 5xx, oversized response, malformed JSON, failed result, or empty content causes exactly one fallback to the existing generic reader;
 7. cancellation does not launch fallback work.
 
-The bot does not forward arbitrary browser config, hooks, JavaScript, provider settings, output paths, callback URLs, or model credentials.
+The bot does not forward arbitrary browser config, hooks, JavaScript, provider settings, output paths, callback URLs, or model credentials. Host isolation blocks network connections before any returned URL is inspected; response URL validation adds defense in depth.
 
 ## Rollback
 
@@ -90,10 +118,10 @@ Immediate application rollback:
 CRAWL4AI_ENABLED=0
 ```
 
-Restart the bot after changing `.env`:
+Recreate the bot after changing `.env` (a plain restart does not reload the environment):
 
 ```bash
-docker compose restart bot
+docker compose up -d --no-deps --force-recreate bot
 ```
 
 The Crawl4AI container can then be stopped independently:
@@ -102,13 +130,13 @@ The Crawl4AI container can then be stopped independently:
 docker compose --profile crawl4ai stop crawl4ai
 ```
 
-Search remains unchanged during rollback.
+Search remains unchanged during rollback. Keep the Squid and Linux firewall blocks enforced even while Crawl4AI is disabled.
 
 ## Troubleshooting
 
-### Bot warns that token or URL is missing
+### Bot warns that the required isolation configuration is missing
 
-Check `.env` and restart the bot. Missing Crawl4AI configuration intentionally degrades to the generic reader.
+Check `.env` and recreate the bot. Missing or incorrect fixed endpoints intentionally degrade to the generic reader; the browser running does not prove isolation.
 
 ### 401 / 403
 
@@ -128,11 +156,14 @@ Verify all of these while the bot stays functional:
 
 ```text
 Crawl4AI stopped          -> generic reader succeeds
+Squid proxy stopped       -> crawler failure -> generic reader succeeds
 wrong token               -> 401/403 -> generic reader succeeds
 Crawl4AI timeout          -> generic reader succeeds
 oversized response        -> generic reader succeeds
 CRAWL4AI_ENABLED=0        -> Crawl4AI is never called
 private/localhost URL     -> blocked before both readers
+redirect/rebinding/iframe -> private request sink receives zero HTTP requests
+direct browser egress     -> denied by the host firewall
 X status URL              -> specialized X reader remains first
 bot cancellation          -> no generic fallback is launched
 ```
@@ -141,7 +172,7 @@ Confirm representative logs contain only coarse reasons and never contain the be
 
 ## Verification gates
 
-CI runs the Crawl4AI-specific tests before the full regression suite, then checks Ruff, dependency compatibility, compile, Compose config, dependency audit, SearXNG YAML, and the production Docker build. Live Crawl4AI smoke remains an opt-in deployment check because CI intentionally has no production bearer token or private service dependency.
+CI runs Crawl4AI-specific tests and the full regression suite with Ruff, dependency, compile and Compose checks. The Linux host-firewall and DNS-rebinding probes are mandatory before production activation, and deliberately run on staging with project-controlled fixtures rather than ordinary CI.
 
 ## Promotion metrics
 

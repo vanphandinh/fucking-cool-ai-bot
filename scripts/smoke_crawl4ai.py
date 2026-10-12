@@ -14,6 +14,8 @@ import time
 
 import httpx
 
+from app.search.crawl4ai_client import _crawl_payload
+
 
 def _markdown_text(item: dict) -> str:
     markdown = item.get("markdown")
@@ -34,12 +36,14 @@ def _markdown_text(item: dict) -> str:
     return ""
 
 
-async def _crawl(client: httpx.AsyncClient, base_url: str, token: str, url: str) -> None:
+async def _crawl(
+    client: httpx.AsyncClient, base_url: str, token: str, url: str, proxy_url: str
+) -> None:
     started = time.perf_counter()
     response = await client.post(
         f"{base_url.rstrip('/')}/crawl",
         headers={"Authorization": f"Bearer {token}"},
-        json={"urls": [url], "browser_config": {}, "crawler_config": {}},
+        json=_crawl_payload(url, proxy_url),
     )
     elapsed = time.perf_counter() - started
     response.raise_for_status()
@@ -59,8 +63,12 @@ async def _crawl(client: httpx.AsyncClient, base_url: str, token: str, url: str)
 async def main() -> int:
     base_url = os.getenv("CRAWL4AI_URL", "http://crawl4ai:11235").strip()
     token = os.getenv("CRAWL4AI_API_TOKEN", "").strip()
-    if not base_url or not token:
-        print("CRAWL4AI_URL and CRAWL4AI_API_TOKEN are required", file=sys.stderr)
+    proxy_url = os.getenv("CRAWL4AI_EGRESS_PROXY_URL", "").strip()
+    isolated = (base_url, proxy_url) == (
+        "http://crawl4ai:11235", "http://crawl4ai-proxy:3128"
+    )
+    if not isolated or not token:
+        print("Crawl4AI isolated endpoint, proxy and token required", file=sys.stderr)
         return 2
 
     timeout = httpx.Timeout(30.0)
@@ -69,10 +77,10 @@ async def main() -> int:
         health = await client.get(f"{base_url.rstrip('/')}/health")
         health.raise_for_status()
         print(f"health ok seconds={time.perf_counter() - started:.3f}")
-        await _crawl(client, base_url, token, "https://example.com")
+        await _crawl(client, base_url, token, "https://example.com", proxy_url)
         js_url = os.getenv("CRAWL4AI_SMOKE_JS_URL", "").strip()
         if js_url:
-            await _crawl(client, base_url, token, js_url)
+            await _crawl(client, base_url, token, js_url, proxy_url)
     return 0
 
 

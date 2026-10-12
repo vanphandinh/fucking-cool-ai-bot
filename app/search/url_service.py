@@ -58,11 +58,9 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
             )
 
     fetch_url = target.canonical_url if target is not None else url
-    if (
-        settings.crawl4ai_enabled
-        and settings.crawl4ai_url.strip()
-        and settings.crawl4ai_api_token.strip()
-    ):
+    if settings.crawl4ai_enabled and not settings.crawl4ai_ready:
+        logger.warning("Crawl4AI disabled (incomplete_or_untrusted_configuration); generic reader")
+    if settings.crawl4ai_ready:
         try:
             if operations:
                 crawl = await operations.run(

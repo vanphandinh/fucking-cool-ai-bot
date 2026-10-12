@@ -34,6 +34,20 @@ class Crawl4AIComposeTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.block)
 
+    def test_isolated_network_topology_and_squid_service(self):
+        self.assertIn("crawl4ai_api", self.text)
+        self.assertIn("crawl4ai_proxy", self.text)
+        self.assertIn("crawl4ai_uplink", self.text)
+        self.assertIn('name: fcai-crawl4ai-api', self.text)
+        self.assertIn('name: fcai-crawl4ai-proxy', self.text)
+        self.assertIn('name: fcai-crawl4ai-uplink', self.text)
+        self.assertIn('ubuntu/squid:6.10-24.10_edge@sha256:', self.text)
+        self.assertNotIn("ports:", self.text)
+        self.assertIn("internal: true", self.text)
+        squid = Path("crawl4ai/squid.conf").read_text(encoding="utf-8")
+        self.assertIn("http_access deny forbidden_dst", squid)
+        self.assertIn("http_access deny !Safe_ports", squid)
+
 
 if __name__ == "__main__":
     unittest.main()
