@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from typing import AsyncIterator
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -148,19 +151,36 @@ def _conversation_key(chat_id: int, message_thread_id: int | None) -> int | tupl
     return chat_id, message_thread_id
 
 
+@dataclass
+class LockEntry:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    references: int = 0
+
+
 class _ChatLocks:
     def __init__(self) -> None:
-        self._locks: dict[int | tuple[int, int], asyncio.Lock] = {}
+        self._locks: dict[int | tuple[int, int], LockEntry] = {}
         self._guard = asyncio.Lock()
 
-    async def get(self, chat_id: int, message_thread_id: int | None = None) -> asyncio.Lock:
+    @asynccontextmanager
+    async def hold(
+        self, chat_id: int, message_thread_id: int | None = None
+    ) -> AsyncIterator[None]:
         key = _conversation_key(chat_id, message_thread_id)
         async with self._guard:
-            lock = self._locks.get(key)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._locks[key] = lock
-            return lock
+            entry = self._locks.get(key)
+            if entry is None:
+                entry = LockEntry()
+                self._locks[key] = entry
+            entry.references += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            async with self._guard:
+                entry.references -= 1
+                if entry.references == 0 and self._locks.get(key) is entry:
+                    del self._locks[key]
 
 
 def build_message_router(
@@ -402,8 +422,7 @@ async def _handle_question(
 
     try:
         async with asyncio.timeout(settings.question_timeout_sec):
-            lock = await chat_locks.get(chat_id, message_thread_id)
-            async with lock:
+            async with chat_locks.hold(chat_id, message_thread_id):
                 try:
                     images = await active_media_loader.load(message)
                 except UnsupportedImageFormat:
