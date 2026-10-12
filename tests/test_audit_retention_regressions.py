@@ -162,17 +162,38 @@ class RateLimiterRetentionTests(unittest.TestCase):
         clock.advance(79)
         self.assertTrue(limiter.should_warn(42, cooldown_sec=90))
 
-    def test_suppressed_warning_extends_lookback_to_requested_cooldown(self):
+    def test_maximum_warning_cooldown_expires_at_exact_boundary(self):
         clock = _Clock()
         limiter = RateLimiter(1, clock=clock)
         self.assertTrue(limiter.should_warn(42, cooldown_sec=10))
-        clock.advance(119)
-        self.assertFalse(limiter.should_warn(42, cooldown_sec=150))
-        clock.advance(2)
-        limiter.allow(99)  # expire unrelated entries
-        self.assertFalse(limiter.should_warn(42, cooldown_sec=150))
-        clock.advance(29)
-        self.assertTrue(limiter.should_warn(42, cooldown_sec=150))
+        clock.now = 219.999
+        self.assertFalse(limiter.should_warn(42, cooldown_sec=120))
+        self.assertEqual(limiter._warning_expirations[42][0], 220.0)
+        clock.now = 220.0
+        self.assertTrue(limiter.should_warn(42, cooldown_sec=120))
+
+    def test_invalid_warning_cooldowns_are_rejected_without_mutating_state(self):
+        clock = _Clock()
+        limiter = RateLimiter(1, clock=clock)
+        for invalid in (None, True, False, "30", object()):
+            with self.subTest(value=repr(invalid)), self.assertRaises(TypeError):
+                limiter.should_warn(42, cooldown_sec=invalid)
+        for invalid in (-0.001, 120.001, 150, float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=repr(invalid)), self.assertRaises(ValueError):
+                limiter.should_warn(42, cooldown_sec=invalid)
+        self.assertEqual(limiter._last_warn, {})
+        self.assertEqual(limiter._warning_expirations, {})
+        self.assertEqual(limiter._expiry_heap, [])
+
+    def test_zero_warning_cooldown_is_allowed_and_heap_remains_bounded(self):
+        clock = _Clock()
+        limiter = RateLimiter(1, clock=clock)
+        for _ in range(500):
+            self.assertTrue(limiter.should_warn(42, cooldown_sec=0))
+            self.assertLessEqual(len(limiter._expiry_heap), 66)
+        clock.advance(120)
+        limiter.allow(99)
+        self.assertNotIn(42, limiter._last_warn)
 
     def test_warning_history_is_bounded_under_sustained_churn(self):
         clock = _Clock()

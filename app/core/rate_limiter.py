@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections import deque
 from heapq import heapify, heappop, heappush
@@ -10,9 +11,8 @@ from typing import Callable
 
 
 class RateLimiter:
-    # Keep a bounded lookback for callers that increase their warning cooldown
-    # after a shorter one has elapsed. Longer cooldowns used for an emitted
-    # warning extend retention beyond this floor.
+    # Retain warnings long enough for any supported cooldown (0–120 seconds),
+    # even if a caller increases its cooldown after an earlier warning.
     _WARNING_LOOKBACK_SEC = 120.0
 
     def __init__(
@@ -91,21 +91,18 @@ class RateLimiter:
         return False, retry_in
 
     def should_warn(self, user_id: int, cooldown_sec: float = 30.0) -> bool:
-        """Chỉ cảnh báo 1 lần mỗi cooldown để tránh spam thông báo."""
+        """Chỉ cảnh báo 1 lần mỗi cooldown hợp lệ từ 0 đến 120 giây."""
+        if isinstance(cooldown_sec, bool) or not isinstance(cooldown_sec, (int, float)):
+            raise TypeError("cooldown_sec must be an int or float (not bool)")
+        if not 0 <= cooldown_sec <= self._WARNING_LOOKBACK_SEC or not math.isfinite(
+            cooldown_sec
+        ):
+            raise ValueError("cooldown_sec must be finite and between 0 and 120")
         now = self._clock()
         self._expire(now)
         last = self._last_warn.get(user_id)
         if last is None or now - last >= cooldown_sec:
             self._last_warn[user_id] = now
-            self._schedule(
-                "warning", user_id,
-                now + max(self._WARNING_LOOKBACK_SEC, cooldown_sec),
-            )
+            self._schedule("warning", user_id, now + self._WARNING_LOOKBACK_SEC)
             return True
-        # A later, longer cooldown can extend retention, but never from the
-        # denied call's timestamp: repeated spam cannot keep state forever.
-        deadline = last + max(self._WARNING_LOOKBACK_SEC, cooldown_sec)
-        current_deadline = self._warning_expirations[user_id][0]
-        if deadline > current_deadline:
-            self._schedule("warning", user_id, deadline)
         return False

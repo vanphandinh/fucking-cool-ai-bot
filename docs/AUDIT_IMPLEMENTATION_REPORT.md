@@ -3,9 +3,9 @@
 > **Status:** completed local AUD-01..AUD-05 remediations, independent
 > repository audit performed; remaining items and unexecuted gates below.
 > Branch: `codex/audit-remediation-2026-10-11`; pre-change HEAD:
-> `8e3f691709f58567b36af3b791364d2c334f37e6`. Worktree not committed
-> or deployed; do **not** treat this baseline SHA as an image containing the
-> fixes. The immutable release SHA must be assigned after code review/commit.
+> `8e3f691709f58567b36af3b791364d2c334f37e6`. This is the pre-fix
+> baseline, not a release image containing the fixes. Release SHA and remote
+> deployment validation must be recorded separately.
 
 ## Changed implementation and compatibility
 
@@ -15,7 +15,7 @@
 | AUD-02 tool error isolation | `app/ai/router.py` | Bounded provider-visible stable error categories; preserved tool concurrency/cancellation. Privacy regressions in `tests/test_audit_tool_error_privacy.py`. |
 | Supplemental NEW-03 provider diagnostic isolation | `app/ai/drivers/openai_chat.py` | Unknown AI-returned tool names no longer enter provider exceptions, router warning logs or health `last_error`. Synthetic newline/sentinel regression in `tests/test_pr58_provider_payload_exception_privacy.py`; FAIL before fix, PASS after. |
 | AUD-03 diagnostics portability | `scripts/check_markdown_links.py` | Display paths use forward slashes; filesystem resolution unchanged. Existing Markdown diagnostic tests pass. |
-| AUD-04 limiter retention | `app/core/rate_limiter.py` | **FIXED + VERIFIED locally on 2026-10-12:** expiration min-heap, independent request/warning deadlines, generation tokens and heap compaction replace the 256-key/5-second sweep. Sliding-window and warning semantics retained; sustained-churn and handler regressions in `tests/test_audit_retention_regressions.py`. |
+| AUD-04 limiter retention | `app/core/rate_limiter.py` | **FIXED + VERIFIED locally on 2026-10-12:** expiration min-heap, independent request/warning deadlines, generation tokens and heap compaction replace the 256-key/5-second sweep. The request window is unchanged; warning cooldown is explicitly limited to finite 0–120 seconds. Sustained-churn, input-validation and handler regressions in `tests/test_audit_retention_regressions.py`. |
 | AUD-05 memory retention | `app/core/context.py`, `app/config.py`, `app/main.py`, `.env.example`, `README.md` | Defaults `MAX_CONTEXT_CONVERSATIONS=2048`, `CONTEXT_TTL_SEC=86400`; monotonic LRU/TTL, chat/topic isolation and ordering. Memory and existing forum/topic tests pass. |
 | Additional privacy defense | `app/search/reader.py`, `app/bot/handlers.py`, `app/bot/image_results.py`, `app/main.py` | Sanitized diagnostic exception data at user/log boundaries; regressions `tests/test_audit_reader_error_privacy.py`, `tests/test_audit_legacy_logging_privacy.py`. |
 | Operational docs | `docs/QUESTION_CONTROLS.md`, `docs/TELEGRAM_FORMATTING.md`, `docs/README.md` | Updated terminal and retention explanations. |
@@ -96,29 +96,43 @@ Merge-readiness review found a same-user variable-cooldown regression: after
 expire the warning and `should_warn(42, 90)` then returned `True` instead of
 `False`. The deterministic regression **failed before this follow-up patch**.
 
-`should_warn()` now retains the last warning timestamp for a minimum bounded
-**120-second lookback**, so a later request for a longer cooldown can compare
-against the original warning. When a suppressed call requests an even longer
-cooldown, it extends the expiration deadline relative to the **original
-warning time**, never relative to the suppressed call; spam cannot endlessly
-renew state. Requests and warnings still expire independently, and heap
-compaction is unchanged. The finite-history tradeoff is explicit: if an
-earlier short-cooldown warning was removed after 120 idle seconds, a
-previously unseen longer cooldown cannot retroactively recover it. This is
-inherent to finite retention with an otherwise unbounded `cooldown_sec` API.
-Production Telegram callers use the unchanged 30-second default.
+The initial fix retained warning timestamps for at least 120 seconds and
+allowed a suppressed warning to extend its expiration when requested with a
+cooldown above 120 seconds. That intermediate behavior is superseded by the
+following explicit API bound.
 
-The focused regression suite now has **18 PASS**. A deterministic warning
-churn of 100 new users/second for 400 seconds retained **12,000** warning
-timestamps (120 seconds of traffic), then removed them all after 121 idle
-seconds and one unrelated call. Full post-patch suites: Windows Python 3.13
-**593 PASS (2 skipped, 43.600s)**; offline Docker Python 3.12 **593 PASS
-(0 skipped, 27.321s)**. After refreshing the index, GitNexus
-`detect-changes --scope all` reported **4 files, 19 changed symbols,
-0 reported affected flows, LOW risk** for this fix. The analyzer also warned
-about truncated flow exploration, so zero reported flows is not proof that
-no runtime path can be affected; direct Telegram handler tests passed.
-GitHub CI and live Telegram/VPS checks remain pending.
+### AUD-04 bounded warning cooldown contract — 2026-10-12
+
+`should_warn(user_id, cooldown_sec=30.0)` now accepts finite `int`/`float`
+cooldowns **from 0 through 120 seconds inclusive** (excluding `bool`). Other
+types raise `TypeError`; values outside this range, `NaN` and infinities raise
+`ValueError`. Validation happens before touching request or warning state.
+The timestamp is retained for exactly 120 seconds after each emitted warning,
+which covers every allowed cooldown change, including 10 seconds followed by
+120 seconds. Suppressed warnings never extend retention. At the 120-second
+boundary the old warning can safely expire and a new one can be emitted.
+Request and warning expirations stay independent and heap compaction is
+unchanged. Telegram callers continue to use the 30-second default.
+
+The invalid-input regression **failed before the validation patch** and
+passed afterward. **20 focused tests PASS**, including exact 120-second
+boundary, invalid input without state mutation, zero cooldown and bounded
+heap. Windows Python 3.13: **595 PASS (2 skipped)**; offline Docker Python
+3.12: **595 PASS (0 skipped)**. No-network benchmark (observations only):
+40,000 request users over 400 seconds -> **6,000 live request keys**, then
+**1** after 61 seconds idle; 40,000 warning users -> **12,000 live warning
+keys**, then **0** after 122 seconds idle; 20,000 immediate warnings for one
+user -> **1 warning key and 2 heap entries**. Ruff, compileall, Markdown links
+and `git diff --check` PASS. GitNexus pre-edit impact was LOW, affecting
+`app/bot/handlers.py`, `app/main.py`, and indirectly
+`app/bot/controlled_handlers.py`. The graph index was refreshed; analyzer
+flow-truncation warnings mean an absent flow is not proof of no dependency.
+`detect-changes --scope all` found **4 changed files, 18 symbols, LOW risk**
+for this patch (0 reported affected processes). The whole audit branch versus
+`main` has a **CRITICAL integration impact** (39 files, 187 symbols, 36
+reported affected flows) spanning other AUD workstreams; review that wider
+diff independently before merging. GitHub-hosted CI and live Telegram/VPS
+checks remain separate release gates.
 
 ## Validation and remaining engineering risk
 
