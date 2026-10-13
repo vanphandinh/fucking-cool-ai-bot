@@ -83,9 +83,10 @@ def load_state(path: Path) -> dict[str, object]:
     with os.fdopen(fd, "r", encoding="utf-8") as source:
         if sys.platform == "linux":
             metadata = os.fstat(source.fileno())
-            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0
+            if (not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != os.geteuid()
                     or metadata.st_mode & 0o077):
-                raise RuntimeError("reboot report must be a private root-owned file")
+                raise RuntimeError("reboot report must be private and owned by the current user")
         state = json.load(source)
     if not isinstance(state, dict) or state.get("version") != 1:
         raise RuntimeError("invalid reboot preflight report")
