@@ -352,22 +352,31 @@ report from the first command across an operator-managed host reboot:
 sudo python3 scripts/check_crawl4ai_vps_reboot.py before \
   2>&1 | tee ./crawl4ai-vps-reboot-before.txt
 # Reboot the VPS through the operator's normal maintenance procedure.
-# Once the host and Docker services are running again, from the same commit:
+# Once the host and Docker services are running again:
 sudo python3 scripts/check_crawl4ai_vps_reboot.py after \
   2>&1 | tee ./crawl4ai-vps-reboot-after.txt
 ```
 
-Each phase checks the host firewall and runs the non-disruptive direct-socket,
-Squid and unproxied Chromium probes. The report is stored with mode `0600` at
-`/var/tmp/fcai-crawl4ai-reboot-state.json` by default; it records the Git
-revision and Linux host boot IDs without tokens. `after` fails if the boot ID
-has not changed, the source revision changed or any live probe fails. It does
-not restore missing firewall rules or enable the crawler. If it fails, keep
-`CRAWL4AI_ENABLED=0`, fix the boot-time firewall restoration on the VPS, and
-repeat both phases; inspect the boot service ordering to rule out an unprotected
-window before the checks ran. A PASS only closes the reboot-persistence portion
-of the gate; controlled public DNS/redirect/subresource fixtures are still
-required before activating Crawl4AI.
+The `before` phase checks the firewall and runs non-disruptive socket, Squid
+and Chromium probes. The `after` phase verifies the boot ID and runs the
+read-only VPS security report. When `restart=no` has kept all three Crawl4AI
+containers stopped, the result is `REBOOT AFTER PASS (SAFE_DORMANT)` after
+checking the disabled bot, boot service, security configuration and restart
+policies. It does **not** certify live egress after the reboot. When all three
+containers are running, the result must instead be `LIVE_EGRESS`; partial
+startup fails. An already-recorded preflight may complete after a
+verifier-only update if Git proves no runtime or security configuration files
+changed in between. Both Git revisions are saved.
+
+The report is stored with mode `0600` at
+`/var/tmp/fcai-crawl4ai-reboot-state.json` by default, recording Git revisions
+and boot IDs without tokens. `after` rejects an unchanged boot ID, unexpected
+code changes or a failing security report. It does not restore firewall rules
+or enable Crawl4AI. On failure, keep `CRAWL4AI_ENABLED=0` and inspect the boot
+service; do not start dormant Crawl4AI containers to make probes pass. A
+`SAFE_DORMANT` result establishes safe non-startup across a real reboot, not
+firewall coverage for a running crawler during Docker startup. Controlled
+public DNS/redirect/subresource fixtures are still required before activation.
 
 The check rejects extra Docker network attachments on the crawler, Squid and
 CoreDNS containers: even one additional public interface would allow traffic

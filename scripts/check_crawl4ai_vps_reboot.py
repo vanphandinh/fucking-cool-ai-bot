@@ -6,8 +6,9 @@ On the VPS, with Crawl4AI disabled:
   sudo python3 scripts/check_crawl4ai_vps_reboot.py after
 
 This script does not reboot the host, modify firewall rules or enable Crawl4AI.
-Both phases run the non-disruptive live egress probes. A container restart or
-Docker daemon restart without a host reboot cannot pass the after phase.
+The before phase verifies live egress. After reboot, the three Crawl4AI services
+may safely remain stopped (restart=no); that state is checked without restarting
+them. A Docker daemon restart without a host reboot cannot pass the after phase.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 DEFAULT_STATE = Path("/var/tmp/fcai-crawl4ai-reboot-state.json")
+SAFE_VERIFIER_UPDATE_FILES = {
+    "scripts/check_crawl4ai_vps_reboot.py",
+    "tests/test_crawl4ai_vps_reboot.py",
+    "docs/CRAWL4AI_INTEGRATION.md",
+}
 
 
 def command(*argv: str, timeout: int = 150) -> str:
@@ -63,6 +69,24 @@ def verify_firewall_and_live_egress() -> None:
     print(report)
 
 
+def verify_post_reboot_state() -> str:
+    """Verify live egress or prove the disabled crawler is safely dormant."""
+    try:
+        report = command("bash", str(ROOT / "scripts" / "verify_crawl4ai_security.sh"))
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "post-reboot security report failed; run "
+            "'sudo bash scripts/verify_crawl4ai_security.sh' for details"
+        ) from exc
+    if "RESULT: SAFE DORMANT (crawler, proxy and DNS are all stopped)." in report:
+        print("PASS: Crawl4AI safely dormant after reboot; bot disabled and boot service active")
+        return "SAFE_DORMANT"
+    if "RESULT: PASS for live VPS egress isolation" in report:
+        print("PASS: live VPS egress isolation verified after reboot")
+        return "LIVE_EGRESS"
+    raise RuntimeError("post-reboot security report did not confirm a safe state")
+
+
 def save_state(path: Path, state: dict[str, object]) -> None:
     # Write a root-owned, private report atomically, without exposing tokens.
     fd, temporary = tempfile.mkstemp(prefix=".fcai-reboot-", dir=path.parent)
@@ -93,15 +117,29 @@ def load_state(path: Path) -> dict[str, object]:
     return state
 
 
-def check_reboot(state: dict[str, object], boot_id: str, revision: str) -> None:
+def check_reboot(state: dict[str, object], boot_id: str, revision: str) -> bool:
     if state.get("boot_id") == boot_id:
         raise RuntimeError("Linux host has not rebooted since the before phase")
     if not isinstance(state.get("boot_id"), str) or not state["boot_id"]:
         raise RuntimeError("missing pre-reboot host boot ID")
-    if state.get("revision") != revision:
-        raise RuntimeError("Git revision changed between the reboot probes")
+    verifier_updated = state.get("revision") != revision
+    if verifier_updated:
+        before_revision = state.get("revision")
+        # Allow completing the same reboot after this verifier-only fix is
+        # pulled, but reject any intervening runtime/security changes.
+        try:
+            if not isinstance(before_revision, str) or len(before_revision) != 40:
+                raise RuntimeError("invalid preflight revision")
+            command("git", "merge-base", "--is-ancestor", before_revision, revision)
+            changed = set(command("git", "diff", "--name-only",
+                                  before_revision, revision).splitlines())
+            if not changed or not changed <= SAFE_VERIFIER_UPDATE_FILES:
+                raise RuntimeError("runtime files changed")
+        except RuntimeError as exc:
+            raise RuntimeError("Git revision changed between the reboot probes") from exc
     if state.get("preflight") != "PASS":
         raise RuntimeError("pre-reboot security checks were not successful")
+    return verifier_updated
 
 
 def main() -> int:
@@ -113,19 +151,27 @@ def main() -> int:
         boot_id, revision = verify_host()
         if args.phase == "after":
             state = load_state(args.state_file)
-            check_reboot(state, boot_id, revision)
+            verifier_updated = check_reboot(state, boot_id, revision)
         else:
             state = {
                 "version": 1, "boot_id": boot_id, "revision": revision,
                 "preflight": "PASS", "before_utc": datetime.now(timezone.utc).isoformat(),
             }
-        verify_firewall_and_live_egress()
+        if args.phase == "before":
+            verify_firewall_and_live_egress()
+        else:
+            postflight_mode = verify_post_reboot_state()
         if args.phase == "after":
+            if verifier_updated:
+                state["preflight_revision"] = state["revision"]
+                state["revision"] = revision
             state["after_boot_id"] = boot_id
             state["after_utc"] = datetime.now(timezone.utc).isoformat()
             state["postflight"] = "PASS"
+            state["postflight_mode"] = postflight_mode
         save_state(args.state_file, state)
-        print(f"REBOOT {args.phase.upper()} PASS: {args.state_file}")
+        mode_label = f" ({postflight_mode})" if args.phase == "after" else ""
+        print(f"REBOOT {args.phase.upper()} PASS{mode_label}: {args.state_file}")
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,
             json.JSONDecodeError) as exc:
