@@ -247,6 +247,41 @@ docker compose ps
 ```
 
 The firewall script selects Docker's iptables or nftables backend and checks the network attachments. Re-run `check` **after restarting/recreating containers**; configure firewall persistence in VPS boot provisioning. If backend detection, bridging, rules, or restart verification fails, do **not** enable Crawl4AI.
+
+For a repeatable **dedicated staging VPS** gate, prepare a manifest `staging-urls.txt`
+with at least 20 distinct real public pages and four public SSRF fixtures under
+project control. A fixture redirect must target `{sink_url}`, the HTML fixture
+must load `{sink_url}` as an image/iframe, and the DNS fixture must change from
+a public answer to the controlled private sink during the crawl. Independently
+confirm the fixture's DNS and request logs show that each attack was exercised;
+an ordinary crawler failure alone does not prove DNS rebinding was attempted.
+With `.env` and the running bot both explicitly set to `CRAWL4AI_ENABLED=0`, run:
+
+```bash
+set -o pipefail
+sudo bash scripts/check_crawl4ai_vps_staging.sh --staging \
+  --public-url 'https://PUBLIC-FIXTURE.example/' \
+  --redirect-url 'https://REDIRECT-FIXTURE.example/?to={sink_url}' \
+  --subresource-url 'https://HTML-FIXTURE.example/?src={sink_url}' \
+  --rebind-url 'http://DNS-FIXTURE.example/' \
+  --urls-file ./staging-urls.txt --restart --recreate \
+  2>&1 | tee ./crawl4ai-staging-report.txt
+echo "staging exit code: ${PIPESTATUS[0]}"
+```
+
+Replace all `.example` placeholders with real fixtures before execution.
+The script checks firewall/backend/network identity, restarts and recreates the
+three crawler-side containers, reapplies the firewall when container IPs drift,
+verifies the private sink receives no unauthorized requests, checks 20+ live
+pages, confirms fallback while Squid is stopped, and restores Squid afterward.
+Run it only on a dedicated staging Docker engine; it does not enable the bot's
+Crawl4AI setting. Check the command's exit status and inspect the saved log
+before sending it for review (redact secret tokens and any sensitive URL data).
+Also verify firewall rules are present immediately after a **staging VPS/Docker
+daemon reboot** using `sudo bash scripts/crawl4ai_firewall.sh check`; arrange
+boot-time rule restoration if necessary. Passing the script on Docker Desktop
+or before a real reboot does not certify that target-host persistence gate.
+
 The check rejects extra Docker network attachments on the crawler, Squid and
 CoreDNS containers: even one additional public interface would allow traffic
 outside the intended bridges. On an isolated staging engine, verify this
