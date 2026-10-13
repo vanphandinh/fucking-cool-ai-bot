@@ -248,6 +248,26 @@ docker compose ps
 
 The firewall script selects Docker's iptables or nftables backend and checks the network attachments. Re-run `check` **after restarting/recreating containers**; configure firewall persistence in VPS boot provisioning. If backend detection, bridging, rules, or restart verification fails, do **not** enable Crawl4AI.
 
+On an existing Linux VPS with `CRAWL4AI_ENABLED=0`, run this additional
+**non-disruptive live egress probe** without stopping or recreating services:
+
+```bash
+set -o pipefail
+sudo python3 scripts/check_crawl4ai_vps_live.py --live \
+  2>&1 | tee ./crawl4ai-vps-live-egress.txt
+echo "live egress exit code: ${PIPESTATUS[0]}"
+```
+
+It verifies the running bot remains disabled, checks firewall rules before and
+after testing, attempts direct public/private/metadata sockets from the real
+crawler container, requires Squid to reach one public URL and return HTTP 403
+for private targets, and launches an **unproxied Chromium** navigation that
+must not reach the public Internet. It does not modify containers or firewall
+rules. Review the report before sharing. A PASS here is only a **partial**
+SSRF security gate: controlled sink request logs, redirects, subresources,
+DNS rebinding, proxy-outage fallback, and firewall restoration after a VPS
+reboot still require dedicated staging verification below.
+
 For a repeatable **dedicated staging VPS** gate, prepare a manifest `staging-urls.txt`
 with at least 20 distinct real public pages and four public SSRF fixtures under
 project control. A fixture redirect must target `{sink_url}`, the HTML fixture
