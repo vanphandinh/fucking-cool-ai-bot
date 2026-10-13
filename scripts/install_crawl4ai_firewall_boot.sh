@@ -40,14 +40,30 @@ PY
 }
 
 if [ "${1:-}" = --boot ]; then
-  # Docker's restart policy brings the existing containers back. Wait for their
-  # network addresses before replaying address-bound firewall rules.
+  # Legacy containers may still auto-restart: restore their address-bound
+  # rules. With restart=no, all three can safely remain dormant after reboot.
   for attempt in $(seq 1 40); do
-    if docker info >/dev/null 2>&1 && require_disabled >/dev/null 2>&1 &&
-      [ "$(docker inspect --format '{{.State.Running}}' fcai-crawl4ai 2>/dev/null)" = true ] &&
-      [ "$(docker inspect --format '{{.State.Running}}' fcai-crawl4ai-proxy 2>/dev/null)" = true ] &&
-      [ "$(docker inspect --format '{{.State.Running}}' fcai-crawl4ai-dns 2>/dev/null)" = true ]; then
-      if bash "$firewall" apply && bash "$firewall" check; then
+    if docker info >/dev/null 2>&1 && require_disabled >/dev/null 2>&1; then
+      running=0
+      stopped=0
+      dormant_safe=1
+      for container in fcai-crawl4ai fcai-crawl4ai-proxy fcai-crawl4ai-dns; do
+        state="$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)"
+        policy="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container" 2>/dev/null || true)"
+        if [ "$state" = true ]; then
+          running=$((running + 1))
+        elif [ "$state" = false ] && [ "$policy" = no ]; then
+          stopped=$((stopped + 1))
+        fi
+        if [ "$policy" != no ]; then
+          dormant_safe=0
+        fi
+      done
+      if [ "$running" -eq 0 ] && [ "$stopped" -eq 3 ] && [ "$dormant_safe" -eq 1 ]; then
+        echo 'Crawl4AI dormant after boot (no crawler/proxy/DNS running): PASS'
+        exit 0
+      fi
+      if [ "$running" -eq 3 ] && bash "$firewall" apply && bash "$firewall" check; then
         echo 'Crawl4AI firewall restored after boot: PASS'
         exit 0
       fi
@@ -114,4 +130,4 @@ systemctl is-enabled "$service"
 echo 'Boot restoration enabled. No reboot, service start, or firewall change was performed.'
 echo 'Before a maintenance reboot, run check_crawl4ai_vps_reboot.py before.'
 echo 'After reboot, run check_crawl4ai_vps_reboot.py after and inspect journalctl -u fcai-crawl4ai-firewall.service.'
-echo 'WARNING: this restores rules after Docker starts; it does NOT prove there is no unprotected startup interval.'
+echo 'WARNING: update existing Crawl4AI containers to restart=no to avoid automatic startup before firewall restoration.'

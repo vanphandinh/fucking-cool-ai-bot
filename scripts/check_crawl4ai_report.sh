@@ -63,7 +63,7 @@ PY
 }
 
 diagnose() {
-  local docker_os container state
+  local docker_os container state running=0 dormant=0
   printf 'Crawl4AI VPS security diagnostics (read-only)\n'
   printf 'UTC: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'Host: %s\n' "$(hostname)"
@@ -112,8 +112,24 @@ diagnose() {
   for container in fcai-bot fcai-crawl4ai fcai-crawl4ai-proxy fcai-crawl4ai-dns; do
     state="$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null)" || state=MISSING
     printf '  %s: %s\n' "$container" "$state"
+    if [ "$container" != fcai-bot ] && [ "$state" = running ]; then
+      running=$((running + 1))
+    elif [ "$container" != fcai-bot ] && { [ "$state" = exited ] || [ "$state" = created ]; }; then
+      dormant=$((dormant + 1))
+    fi
   done
   printf '\n'
+
+  if [ "$dormant" -eq 3 ]; then
+    echo 'RESULT: SAFE DORMANT (crawler, proxy and DNS are all stopped).'
+    echo 'UNVERIFIED: live network probes require all three Crawl4AI services running.'
+    echo 'CRAWL4AI_ENABLED must remain 0 until activation gates are complete.'
+    return 0
+  fi
+  if [ "$running" -ne 3 ]; then
+    echo 'FAIL: missing, transitional or partial Crawl4AI startup detected; investigate before using it.'
+    return 1
+  fi
 
   if ! check 'Firewall and network attachments' bash "$root/scripts/crawl4ai_firewall.sh" check; then
     echo 'STOP: firewall gate failed; live network probes skipped.'

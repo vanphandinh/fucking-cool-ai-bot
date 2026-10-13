@@ -44,7 +44,10 @@ jobs:
         run: docker compose config --quiet
       - name: Validate Linux security scripts
         if: matrix.python == '3.12'
-        run: bash -n scripts/crawl4ai_firewall.sh scripts/check_crawl4ai_vps_staging.sh
+        run: |
+          bash -n scripts/crawl4ai_firewall.sh scripts/check_crawl4ai_vps_staging.sh \
+            scripts/install_crawl4ai_firewall_boot.sh scripts/check_crawl4ai_report.sh \
+            scripts/verify_crawl4ai_security.sh
       - name: Check lint and dependency compatibility
         run: |
           python -m ruff check .

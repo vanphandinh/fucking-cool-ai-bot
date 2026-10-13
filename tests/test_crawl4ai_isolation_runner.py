@@ -16,6 +16,7 @@ class TestCrawl4AIIsolationRunner(unittest.TestCase):
             (1, "Traceback (most recent call last):", "did not execute read_page"),
             (1, "ok=False reason=disabled", "expected isolation reason"),
             (1, "ok=False reason=network", "expected isolation reason"),
+            (1, "ok=False reason=crawl_failed", "expected isolation reason"),
             (1, "ok=True reason=", "inconsistent result"),
             (0, "ok=False reason=blocked_url", "inconsistent result"),
             (0, "ok=True reason=", "blocked URL was reported as a successful crawl"),
@@ -37,8 +38,8 @@ class TestCrawl4AIIsolationRunner(unittest.TestCase):
             (0, "ok=True reason=", True, False, None),
             (1, "ok=False reason=blocked_url", False, True,
              frozenset({"blocked_url"})),
-            (1, "ok=False reason=crawl_failed", False, True,
-             frozenset({"blocked_redirect", "crawl_failed"})),
+            (1, "ok=False reason=blocked_redirect", False, True,
+             frozenset({"blocked_redirect", "blocked_url"})),
         ]
         for returncode, output, success_required, failure_required, reasons in cases:
             with self.subTest(returncode=returncode, output=output):

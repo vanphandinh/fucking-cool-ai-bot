@@ -229,11 +229,16 @@ def main() -> int:
             ("image/iframe", args.subresource_url),
             ("DNS rebinding", args.rebind_url),
         ):
+            # A generic crawl_failed result may mean anti-bot rejection, an
+            # unreachable fixture, or a browser crash. None proves that a
+            # redirect or DNS rebinding attempt reached the security gate.
+            # Require an explicit URL/redirect denial and independently
+            # inspect the sink and DNS fixture logs before accepting staging.
             probe_crawl(
                 template.replace("{sink_url}", sink_url),
                 success_required=label == "image/iframe",
                 failure_required=label in ("redirect", "DNS rebinding"),
-                expected_reasons=(frozenset({"blocked_redirect", "crawl_failed"})
+                expected_reasons=(frozenset({"blocked_redirect", "blocked_url"})
                                   if label in ("redirect", "DNS rebinding")
                                   else None),
             )

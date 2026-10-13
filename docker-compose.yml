@@ -53,7 +53,8 @@ services:
     image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0.9.3}
     container_name: fcai-crawl4ai
     profiles: ["crawl4ai"]
-    restart: unless-stopped
+    # Fail closed: do not start crawler before the firewall on host reboot.
+    restart: "no"
     init: true
     stop_grace_period: 30s
     shm_size: "${CRAWL4AI_SHM_SIZE:-512m}"
@@ -84,7 +85,7 @@ services:
     image: ${CRAWL4AI_PROXY_IMAGE:-ubuntu/squid:6.10-24.10_edge@sha256:e0a69e6c6f6a9f5bf1fb4edd6afa9c0aec23ea89ff8f3077dd5c55e7772438f0}
     container_name: fcai-crawl4ai-proxy
     profiles: ["crawl4ai"]
-    restart: unless-stopped
+    restart: "no"
     init: true
     volumes:
       - ./crawl4ai/squid.conf:/etc/squid/squid.conf:ro
@@ -99,7 +100,7 @@ services:
     image: ${CRAWL4AI_DNS_IMAGE:-coredns/coredns:1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1}
     container_name: fcai-crawl4ai-dns
     profiles: ["crawl4ai"]
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: ["ALL"]
     # CoreDNS' executable has a file capability for binding port 53.

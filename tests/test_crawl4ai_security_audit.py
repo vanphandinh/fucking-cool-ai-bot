@@ -58,6 +58,7 @@ def test_compose_rejects_network_and_privilege_regressions():
             {"crawl4ai_uplink": {}}),
         lambda conf: conf["services"]["crawl4ai"].update({"privileged": True}),
         lambda conf: conf["services"]["crawl4ai-proxy"].update({"ports": ["3128:3128"]}),
+        lambda conf: conf["services"]["crawl4ai"].update({"restart": "unless-stopped"}),
         lambda conf: conf["services"]["crawl4ai-dns"].update({"cap_add": ["NET_ADMIN"]}),
         lambda conf: conf["networks"]["crawl4ai_proxy"].update({"internal": False}),
     ):
@@ -109,10 +110,36 @@ def test_boot_service_only_queries_status():
     assert [args[1] for args in calls] == ["is-enabled", "is-active", "show", "cat"]
 
 
+def test_live_restart_policies_require_all_existing_containers_disabled():
+    present = "fcai-crawl4ai\nfcai-crawl4ai-proxy\nfcai-crawl4ai-dns"
+
+    def inspect_policy(*args):
+        if args[1] == "ps":
+            return present
+        return "no"
+
+    with patch.object(audit, "command", side_effect=inspect_policy) as commands:
+        audit.check_live_restart_policies()
+    assert commands.call_count == 4
+
+    def legacy_policy(*args):
+        if args[1] == "ps":
+            return present
+        return "unless-stopped" if args[-1] == "fcai-crawl4ai" else "no"
+
+    with patch.object(audit, "command", side_effect=legacy_policy):
+        with unittest.TestCase().assertRaises(RuntimeError):
+            audit.check_live_restart_policies()
+
+    with patch.object(audit, "command", return_value=""):
+        audit.check_live_restart_policies()  # All three absent: safely dormant.
+
+
 def test_unverified_never_claimed_as_full_security_pass(capsys):
     with (patch.object(audit, "check_compose"),
           patch.object(audit, "check_proxy_and_dns"),
           patch.object(audit, "check_boot_service"),
+          patch.object(audit, "check_live_restart_policies"),
           patch.object(audit, "check_reboot_evidence", side_effect=OSError("not found"))):
         assert audit.main() == 0
     output = capsys.readouterr().out
@@ -125,6 +152,7 @@ def test_static_network_failure_is_reported_without_sensitive_details(capsys):
     with (patch.object(audit, "check_compose", side_effect=RuntimeError("token-secret")),
           patch.object(audit, "check_proxy_and_dns"),
           patch.object(audit, "check_boot_service"),
+          patch.object(audit, "check_live_restart_policies"),
           patch.object(audit, "check_reboot_evidence")):
         assert audit.main() == 1
     output = capsys.readouterr().out
@@ -167,6 +195,7 @@ class TestAuditInUnittestCI(unittest.TestCase):
         with (patch.object(audit, "check_compose", side_effect=RuntimeError("secret")),
               patch.object(audit, "check_proxy_and_dns"),
               patch.object(audit, "check_boot_service"),
+              patch.object(audit, "check_live_restart_policies"),
               patch.object(audit, "check_reboot_evidence"),
               redirect_stdout(output)):
             self.assertEqual(audit.main(), 1)
@@ -178,6 +207,7 @@ class TestAuditInUnittestCI(unittest.TestCase):
         with (patch.object(audit, "check_compose"),
               patch.object(audit, "check_proxy_and_dns"),
               patch.object(audit, "check_boot_service"),
+              patch.object(audit, "check_live_restart_policies"),
               patch.object(audit, "check_reboot_evidence", side_effect=OSError()),
               redirect_stdout(output)):
             self.assertEqual(audit.main(), 0)

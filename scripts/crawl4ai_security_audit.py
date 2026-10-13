@@ -55,6 +55,7 @@ def check_compose() -> None:
     for service_name, attached in expected.items():
         service = services[service_name]
         require(set(service["networks"]) == attached)
+        require(service.get("restart", "no") == "no")
         require(not service.get("ports"))
         require(not service.get("privileged", False))
         require(not service.get("network_mode"))
@@ -115,6 +116,15 @@ def check_boot_service() -> None:
     require("After=docker.service" in unit)
 
 
+def check_live_restart_policies() -> None:
+    """Detect old running containers whose restart policy still allows a gap."""
+    names = set(command("docker", "ps", "-a", "--format", "{{.Names}}").splitlines())
+    for container in ("fcai-crawl4ai", "fcai-crawl4ai-proxy", "fcai-crawl4ai-dns"):
+        if container in names:
+            require(command("docker", "inspect", "--format",
+                            "{{.HostConfig.RestartPolicy.Name}}", container) == "no")
+
+
 def check_reboot_evidence() -> None:
     fd = os.open(REBOOT_STATE, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     with os.fdopen(fd, "r", encoding="utf-8") as stream:
@@ -135,6 +145,7 @@ def main() -> int:
         ("Docker network topology and container permissions", check_compose, False),
         ("Squid ACL and DNS configuration", check_proxy_and_dns, False),
         ("Firewall boot service active", check_boot_service, False),
+        ("Live Crawl4AI containers cannot auto-restart", check_live_restart_policies, False),
         ("Real reboot evidence for this Git revision", check_reboot_evidence, True),
     ):
         try:

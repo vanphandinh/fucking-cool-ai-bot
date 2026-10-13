@@ -78,6 +78,22 @@ sudo bash scripts/verify_crawl4ai_security.sh
 
 This produces a private report with `PASS`, `FAIL` and `UNVERIFIED` items.
 The command does not restart containers, modify firewall rules or reboot the VPS.
+To eliminate the observed boot-time window, the three Crawl4AI containers now
+use `restart: "no"`. After a host reboot they remain **stopped** by design;
+the report then says `SAFE DORMANT` and does not claim live egress was tested.
+The bot continues normally with `CRAWL4AI_ENABLED=0`. Previously created VPS
+containers retain their old restart policies until updated explicitly:
+
+```bash
+# Operator-approved, non-restarting policy update; do not run during audit alone.
+sudo docker update --restart=no fcai-crawl4ai fcai-crawl4ai-proxy fcai-crawl4ai-dns
+```
+
+The command above changes a live Docker restart policy, so applying it to the
+single VPS requires a maintenance decision. It neither restarts containers nor
+changes firewall rules. Verify the live policies with the one-command report.
+Never enable Crawl4AI just because the boot window is removed: manual container
+startup still requires firewall reapplication and independent SSRF evidence.
 `UNVERIFIED` items (controlled SSRF fixtures, Docker startup interval) still
 require separate controlled evidence; they are not authorization to enable
 Crawl4AI. The older `check_crawl4ai_report.sh` entry point remains supported.
@@ -310,7 +326,8 @@ pages, confirms fallback while Squid is stopped, and restores Squid afterward.
 The SSRF runner requires a real `read_page()` result for every attempted
 request: Python/import errors or a disabled client cannot count as a blocked
 URL. Direct private targets must return `blocked_url`; redirect and DNS
-rebinding attempts must return `blocked_redirect` or `crawl_failed`. The
+rebinding attempts must return `blocked_redirect` or `blocked_url`. A generic
+`crawl_failed` is inconclusive and must not count as a protected redirect. The
 public HTML fixture containing image/iframe subresources must itself load
 successfully. Independently inspect the public fixture's HTTP access log and
 the DNS fixture's responses to establish that the redirect, subresource
@@ -374,6 +391,12 @@ required fixture, any URL or the before/after firewall check fails. Review
 the resulting report before sharing it.
 
 On public fixture servers **controlled by this project**, configure redirects, HTML image/iframe requests and DNS rebinding to the private test sink. Run:
+
+The runner requires an explicit URL/redirect denial for redirect and DNS tests.
+A generic `crawl_failed` is **inconclusive** (for example, an anti-bot or
+fixture failure) and cannot establish SSRF protection. Confirm the controlled
+fixture actually exercises the redirect/rebinding path, inspect independent
+sink and DNS logs, and require zero unauthorized sink requests.
 
 ```bash
 python scripts/test_crawl4ai_isolation.py \
