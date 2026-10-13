@@ -311,6 +311,31 @@ daemon reboot** using `sudo bash scripts/crawl4ai_firewall.sh check`; arrange
 boot-time rule restoration if necessary. Passing the script on Docker Desktop
 or before a real reboot does not certify that target-host persistence gate.
 
+For a repeatable record of this gate on the **actual Linux VPS**, use the
+following two-phase check while the bot remains explicitly disabled. Save the
+report from the first command across an operator-managed host reboot:
+
+```bash
+sudo python3 scripts/check_crawl4ai_vps_reboot.py before \
+  2>&1 | tee ./crawl4ai-vps-reboot-before.txt
+# Reboot the VPS through the operator's normal maintenance procedure.
+# Once the host and Docker services are running again, from the same commit:
+sudo python3 scripts/check_crawl4ai_vps_reboot.py after \
+  2>&1 | tee ./crawl4ai-vps-reboot-after.txt
+```
+
+Each phase checks the host firewall and runs the non-disruptive direct-socket,
+Squid and unproxied Chromium probes. The report is stored with mode `0600` at
+`/var/tmp/fcai-crawl4ai-reboot-state.json` by default; it records the Git
+revision and Linux host boot IDs without tokens. `after` fails if the boot ID
+has not changed, the source revision changed or any live probe fails. It does
+not restore missing firewall rules or enable the crawler. If it fails, keep
+`CRAWL4AI_ENABLED=0`, fix the boot-time firewall restoration on the VPS, and
+repeat both phases; inspect the boot service ordering to rule out an unprotected
+window before the checks ran. A PASS only closes the reboot-persistence portion
+of the gate; controlled public DNS/redirect/subresource fixtures are still
+required before activating Crawl4AI.
+
 The check rejects extra Docker network attachments on the crawler, Squid and
 CoreDNS containers: even one additional public interface would allow traffic
 outside the intended bridges. On an isolated staging engine, verify this
