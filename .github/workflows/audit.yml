@@ -47,7 +47,7 @@ jobs:
         run: |
           bash -n scripts/crawl4ai_firewall.sh scripts/check_crawl4ai_vps_staging.sh \
             scripts/install_crawl4ai_firewall_boot.sh scripts/check_crawl4ai_report.sh \
-            scripts/verify_crawl4ai_security.sh
+            scripts/verify_crawl4ai_security.sh scripts/apply_crawl4ai_safe_boot.sh
       - name: Check lint and dependency compatibility
         run: |
           python -m ruff check .

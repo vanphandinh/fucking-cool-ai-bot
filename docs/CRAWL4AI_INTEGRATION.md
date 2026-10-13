@@ -82,16 +82,19 @@ To eliminate the observed boot-time window, the three Crawl4AI containers now
 use `restart: "no"`. After a host reboot they remain **stopped** by design;
 the report then says `SAFE DORMANT` and does not claim live egress was tested.
 The bot continues normally with `CRAWL4AI_ENABLED=0`. Previously created VPS
-containers retain their old restart policies until updated explicitly:
+containers retain their old restart policies until updated explicitly. After
+pulling the new commit onto the VPS, run **one command** to update their
+policies and collect the read-only security report:
 
 ```bash
-# Operator-approved, non-restarting policy update; do not run during audit alone.
-sudo docker update --restart=no fcai-crawl4ai fcai-crawl4ai-proxy fcai-crawl4ai-dns
+sudo bash scripts/apply_crawl4ai_safe_boot.sh
 ```
 
-The command above changes a live Docker restart policy, so applying it to the
-single VPS requires a maintenance decision. It neither restarts containers nor
-changes firewall rules. Verify the live policies with the one-command report.
+This opt-in command changes only the existing three Docker restart policies;
+it refuses partial startup and fails if the running bot has Crawl4AI enabled.
+It neither restarts containers, alters firewall rules, nor reboots the host.
+It then runs `verify_crawl4ai_security.sh` and prints the private report path.
+The original `verify_crawl4ai_security.sh` remains read-only.
 Never enable Crawl4AI just because the boot window is removed: manual container
 startup still requires firewall reapplication and independent SSRF evidence.
 `UNVERIFIED` items (controlled SSRF fixtures, Docker startup interval) still
