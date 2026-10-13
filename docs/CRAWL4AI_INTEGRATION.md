@@ -155,6 +155,22 @@ p50 **0.339 s**, p95 **0.398 s**, maximum **0.973 s**. The image's
 host's unrelated Python 3.13 install has a `virtualenv`/`filelock` conflict;
 its global `pip check` result is not an image dependency failure.
 
+**2026-10-13 independent public-site smoke (Docker Desktop):** the manually
+run `scripts/check_crawl4ai_public_sites.ps1` invoked the real Crawl4AI 0.9.3
+`/crawl` endpoint from an isolated bot-image container in the disposable
+Docker-in-Docker network. All **20/20 distinct public websites passed**,
+including Python documentation, SQLite, Rust, Go, PostgreSQL, Debian, Docker
+documentation, MDN, Wikipedia, Cloudflare and W3Schools. Every result returned
+nonempty Markdown; `smoke_crawl4ai.py` reported p50 **1.115 s**, p95
+**2.475 s**, minimum **0.586 s** and maximum **8.902 s**. The Linux
+`crawl4ai_firewall.sh check` reported **PASS (iptables)** immediately before
+and after the crawl. The generated report is
+`fcai-public-smoke-20261013-004525-005.txt` (user's Windows TEMP directory).
+The test did **not** change the bot's `CRAWL4AI_ENABLED=0` setting or touch
+production. It demonstrates public-site rendering on Docker Desktop, **not**
+firewall persistence or SSRF isolation on the target Linux VPS; the staging
+gate still requires its own run of these 20 representative URLs.
+
 An additional **live generic-reader failover** check ran `read_url()` from
 the same disposable bot image with `CRAWL4AI_ENABLED=1` supplied to the test
 process only. The isolated bot network had independent, ordinary outbound
@@ -200,8 +216,9 @@ instrumentation on the target staging host, validate the actual VPS firewall
 backend (including nftables if selected), repeat live generic-reader
 proxy-outage fallback on
 staging, verify pool reuse on the staging host, and run the representative
-20-URL smoke test against real sites. The Docker Desktop hot-pool reuse and
-live fallback checks are complete; these do not prove the permanent
+20-URL smoke test against real sites **on staging**. The Docker Desktop
+20/20 public-site smoke, hot-pool reuse and live fallback checks are complete;
+these do not prove the permanent
 browser's egress posture or availability on staging.
 Keep `CRAWL4AI_ENABLED=0` until these gates pass.
 
@@ -242,6 +259,17 @@ that negative test and send its generated `%TEMP%` report for review:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_crawl4ai_dind_networks.ps1
 ```
+
+For the additional 20-public-site **Docker Desktop** smoke (which does not
+replace the VPS staging gate), run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_crawl4ai_public_sites.ps1
+```
+
+The helper creates `%TEMP%\fcai-public-smoke-*.txt`, and exits nonzero if a
+required fixture, any URL or the before/after firewall check fails. Review
+the resulting report before sharing it.
 
 On public fixture servers **controlled by this project**, configure redirects, HTML image/iframe requests and DNS rebinding to the private test sink. Run:
 
