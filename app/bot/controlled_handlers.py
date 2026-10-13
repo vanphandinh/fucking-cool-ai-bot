@@ -72,6 +72,7 @@ def build_controlled_message_router(
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web/ảnh: {stats.searches}",
+            f"- Câu trả lời gửi chưa hoàn chỉnh: {stats.partial_deliveries}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
             "- Question mode: renewable controls",
         ]
