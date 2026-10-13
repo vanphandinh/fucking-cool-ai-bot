@@ -30,6 +30,10 @@ jobs:
           persist-credentials: false
       - name: Start disposable Docker-in-Docker engine
         run: |
+          # GitHub runners may default to disabled bridge netfilter. The
+          # firewall requires bridge traffic to traverse iptables.
+          sudo modprobe br_netfilter
+          sudo sysctl -w net.bridge.bridge-nf-call-iptables=1
           docker run -d --privileged --name fcai-ci-dind \
             -e DOCKER_TLS_CERTDIR= -e CI=true -e FCAI_ISOLATED_CI=1 \
             -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace docker:29-dind
@@ -39,6 +43,9 @@ jobs:
           done
           docker exec fcai-ci-dind docker info >/dev/null
           docker exec fcai-ci-dind apk add --no-cache python3 bash iptables
+          docker exec fcai-ci-dind sysctl -w net.bridge.bridge-nf-call-iptables=1
+          docker exec fcai-ci-dind sh -c \
+            'test "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1'
       - name: Exercise real crawler and controlled SSRF fixtures
         run: |
           set -o pipefail
