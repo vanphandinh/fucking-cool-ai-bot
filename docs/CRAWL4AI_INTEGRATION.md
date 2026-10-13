@@ -541,7 +541,19 @@ Confirm representative logs contain only coarse reasons and never contain the be
 
 ## Verification gates
 
-CI runs Crawl4AI-specific tests and the full regression suite with Ruff, dependency, compile and Compose checks. The Linux host-firewall and DNS-rebinding probes are mandatory before production activation, and deliberately run on staging with project-controlled fixtures rather than ordinary CI.
+The standard audit CI runs Crawl4AI-specific tests, the regression suite,
+Ruff, dependency, compile and Compose checks. The separate `Crawl4AI isolated
+SSRF` workflow uses a disposable Docker-in-Docker engine on GitHub Actions to
+exercise real `/crawl` requests against public/private fixtures, redirect,
+image/iframe loads, DNS rebinding, firewall rules and safe-dormant daemon
+restart. It refuses to run outside its explicitly flagged CI container and
+never uses production credentials. Its DNS fixture replaces CoreDNS inside
+that disposable engine; static CoreDNS config checks run in the audit suite.
+
+CI **cannot** prove that firewall rules cover the Docker startup interval on
+the actual VPS, or that its rules survive a physical host reboot. These are
+still production activation gates. Keep `CRAWL4AI_ENABLED=0` until separate
+target-host evidence and explicit approval are available.
 
 ## Promotion metrics
 

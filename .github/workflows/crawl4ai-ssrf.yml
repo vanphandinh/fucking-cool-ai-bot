@@ -1,0 +1,66 @@
+name: Crawl4AI isolated SSRF
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/crawl4ai-ssrf.yml'
+      - 'scripts/ci_crawl4ai_ssrf.py'
+      - 'scripts/crawl4ai_dind_probe.py'
+      - 'scripts/crawl4ai_rebind_dns_fixture.py'
+      - 'scripts/crawl4ai_firewall.sh'
+      - 'docker-compose.yml'
+      - 'crawl4ai/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crawl4ai-ssrf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-ssrf:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start disposable Docker-in-Docker engine
+        run: |
+          docker run -d --privileged --name fcai-ci-dind \
+            -e DOCKER_TLS_CERTDIR= -e CI=true -e FCAI_ISOLATED_CI=1 \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace docker:29-dind
+          for i in $(seq 1 60); do
+            if docker exec fcai-ci-dind docker info >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec fcai-ci-dind docker info >/dev/null
+          docker exec fcai-ci-dind apk add --no-cache python3 bash iptables
+      - name: Exercise real crawler and controlled SSRF fixtures
+        run: |
+          set -o pipefail
+          docker exec fcai-ci-dind python3 /workspace/scripts/ci_crawl4ai_ssrf.py 2>&1 \
+            | tee crawl4ai-ssrf-ci.log
+      - name: Check safe dormant state after DinD daemon restart
+        run: |
+          docker restart fcai-ci-dind
+          for i in $(seq 1 60); do
+            if docker exec fcai-ci-dind docker info >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          set -o pipefail
+          docker exec fcai-ci-dind python3 /workspace/scripts/ci_crawl4ai_ssrf.py --after-daemon-restart 2>&1 \
+            | tee -a crawl4ai-ssrf-ci.log
+      - name: Preserve isolated security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: crawl4ai-ssrf-ci
+          path: crawl4ai-ssrf-ci.log
+          if-no-files-found: warn
+      - name: Destroy disposable engine
+        if: always()
+        run: docker rm -f fcai-ci-dind || true
