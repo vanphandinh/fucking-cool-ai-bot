@@ -294,6 +294,15 @@ The script checks firewall/backend/network identity, restarts and recreates the
 three crawler-side containers, reapplies the firewall when container IPs drift,
 verifies the private sink receives no unauthorized requests, checks 20+ live
 pages, confirms fallback while Squid is stopped, and restores Squid afterward.
+The SSRF runner requires a real `read_page()` result for every attempted
+request: Python/import errors or a disabled client cannot count as a blocked
+URL. Direct private targets must return `blocked_url`; redirect and DNS
+rebinding attempts must return `blocked_redirect` or `crawl_failed`. The
+public HTML fixture containing image/iframe subresources must itself load
+successfully. Independently inspect the public fixture's HTTP access log and
+the DNS fixture's responses to establish that the redirect, subresource
+requests and both DNS answers were actually exercised; a passed sink counter
+alone cannot establish this.
 Run it only on a dedicated staging Docker engine; it does not enable the bot's
 Crawl4AI setting. Check the command's exit status and inspect the saved log
 before sending it for review (redact secret tokens and any sensitive URL data).

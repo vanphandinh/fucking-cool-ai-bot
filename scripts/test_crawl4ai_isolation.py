@@ -23,7 +23,8 @@ def docker(*args: str, check: bool = True) -> str:
 
 
 def probe_crawl(url: str, *, success_required: bool = False,
-                failure_required: bool = False) -> None:
+                failure_required: bool = False,
+                expected_reasons: frozenset[str] | None = None) -> None:
     code = (
         "import asyncio,sys; from app.config import Settings; "
         "from app.search.crawl4ai_client import read_page; "
@@ -39,13 +40,33 @@ def probe_crawl(url: str, *, success_required: bool = False,
         ],
         capture_output=True, text=True, timeout=60, check=False,
     )
-    if success_required and result.returncode:
+    # A nonzero docker/Python exit alone does not prove an SSRF defense: an
+    # import error, dead container, or missing API token would also fail.
+    markers = [line.strip() for line in result.stdout.splitlines()
+               if line.startswith("ok=")]
+    if len(markers) != 1:
+        raise AssertionError(
+            f"crawl probe did not execute read_page: exit={result.returncode} "
+            f"output={result.stdout.strip()} error={result.stderr.strip()}"
+        )
+    status = markers[0]
+    if status.startswith("ok=True reason=") and result.returncode == 0:
+        succeeded, reason = True, status.removeprefix("ok=True reason=")
+    elif status.startswith("ok=False reason=") and result.returncode == 1:
+        succeeded, reason = False, status.removeprefix("ok=False reason=")
+    else:
+        raise AssertionError(f"crawl probe returned inconsistent result: {status}")
+    if success_required and not succeeded:
         raise AssertionError(
             f"public crawl failed: {result.stdout.strip()} {result.stderr.strip()}"
         )
-    if failure_required and result.returncode == 0:
+    if failure_required and succeeded:
         raise AssertionError("blocked URL was reported as a successful crawl")
-    print(f"crawl exit={result.returncode} {result.stdout.strip()}")
+    if expected_reasons is not None and reason not in expected_reasons:
+        raise AssertionError(
+            f"crawl did not fail for an expected isolation reason: {reason}"
+        )
+    print(f"crawl exit={result.returncode} {status}")
 
 
 def sink_requests() -> int:
@@ -187,7 +208,8 @@ def main() -> int:
             sink_url, "http://127.0.0.1:8099/ping",
             "http://10.0.0.1:8099/ping", "http://169.254.169.254/latest/meta-data/",
         ):
-            probe_crawl(blocked, failure_required=True)
+            probe_crawl(blocked, failure_required=True,
+                        expected_reasons=frozenset({"blocked_url"}))
         assert_sink_untouched("direct private URL", baseline)
         # A direct network connection bypassing the browser proxy MUST fail.
         bypass = subprocess.run(
@@ -209,7 +231,11 @@ def main() -> int:
         ):
             probe_crawl(
                 template.replace("{sink_url}", sink_url),
-                failure_required=(label in ("redirect", "DNS rebinding")),
+                success_required=label == "image/iframe",
+                failure_required=label in ("redirect", "DNS rebinding"),
+                expected_reasons=(frozenset({"blocked_redirect", "crawl_failed"})
+                                  if label in ("redirect", "DNS rebinding")
+                                  else None),
             )
             assert_sink_untouched(label, baseline)
         subprocess.run(["bash", str(firewall), "check"], check=True, timeout=30)
