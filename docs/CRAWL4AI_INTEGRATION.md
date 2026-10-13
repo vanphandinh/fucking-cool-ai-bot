@@ -70,6 +70,19 @@ browser configs; `/app/egress_proxy.py` resolves and pins each destination,
 then sends absolute-form HTTP requests or pinned-IP HTTPS tunnels to Squid.
 The permanent browser created at startup does not visibly call
 `enforce_egress()`, so this additional path must be treated cautiously.
+On the VPS, run one read-only diagnostic command from the repository root:
+
+```bash
+sudo bash scripts/verify_crawl4ai_security.sh
+```
+
+This produces a private report with `PASS`, `FAIL` and `UNVERIFIED` items.
+The command does not restart containers, modify firewall rules or reboot the VPS.
+`UNVERIFIED` items (controlled SSRF fixtures, Docker startup interval) still
+require separate controlled evidence; they are not authorization to enable
+Crawl4AI. The older `check_crawl4ai_report.sh` entry point remains supported.
+Run disruptive restart/recreate fault tests only in a disposable Docker engine.
+
 Keep `CRAWL4AI_ENABLED=0` until the full staging SSRF test suite passes,
 including zero unexpected internal sink requests and browser reloads.
 

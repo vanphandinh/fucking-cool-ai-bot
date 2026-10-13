@@ -1,0 +1,185 @@
+"""Regression checks for the non-disruptive VPS security report."""
+
+from __future__ import annotations
+
+import copy
+import io
+import json
+import shutil
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
+
+from scripts import crawl4ai_security_audit as audit
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def compose_config() -> dict:
+    return {
+        "networks": {
+            name: {"internal": name != "crawl4ai_uplink", "enable_ipv6": False}
+            for name in ("crawl4ai_api", "crawl4ai_proxy", "crawl4ai_dns", "crawl4ai_uplink")
+        },
+        "services": {
+            "bot": {"networks": {"default": {}, "crawl4ai_api": {}}},
+            "crawl4ai": {
+                "networks": {name: {} for name in (
+                    "crawl4ai_api", "crawl4ai_proxy", "crawl4ai_dns")},
+                "dns": ["10.221.57.53"],
+            },
+            "crawl4ai-proxy": {
+                "networks": {"crawl4ai_proxy": {}, "crawl4ai_uplink": {}},
+            },
+            "crawl4ai-dns": {
+                "networks": {
+                    "crawl4ai_dns": {"ipv4_address": "10.221.57.53"},
+                    "crawl4ai_uplink": {},
+                },
+                "read_only": True, "cap_drop": ["ALL"],
+                "cap_add": ["NET_BIND_SERVICE"],
+            },
+        },
+    }
+
+
+def assert_compose(config: dict) -> None:
+    with patch.object(audit, "command", return_value=json.dumps(config)):
+        audit.check_compose()
+
+
+def test_compose_rejects_network_and_privilege_regressions():
+    base = compose_config()
+    assert_compose(base)
+    for change in (
+        lambda conf: conf["services"]["crawl4ai"]["networks"].update(
+            {"crawl4ai_uplink": {}}),
+        lambda conf: conf["services"]["crawl4ai"].update({"privileged": True}),
+        lambda conf: conf["services"]["crawl4ai-proxy"].update({"ports": ["3128:3128"]}),
+        lambda conf: conf["services"]["crawl4ai-dns"].update({"cap_add": ["NET_ADMIN"]}),
+        lambda conf: conf["networks"]["crawl4ai_proxy"].update({"internal": False}),
+    ):
+        candidate = copy.deepcopy(base)
+        change(candidate)
+        with unittest.TestCase().assertRaises(RuntimeError):
+            assert_compose(candidate)
+
+
+@unittest.skipUnless(shutil.which("docker"), "Docker CLI not installed")
+def test_current_compose_is_safe():
+    audit.check_compose()
+
+
+def test_proxy_dns_acl_and_detection_of_unsafe_allow(tmp_path):
+    audit.check_proxy_and_dns()
+    crawl = tmp_path / "crawl4ai"
+    crawl.mkdir()
+    original = ROOT / "crawl4ai"
+    for filename in ("squid.conf", "Corefile"):
+        (crawl / filename).write_text((original / filename).read_text(encoding="utf-8"),
+                                      encoding="utf-8")
+    with patch.object(audit, "ROOT", tmp_path):
+        path = crawl / "squid.conf"
+        path.write_text("http_access allow localhost\n" + path.read_text(encoding="utf-8"),
+                        encoding="utf-8")
+        with unittest.TestCase().assertRaises(RuntimeError):
+            audit.check_proxy_and_dns()
+
+
+def test_boot_service_only_queries_status():
+    calls = []
+
+    def read_only(*args):
+        calls.append(args)
+        if "cat" in args:
+            return (
+                "After=docker.service\n"
+                "ExecStart=/bin/bash /repo/scripts/install_crawl4ai_firewall_boot.sh --boot"
+            )
+        if "show" in args:
+            return "success"
+        if "is-active" in args:
+            return "active"
+        return "enabled"
+
+    with patch.object(audit, "command", side_effect=read_only):
+        audit.check_boot_service()
+    assert [args[1] for args in calls] == ["is-enabled", "is-active", "show", "cat"]
+
+
+def test_unverified_never_claimed_as_full_security_pass(capsys):
+    with (patch.object(audit, "check_compose"),
+          patch.object(audit, "check_proxy_and_dns"),
+          patch.object(audit, "check_boot_service"),
+          patch.object(audit, "check_reboot_evidence", side_effect=OSError("not found"))):
+        assert audit.main() == 0
+    output = capsys.readouterr().out
+    assert "UNVERIFIED: Real reboot evidence" in output
+    assert "UNVERIFIED: controlled public SSRF fixtures" in output
+    assert "UNVERIFIED: firewall protection during Docker startup" in output
+
+
+def test_static_network_failure_is_reported_without_sensitive_details(capsys):
+    with (patch.object(audit, "check_compose", side_effect=RuntimeError("token-secret")),
+          patch.object(audit, "check_proxy_and_dns"),
+          patch.object(audit, "check_boot_service"),
+          patch.object(audit, "check_reboot_evidence")):
+        assert audit.main() == 1
+    output = capsys.readouterr().out
+    assert "FAIL: Docker network topology" in output
+    assert "token-secret" not in output
+
+
+def test_single_command_does_not_contain_destructive_operations():
+    entry = (ROOT / "scripts" / "verify_crawl4ai_security.sh").read_text(encoding="utf-8")
+    report = (ROOT / "scripts" / "check_crawl4ai_report.sh").read_text(encoding="utf-8")
+    assert "check_crawl4ai_report.sh" in entry
+    for text in ("docker compose restart", "docker compose stop", "docker compose up",
+                 "crawl4ai_firewall.sh apply", "systemctl restart", "reboot"):
+        assert text not in "\n".join(
+            line for line in (entry + report).splitlines()
+            if line.lstrip() and not line.lstrip().startswith("#")
+        )
+
+
+class TestAuditInUnittestCI(unittest.TestCase):
+    """Run essential regression gates in the project's unittest-based CI."""
+
+    def test_rejects_public_crawler_network(self):
+        candidate = compose_config()
+        candidate["services"]["crawl4ai"]["networks"]["crawl4ai_uplink"] = {}
+        with self.assertRaises(RuntimeError):
+            assert_compose(candidate)
+
+    def test_current_squid_dns_guard(self):
+        audit.check_proxy_and_dns()
+
+    def test_rejects_unsafe_compose_privilege(self):
+        candidate = compose_config()
+        candidate["services"]["crawl4ai"]["cap_add"] = ["NET_ADMIN"]
+        with self.assertRaises(RuntimeError):
+            assert_compose(candidate)
+
+    def test_failed_checks_hide_sensitive_errors(self):
+        output = io.StringIO()
+        with (patch.object(audit, "check_compose", side_effect=RuntimeError("secret")),
+              patch.object(audit, "check_proxy_and_dns"),
+              patch.object(audit, "check_boot_service"),
+              patch.object(audit, "check_reboot_evidence"),
+              redirect_stdout(output)):
+            self.assertEqual(audit.main(), 1)
+        self.assertIn("FAIL: Docker network topology", output.getvalue())
+        self.assertNotIn("secret", output.getvalue())
+
+    def test_unverified_security_gates_remain_visible(self):
+        output = io.StringIO()
+        with (patch.object(audit, "check_compose"),
+              patch.object(audit, "check_proxy_and_dns"),
+              patch.object(audit, "check_boot_service"),
+              patch.object(audit, "check_reboot_evidence", side_effect=OSError()),
+              redirect_stdout(output)):
+            self.assertEqual(audit.main(), 0)
+        self.assertIn("UNVERIFIED: Real reboot evidence", output.getvalue())
+        self.assertIn("UNVERIFIED: firewall protection during Docker startup", output.getvalue())

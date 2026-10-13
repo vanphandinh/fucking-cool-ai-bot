@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command, non-disruptive Crawl4AI security diagnostics for a Linux VPS.
-# Run: sudo bash scripts/check_crawl4ai_report.sh
+# Run: sudo bash scripts/verify_crawl4ai_security.sh
 # No Docker restarts, firewall changes, VPS reboot, or Crawl4AI enablement.
 set -uo pipefail
 umask 077
@@ -35,8 +35,12 @@ check() {
   else
     printf 'FAIL: %s (exit %s)\n' "$label" "$rc"
   fi
-  if [ -n "$output" ]; then
-    printf '%s\n' "$output"
+  # Child stderr/stdout may contain URL or environment data. Only include
+  # deliberately formatted PASS markers from the live probes in the report.
+  if [ "$rc" -eq 0 ] && [ "$label" = 'Live network isolation (sockets, Squid, Chromium)' ]; then
+    printf '%s\n' "$output" | grep -E '^(PASS |LIVE EGRESS PASS)' || true
+  elif [ "$label" = 'Static config and boot evidence' ]; then
+    printf '%s\n' "$output" | grep -E '^(PASS|FAIL|UNVERIFIED): ' || true
   fi
   return "$rc"
 }
@@ -87,6 +91,13 @@ diagnose() {
   esac
   printf 'Docker host: %s\n\n' "$docker_os"
 
+  if ! check 'Static config and boot evidence' \
+    python3 "$root/scripts/crawl4ai_security_audit.py"; then
+    echo 'STOP: security configuration or boot service check failed.'
+    return 1
+  fi
+  printf '\n'
+
   if ! check 'Crawl4AI disabled in .env' check_env_off; then
     echo 'STOP: Crawl4AI is not confirmed disabled; network probes skipped.'
     return 1
@@ -115,9 +126,8 @@ diagnose() {
     return 1
   fi
 
-  printf '\nRESULT: PASS for live VPS egress isolation.\n'
-  echo 'PENDING: controlled public SSRF fixtures and real VPS reboot persistence.'
-  echo 'Those checks are staging-only and are not executed by this report script.'
+  printf '\nRESULT: PASS for live VPS egress isolation; remaining items UNVERIFIED.\n'
+  echo 'Controlled public SSRF fixtures and startup-interval tests require isolated staging.'
   echo 'CRAWL4AI_ENABLED must remain 0 in production.'
   return 0
 }
