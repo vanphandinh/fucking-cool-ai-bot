@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 _MIN_WEB_RESULTS_BEFORE_TOPUP = 2
 _MIN_IMAGE_RESULTS_BEFORE_TOPUP = 1
+# Merge a deeper candidate pool before ranking so a strong DDGS result is not
+# dropped by the cap just because SearXNG returned a full page of weak hits.
+_MERGE_POOL_FACTOR = 3
 
 
 class RoutedSearchError(RuntimeError):
@@ -209,6 +212,9 @@ async def route_auto(
         operation_budget = (
             OperationBudget(settings.search_total_timeout_sec) if operations is not None else None
         )
+        # The V2 web path ranks the merged pool and then truncates to ``limit``;
+        # V1 and image keep their original merge cap.
+        pool_limit = limit if not quality_gate else max(limit, limit * _MERGE_POOL_FACTOR)
         attempted: set[str] = set()
         merged: list[dict] = []
         had_successful_backend = False
@@ -240,7 +246,7 @@ async def route_auto(
                     merged,
                     results,
                     key_name=result_url_key,
-                    limit=limit,
+                    limit=pool_limit,
                 )
                 searxng_sufficient = _meets_minimum(
                     quality_gate=quality_gate,
@@ -282,7 +288,7 @@ async def route_auto(
                     merged,
                     results,
                     key_name=result_url_key,
-                    limit=limit,
+                    limit=pool_limit,
                 )
             elif error is not None:
                 summary = _safe_failure_summary(error)

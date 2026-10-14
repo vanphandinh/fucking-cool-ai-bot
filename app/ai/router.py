@@ -113,6 +113,15 @@ class _RequestState:
     successful_health_snapshot: _HealthGenerationSnapshot | None
 
 
+def _synthesis_messages(state: _RequestState) -> list[ChatMessage]:
+    """Build the no-tool synthesis context using the request's own mode."""
+    return build_fresh_synthesis_messages(
+        state.base_request.messages,
+        state.tool_outputs,
+        mode=state.base_request.synthesis_mode,
+    )
+
+
 def _capabilities(provider: AIProvider) -> ProviderCapabilities:
     return provider.spec.capabilities
 
@@ -408,6 +417,7 @@ class AIProviderRouter:
         portable_base_request = ChatRequest(
             messages=portable_base_messages,
             tools=request.tools,
+            synthesis_mode=request.synthesis_mode,
         )
         state = _RequestState(
             base_request=portable_base_request,
@@ -570,10 +580,7 @@ class AIProviderRouter:
             state.budget.exhausted(self.max_tool_rounds)
             or (state.tool_outputs and not structured_tools_available)
         ):
-            provider_messages = build_fresh_synthesis_messages(
-                state.base_request.messages,
-                state.tool_outputs,
-            )
+            provider_messages = _synthesis_messages(state)
         else:
             provider_messages = list(state.portable_messages)
 
@@ -613,10 +620,7 @@ class AIProviderRouter:
                     state.unsupported_tool_models.add(tool_capability_key)
                     structured_tools_available = False
                     if state.tool_outputs:
-                        provider_messages = build_fresh_synthesis_messages(
-                            state.base_request.messages,
-                            state.tool_outputs,
-                        )
+                        provider_messages = _synthesis_messages(state)
                     continue
                 if exc.retry_without_tools:
                     continue
@@ -721,10 +725,7 @@ class AIProviderRouter:
         active_tools = tools
         while True:
             if active_tools and state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_request.messages,
-                    state.tool_outputs,
-                )
+                messages[:] = _synthesis_messages(state)
                 active_tools = ()
 
             resp = await self._chat_with_retry(
@@ -751,10 +752,7 @@ class AIProviderRouter:
             requested_calls = len(resp.tool_calls)
             if not state.budget.can_execute(requested_calls, self.max_tool_rounds):
                 state.budget.close()
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_request.messages,
-                    state.tool_outputs,
-                )
+                messages[:] = _synthesis_messages(state)
                 active_tools = ()
                 continue
 
@@ -793,10 +791,7 @@ class AIProviderRouter:
                 state.portable_messages.append(tool_message)
 
             if state.budget.exhausted(self.max_tool_rounds):
-                messages[:] = build_fresh_synthesis_messages(
-                    state.base_request.messages,
-                    state.tool_outputs,
-                )
+                messages[:] = _synthesis_messages(state)
                 active_tools = ()
 
 

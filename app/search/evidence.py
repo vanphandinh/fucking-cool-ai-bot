@@ -24,6 +24,61 @@ _STOPWORDS = frozenset(
 )
 _SUMMARY = ("tóm tắt", "tom tat", "summarize", "summary", "overview", "tổng quan")
 
+# Reserved framing tokens. Only renderers may emit these; untrusted page text
+# that contains one is neutralized before any label is built, so a hostile page
+# can neither close the synthesis frame early nor spoof a source attribution.
+# A hostile page can re-space a reserved phrase ("DỮ-LIỆU", "DỮ.LIỆU", a
+# stray newline before the bracket) so a model still reads it as a delimiter
+# while a rigid pattern does not. ``_SEP`` absorbs those separators — and the
+# closing bracket tolerates trailing whitespace — so look-alikes are defused
+# too. Widening is safe: the marker is already reserved, so defusing a broader
+# set of look-alikes can never remove legitimate evidence.
+_SEP = r"[\s\-–—_.·•/\\|]{0,8}"
+_CLOSE = r"[^\]］\n]{0,200}\s{0,8}[\]］]"
+_FRAME_KEYWORDS = (
+    rf"(?:DỮ|DU){_SEP}(?:LIỆU|LIEU){_SEP}(?:NGHIÊN|NGHIEN){_SEP}(?:CỨU|CUU)"
+)
+_OTHER_KEYWORDS = (
+    rf"WEB{_SEP}EVIDENCE|WEB{_SEP}AUTO{_SEP}FETCH|TOOL[_\s]RESULT\s*\d*|AUTO{_SEP}SOURCE"
+)
+_SOURCE_KEYWORDS = rf"SOURCE{_SEP}\d+{_SEP}/{_SEP}CHUNK{_SEP}\d+"
+_FRAME_ONLY_RE = re.compile(
+    rf"[\[［]\s*/?\s*{_FRAME_KEYWORDS}{_CLOSE}",
+    re.IGNORECASE,
+)
+_UNTRUSTED_RE = re.compile(
+    rf"[\[［]\s*/?\s*(?:{_FRAME_KEYWORDS}|{_OTHER_KEYWORDS}){_CLOSE}",
+    re.IGNORECASE,
+)
+_SOURCE_LABEL_RE = re.compile(
+    rf"[\[［]\s*/?\s*(?:{_SOURCE_KEYWORDS}|AUTO{_SEP}SOURCE){_CLOSE}",
+    re.IGNORECASE,
+)
+# Bracket glyphs that can no longer be parsed back into a system delimiter.
+_BRACKET_TRANSLATION = str.maketrans({"[": "⟦", "]": "⟧", "［": "⟦", "］": "⟧"})
+
+
+def _defuse_brackets(match: re.Match[str]) -> str:
+    return match.group(0).translate(_BRACKET_TRANSLATION)
+
+
+def defuse_frame_markers(text: str) -> str:
+    """Defuse only the evidence-frame delimiters, keeping every other label."""
+    return _FRAME_ONLY_RE.sub(_defuse_brackets, str(text or ""))
+
+
+def neutralize_untrusted(text: str, *, keep_source_labels: bool = False) -> str:
+    """Strip frame/source markers a hostile document might try to forge.
+
+    ``[SOURCE n / CHUNK m]`` labels are renderer-only; callers that receive text
+    already produced by ``select_evidence`` may keep them so genuine chunk
+    attribution survives.
+    """
+    out = _UNTRUSTED_RE.sub(_defuse_brackets, str(text or ""))
+    if not keep_source_labels:
+        out = _SOURCE_LABEL_RE.sub(_defuse_brackets, out)
+    return out
+
 
 def normalize(text: str) -> str:
     """Casefold and strip Vietnamese accents for lexical matching."""
@@ -185,6 +240,7 @@ def select_evidence(
 ) -> str:
     """Rank relevant chunks, then pack complete labels and excerpts into a hard cap."""
     max_chars = min(MAX_TOOL_EVIDENCE_CHARS, max_chars)
+    text = neutralize_untrusted(text)
     content = text[:MAX_CANDIDATE_CHARS]
     truncated = truncated or len(text) > len(content)
     if not content.strip():

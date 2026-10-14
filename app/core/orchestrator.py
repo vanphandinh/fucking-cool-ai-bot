@@ -12,6 +12,7 @@ from ..ai.multimodal import build_user_parts
 from ..ai.router import AIProviderRouter
 from ..config import Settings
 from ..search import auto_fetch, image_service, service as search_service, url_service
+from ..search.evidence import neutralize_untrusted
 from .request import UserRequest
 from .source_policy import canonicalize_source_url, select_diverse_sources
 
@@ -20,6 +21,18 @@ _VN_TZ = timezone(timedelta(hours=7))
 # Mirrors the router's per-tool output cap so appended evidence always fits
 # inside it without the truncation dropping source labels or status lines.
 _TOOL_OUTPUT_CAP = 6000
+# Auto-fetch evidence must never be starved by an over-long search listing.
+AUTO_FETCH_EVIDENCE_MIN_CHARS = 2400
+# Up to 3600 characters for the listing, but never so much that the reserved
+# auto-fetch evidence room (plus the join separator) would not fit.
+SEARCH_LISTING_MAX_CHARS = min(
+    3600, _TOOL_OUTPUT_CAP - AUTO_FETCH_EVIDENCE_MIN_CHARS - 64
+)
+_SEARCH_TITLE_LIMIT = 160
+_SEARCH_SNIPPET_LIMIT = 300
+_SEARCH_HINT = (
+    "Hãy dựa vào các kết quả trên để trả lời; nếu không đủ thì nói rõ."
+)
 _URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 
@@ -179,9 +192,11 @@ class Orchestrator:
         url_cache: dict[tuple[str, str], str] = {}
         url_inflight: dict[tuple[str, str], asyncio.Task[str]] = {}
         url_results: dict[str, url_service.UrlReadResult] = {}
-        # One wall clock per question, shared by every auto-fetch burst.
-        auto_fetch_budget = auto_fetch.AutoFetchBudget(
-            self.settings.web_auto_fetch_budget_sec
+        # One request-scoped coordinator per question: a monotonic deadline, an
+        # atomic source reservation and a read semaphore shared by every burst.
+        auto_fetch_coordinator = auto_fetch.AutoFetchCoordinator(
+            max_sources=self.settings.web_auto_fetch_max_sources,
+            budget_sec=self.settings.web_auto_fetch_budget_sec,
         )
         user_supplied_url = bool(_request_urls(request))
 
@@ -202,85 +217,99 @@ class Orchestrator:
             url_cache[key] = payload
             return payload
 
-        async def auto_fetch_evidence(query: str, results: list[dict], payload: str) -> str:
-            """Read top-ranked sources when both V2 flags allow it and budget lasts."""
+        async def auto_fetch_evidence(query: str, targets: list[str], payload: str) -> str:
+            """Read reserved sources, bounded by the shared deadline and semaphore."""
             nonlocal searched
             settings = self.settings
-            if not auto_fetch.auto_fetch_active(settings):
-                return ""
-            if auto_fetch_budget.exhausted or user_supplied_url:
-                return ""
-            targets = auto_fetch.select_targets(
-                query,
-                results,
-                limit=settings.web_auto_fetch_max_sources,
-                already_fetched=[key[0] for key in url_cache],
-            )
-            if not targets:
-                return ""
-            started = asyncio.get_running_loop().time()
 
             async def read(target: str) -> dict:
-                if auto_fetch_budget.exhausted:
-                    return {
-                        "url": target,
-                        "ok": False,
-                        "text": "",
-                        "reason": "hết ngân sách auto-fetch",
-                    }
+                async with auto_fetch_coordinator.slot():
+                    remaining = auto_fetch_coordinator.remaining
+                    if remaining <= 0.0:
+                        return {
+                            "url": target,
+                            "ok": False,
+                            "text": "",
+                            "reason": "hết ngân sách auto-fetch",
+                        }
 
-                async def perform() -> str:
-                    nonlocal searched
-                    result = await asyncio.wait_for(
-                        url_service.read_url(
+                    async def perform() -> str:
+                        nonlocal searched
+                        result = await url_service.read_url(
                             target,
                             settings,
                             "auto",
                             operations=operations,
                             query=query,
-                        ),
-                        timeout=max(0.05, auto_fetch_budget.remaining),
-                    )
-                    url_results[target] = result
-                    if result.ok:
-                        searched = True
-                        sources.append(
-                            {"title": result.source_url, "url": result.source_url, "snippet": ""}
                         )
-                    return f"Nội dung URL {result.source_url}:\n{result.text}"
+                        url_results[target] = result
+                        if result.ok:
+                            searched = True
+                            sources.append(
+                                {
+                                    "title": result.source_url,
+                                    "url": result.source_url,
+                                    "snippet": "",
+                                }
+                            )
+                        return f"Nội dung URL {result.source_url}:\n{result.text}"
 
-                try:
-                    await cached_read((target, "auto"), perform)
-                except asyncio.CancelledError:
-                    raise
-                except (TimeoutError, asyncio.TimeoutError):
+                    try:
+                        await asyncio.wait_for(
+                            cached_read((target, "auto"), perform),
+                            timeout=max(0.05, remaining),
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except (TimeoutError, asyncio.TimeoutError):
+                        return {
+                            "url": target,
+                            "ok": False,
+                            "text": "",
+                            "reason": "quá thời gian auto-fetch",
+                        }
+                    except Exception as exc:  # noqa: BLE001 - report, never claim success
+                        return {
+                            "url": target,
+                            "ok": False,
+                            "text": "",
+                            "reason": type(exc).__name__,
+                        }
+                    result = url_results.get(target)
+                    if result is None:
+                        return {
+                            "url": target,
+                            "ok": False,
+                            "text": "",
+                            "reason": "không có kết quả đọc trang",
+                        }
                     return {
                         "url": target,
-                        "ok": False,
-                        "text": "",
-                        "reason": "quá thời gian auto-fetch",
+                        "ok": result.ok,
+                        "text": result.text,
+                        "reason": "",
                     }
-                except Exception as exc:  # noqa: BLE001 - report, never claim success
-                    return {
-                        "url": target,
-                        "ok": False,
-                        "text": "",
-                        "reason": type(exc).__name__,
-                    }
-                result = url_results.get(target)
-                if result is None:
-                    return {
-                        "url": target,
-                        "ok": False,
-                        "text": "",
-                        "reason": "không có kết quả đọc trang",
-                    }
-                return {"url": target, "ok": result.ok, "text": result.text, "reason": ""}
 
             entries = await asyncio.gather(*(read(target) for target in targets))
-            auto_fetch_budget.spend(asyncio.get_running_loop().time() - started)
-            room = max(0, _TOOL_OUTPUT_CAP - len(payload) - 64)
+            room = max(
+                AUTO_FETCH_EVIDENCE_MIN_CHARS,
+                _TOOL_OUTPUT_CAP - len(payload) - 64,
+            )
             return auto_fetch.pack_evidence(list(entries), max_chars=room)
+
+        async def reserve_auto_fetch_targets(query: str, results: list[dict]) -> list[str]:
+            """Select and atomically reserve URLs for this burst, or nothing."""
+            if not auto_fetch.auto_fetch_active(self.settings):
+                return []
+            if user_supplied_url or auto_fetch_coordinator.exhausted:
+                return []
+            candidates = auto_fetch.select_targets(
+                query,
+                results,
+                limit=auto_fetch_coordinator.max_sources,
+                already_fetched=[key[0] for key in url_cache],
+            )
+            return await auto_fetch_coordinator.reserve(candidates)
 
         async def tool_executor(name: str, args: dict) -> str:
             nonlocal searched
@@ -293,8 +322,18 @@ class Orchestrator:
                 results = await search_service.search(q, self.settings, operations=operations)
                 sources.extend(results)
                 searched = True
-                payload = _format_search_results(q, results)
-                extra = await auto_fetch_evidence(q, results, payload)
+                # Reserve the evidence room before rendering so an over-long
+                # listing can never starve the auto-fetch evidence. Without an
+                # auto-fetch target the listing may use the whole tool budget.
+                targets = await reserve_auto_fetch_targets(q, results)
+                payload = _format_search_results(
+                    q,
+                    results,
+                    max_chars=SEARCH_LISTING_MAX_CHARS if targets else _TOOL_OUTPUT_CAP,
+                )
+                if not targets:
+                    return payload
+                extra = await auto_fetch_evidence(q, targets, payload)
                 return f"{payload}\n{extra}" if extra else payload
             if name == "image_search":
                 q = str(args.get("query") or "").strip()[:300]
@@ -352,7 +391,13 @@ class Orchestrator:
 
         try:
             result = await self.router.complete(
-                ChatRequest(messages=tuple(messages), tools=TOOLS),
+                ChatRequest(
+                    messages=tuple(messages),
+                    tools=TOOLS,
+                    synthesis_mode=(
+                        "v2" if self.settings.web_evidence_v2_enabled else "v1"
+                    ),
+                ),
                 tool_executor,
                 requires_vision=request.requires_vision,
                 image_count=len(request.images),
@@ -387,7 +432,15 @@ def _no_search_results(query: str) -> str:
     )
 
 
-def _format_search_results(query: str, results: list[dict]) -> str:
+def _format_search_results(
+    query: str, results: list[dict], *, max_chars: int = _TOOL_OUTPUT_CAP
+) -> str:
+    """Render the search listing inside ``max_chars``, keeping URLs intact.
+
+    Titles and snippets are attacker-controlled page metadata: they are defused
+    (so a snippet cannot forge a system marker) and bounded, while the URL and
+    the source label are always preserved for attribution.
+    """
     if not results:
         return _no_search_results(query)
     lines = [f'Kết quả tìm kiếm cho "{query}":']
@@ -398,14 +451,21 @@ def _format_search_results(query: str, results: list[dict]) -> str:
         url = item.get("url") or ""
         if url and not str(url).startswith(("http://", "https://")):
             continue
+        title = neutralize_untrusted(str(item.get("title") or "(không tiêu đề)"))
+        title = title[:_SEARCH_TITLE_LIMIT]
+        snippet = neutralize_untrusted(str(item.get("snippet") or ""))
+        prefix = f"{n + 1}. {title}\n   URL: {url}\n   "
+        used = len("\n".join(lines))
+        room = max_chars - used - len(_SEARCH_HINT) - 2
+        if room <= len(prefix):
+            break
+        body = snippet[: min(_SEARCH_SNIPPET_LIMIT, room - len(prefix))].rstrip()
+        lines.append((prefix + body).rstrip())
         n += 1
-        title = item.get("title") or "(không tiêu đề)"
-        snippet = item.get("snippet") or ""
-        lines.append(f"{n}. {title}\n   URL: {url}\n   {snippet[:300]}")
     if n == 0:
         return _no_search_results(query)
-    lines.append("Hãy dựa vào các kết quả trên để trả lời; nếu không đủ thì nói rõ.")
-    return "\n".join(lines)
+    lines.append(_SEARCH_HINT)
+    return "\n".join(lines)[:max_chars]
 
 
 def _format_image_results(query: str, results: list[dict]) -> str:

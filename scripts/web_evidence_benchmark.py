@@ -8,7 +8,10 @@ execute. Three arms are compared on the same fixture and fetch policy:
 ``chars`` V1 with only the character limits raised (simulated configuration);
 ``v2``    adaptive evidence selection + source ranking under the V2 flag.
 
-The extractive answer/citation judge is a *proxy*, not an evaluation of an LLM.
+``--auto-fetch`` instead drives ``Orchestrator.ask`` with both V2 flags on and an
+intercepted reader, recording network reads, source count, concurrency and
+evidence delivery. The extractive answer/citation judge is a *proxy*, not an
+evaluation of an LLM.
 """
 
 from __future__ import annotations
@@ -27,9 +30,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from app.ai.contracts import ChatMessage, TextPart
+from app.ai.router import CompletionResult
 from app.ai.synthesis import MAX_SYNTHESIS_EVIDENCE_CHARS, build_fresh_synthesis_messages
 from app.config import Settings
-from app.core.orchestrator import _format_search_results
+from app.core.orchestrator import Orchestrator, _format_search_results
 from app.search import reader, service, url_service
 
 ROOT = Path(__file__).parents[1]
@@ -86,17 +90,178 @@ def load_cases(path: Path = FIXTURE) -> list[dict]:
     return cases
 
 
+class _SearchThenAnswer:
+    """Minimal router that issues exactly one ``web_search`` and answers."""
+
+    def __init__(self, query: str) -> None:
+        self.query = query
+        self.output = ""
+
+    async def complete(self, request, tool_executor, **kwargs):
+        self.output = await tool_executor("web_search", {"query": self.query})
+        return CompletionResult("answer", "offline-benchmark", ())
+
+
+async def replay_auto_fetch(
+    case: dict, *, budget_sec: float = 20.0, fixture: Path = FIXTURE
+) -> dict:
+    """Drive ``Orchestrator.ask`` with conditional auto-fetch enabled.
+
+    Search and HTTP are intercepted, but the real routing, URL service, reader,
+    auto-fetch coordinator and packing run. The recorded metrics show what the
+    model-visible ``web_search`` output actually contains, how many network reads
+    happened, the peak read concurrency and whether evidence was delivered.
+    """
+    settings = Settings(
+        _env_file=None,
+        search_backend="auto",
+        searxng_url="https://searx.example.org",
+        web_evidence_v2_enabled=True,
+        web_auto_fetch_enabled=True,
+        web_auto_fetch_budget_sec=budget_sec,
+    )
+    pages = {item["url"]: item for item in case["sources"]}
+    searx = AsyncMock(return_value=case["search_results"])
+    ddgs = AsyncMock(return_value=[])
+    reads: list[str] = []
+    active = 0
+    peak = 0
+
+    async def fake_fetch(_client, url: str, max_bytes: int = reader.MAX_BYTES):
+        nonlocal active, peak
+        reads.append(url)
+        active += 1
+        peak = max(peak, active)
+        try:
+            if url.startswith("https://r.jina.ai/") or url not in pages:
+                raise reader._FetchError("offline fixture: unavailable")
+            data = pages[url]["html"].encode("utf-8")
+            if len(data) > max_bytes:
+                raise reader._FetchError("too large")
+            await asyncio.sleep(0)
+            return reader._FetchResult(data, "utf-8")
+        finally:
+            active -= 1
+
+    router = _SearchThenAnswer(case["query"])
+    start = time.perf_counter()
+    with ExitStack() as stack:
+        stack.enter_context(patch("app.search.searxng_backend.search_searxng", new=searx))
+        stack.enter_context(patch("app.search.ddgs_backend.search_ddgs", new=ddgs))
+        stack.enter_context(patch("app.search.reader._fetch_limited", new=fake_fetch))
+        answer = await Orchestrator(settings, router).ask(case["query"])
+    elapsed = (time.perf_counter() - start) * 1000
+
+    output = router.output
+    evidence_expected = case["expected_evidence"]
+    delivered_phrases = [phrase for phrase in evidence_expected if phrase in output]
+    auto_fetched = [url for url in reads if "r.jina.ai" not in url]
+    return {
+        "id": case["id"],
+        "category": case["category"],
+        "search_results": len(case["search_results"]),
+        "auto_fetch_targets": len(set(auto_fetched)),
+        "network_requests": len(reads),
+        "peak_concurrency": peak,
+        "read_success": sum(
+            1 for source in answer.sources if source["url"] in pages
+        ),
+        "searched": answer.searched,
+        "auto_fetch_block": "[WEB AUTO-FETCH" in output,
+        "output_chars": len(output),
+        "output_within_cap": len(output) <= 6000,
+        "evidence_expected_total": len(evidence_expected),
+        "evidence_delivered": len(delivered_phrases),
+        "estimated_request_tokens": (len(output) + 3) // 4,
+        "elapsed_ms": round(elapsed, 3),
+    }
+
+
+async def evaluate_auto_fetch(
+    cases: list[dict] | None = None,
+    *,
+    budget_sec: float = 20.0,
+    fixture: Path = FIXTURE,
+) -> dict:
+    """Aggregate the conditional auto-fetch replay into a report."""
+    cases = cases if cases is not None else load_cases(fixture)
+    rows = [await replay_auto_fetch(case, budget_sec=budget_sec, fixture=fixture) for case in cases]
+    evidence_total = sum(row["evidence_expected_total"] for row in rows)
+    return {
+        "pipeline": "V2-conditional-auto-fetch",
+        "case_count": len(rows),
+        "category_counts": dict(Counter(row["category"] for row in rows)),
+        "fixture": fixture.name,
+        "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+        "auto_fetch_budget_sec": budget_sec,
+        "evaluation_method": (
+            "offline mock router/reader driving Orchestrator.ask with both flags on"
+        ),
+        "network_requests": sum(row["network_requests"] for row in rows),
+        "metrics": {
+            "cases_with_auto_fetch": sum(row["auto_fetch_block"] for row in rows),
+            "auto_fetch_targets_mean": round(
+                sum(row["auto_fetch_targets"] for row in rows) / len(rows), 3
+            ),
+            "auto_fetch_targets_max": max(row["auto_fetch_targets"] for row in rows),
+            "peak_concurrency_max": max(row["peak_concurrency"] for row in rows),
+            "read_success_rate": round(
+                sum(bool(row["read_success"]) for row in rows) / len(rows), 4
+            ),
+            "evidence_delivery_rate": round(
+                sum(row["evidence_delivered"] for row in rows) / evidence_total, 4
+            )
+            if evidence_total
+            else None,
+            "output_within_cap_rate": round(
+                sum(row["output_within_cap"] for row in rows) / len(rows), 4
+            ),
+            "request_tokens_median_estimate": statistics.median(
+                row["estimated_request_tokens"] for row in rows
+            ),
+            "elapsed_ms": {
+                "p50": _percentile([row["elapsed_ms"] for row in rows], 50),
+                "p95": _percentile([row["elapsed_ms"] for row in rows], 95),
+            },
+        },
+        "invariants": {
+            "max_two_sources": all(row["auto_fetch_targets"] <= 2 for row in rows),
+            "max_two_concurrent_reads": all(row["peak_concurrency"] <= 2 for row in rows),
+            "output_within_cap": all(row["output_within_cap"] for row in rows),
+        },
+        "not_measured": [
+            "real_model_answer_accuracy",
+            "human_checked_citation_precision",
+            "provider_request_tokens",
+            "production_network_latency",
+            "live_rollout_safety",
+        ],
+        "cases": rows,
+    }
+
+
 def _percentile(samples: list[float], percentile: float) -> float:
     ordered = sorted(samples)
     return round(ordered[max(0, math.ceil(len(ordered) * percentile / 100) - 1)], 3)
 
 
-async def replay(case: dict, *, config: str = "v1", fixture: Path = FIXTURE) -> dict:
+async def replay(
+    case: dict,
+    *,
+    config: str = "v1",
+    fixture: Path = FIXTURE,
+    include_non_web: bool = True,
+) -> dict:
     """Replay fixed policy: search eight, read first two, pack evidence.
 
     The real app lets the LLM choose which URLs to fetch. This deterministic
     fixed policy isolates retrieval, extraction and packing quality. Conditional
     auto-fetch is never enabled here, so it stays unmeasured offline.
+
+    ``include_non_web=False`` reproduces the PR1/PR2 harness, which packed only
+    the search listing and the two page reads (three outputs). PR4 added a
+    fourth, non-web tool output to measure non-web preservation, which changes
+    the equal-split V1 share and therefore the estimated median token count.
     """
     assert config in CONFIGS
     settings = Settings(
@@ -156,15 +321,20 @@ async def replay(case: dict, *, config: str = "v1", fixture: Path = FIXTURE) -> 
                 citations.append(read.source_url)
         durations["fetch_ms"] = (time.perf_counter() - start) * 1000
 
-    outputs.append(NON_WEB_TOOL_OUTPUT)
+    if include_non_web:
+        outputs.append(NON_WEB_TOOL_OUTPUT)
     synthesis_cap = (
         CHARS_ONLY_SYNTHESIS_LIMIT if config == "chars" else MAX_SYNTHESIS_EVIDENCE_CHARS
     )
+    # Arm C uses the adaptive V2 packer; arms A and B keep the historical V1
+    # equal-split packer so the V1 baseline stays comparable across PRs.
+    synthesis_mode = "v2" if config == "v2" else "v1"
     start = time.perf_counter()
     packed = build_fresh_synthesis_messages(
         [ChatMessage("user", (TextPart(case["query"]),))],
         outputs,
         max_evidence_chars=synthesis_cap,
+        mode=synthesis_mode,
     )
     synthesis_text = packed[-1].parts[0].text if packed else ""
     durations["synthesis_ms"] = (time.perf_counter() - start) * 1000
@@ -183,7 +353,7 @@ async def replay(case: dict, *, config: str = "v1", fixture: Path = FIXTURE) -> 
 
     # Evidence recall counts phrases in successfully fetched page output only,
     # before model synthesis. Unknown questions have no gold evidence recall.
-    fetched = "\n".join(outputs[1:-1])
+    fetched = "\n".join(outputs[1 : -1] if include_non_web else outputs[1:])
     evidence_expected = case["expected_evidence"]
     evidence_hits = sum(phrase in fetched for phrase in evidence_expected)
     # Packing recall counts the same phrases inside the synthesis context that
@@ -205,7 +375,9 @@ async def replay(case: dict, *, config: str = "v1", fixture: Path = FIXTURE) -> 
         "evidence_total": len(evidence_expected),
         "packed_evidence_hits": packed_hits,
         "packed_label_count": len(LABEL_RE.findall(synthesis_text)),
-        "non_web_output_preserved": NON_WEB_MARKER in synthesis_text,
+        "non_web_output_preserved": (
+            NON_WEB_MARKER in synthesis_text if include_non_web else None
+        ),
         "answer_correct_proxy": accurate,
         "cited_claims_proxy": len(citations),
         "supported_citations_proxy": supported_citations,
@@ -223,9 +395,13 @@ async def evaluate(
     *,
     config: str = "v1",
     fixture: Path = FIXTURE,
+    include_non_web: bool = True,
 ) -> dict:
     cases = cases if cases is not None else load_cases(fixture)
-    rows = [await replay(case, config=config, fixture=fixture) for case in cases]
+    rows = [
+        await replay(case, config=config, fixture=fixture, include_non_web=include_non_web)
+        for case in cases
+    ]
 
     def totals(key: str) -> int:
         return sum(row[key] for row in rows)
@@ -254,6 +430,7 @@ async def evaluate(
         "category_counts": dict(Counter(row["category"] for row in rows)),
         "fixture": fixture.name,
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+        "harness": "pr4" if include_non_web else "pr1",
         "evaluation_method": (
             "offline intercepted search/HTTP; fixed top-two fetch; extractive proxy"
         ),
@@ -272,8 +449,10 @@ async def evaluate(
             else None,
             "synthesis_labeled_excerpt_count": totals("packed_label_count"),
             "synthesis_non_web_preservation_rate": round(
-                sum(row["non_web_output_preserved"] for row in rows) / len(rows), 4
-            ),
+                sum(bool(row["non_web_output_preserved"]) for row in rows) / len(rows), 4
+            )
+            if include_non_web
+            else None,
             "answer_accuracy_extractive_proxy": round(
                 totals("answer_correct_proxy") / len(rows), 4
             ),
@@ -323,10 +502,36 @@ def main() -> None:
     )
     parser.add_argument("--v2", action="store_true", help="Alias for --config v2")
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
+    parser.add_argument(
+        "--auto-fetch",
+        action="store_true",
+        help="replay conditional auto-fetch through Orchestrator.ask",
+    )
+    parser.add_argument(
+        "--auto-fetch-budget-sec", type=float, default=20.0
+    )
+    parser.add_argument(
+        "--legacy-harness",
+        action="store_true",
+        help="pack only three outputs, reproducing the PR1/PR2 token baseline",
+    )
     args = parser.parse_args()
     config = "v2" if args.v2 else args.config
     fixture = args.fixture
-    report = asyncio.run(evaluate(config=config, fixture=fixture))
+    if args.auto_fetch:
+        report = asyncio.run(
+            evaluate_auto_fetch(
+                budget_sec=args.auto_fetch_budget_sec, fixture=fixture
+            )
+        )
+    else:
+        report = asyncio.run(
+            evaluate(
+                config=config,
+                fixture=fixture,
+                include_non_web=not args.legacy_harness,
+            )
+        )
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(

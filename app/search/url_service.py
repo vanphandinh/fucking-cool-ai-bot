@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from ..config import Settings
 from . import crawl4ai_client, reader, x_reader
+from .evidence import neutralize_untrusted
 
 logger = logging.getLogger(__name__)
 _EMPTY_EVIDENCE = ("Không tìm được nội dung bài viết.", "Không thể đóng gói chứng cứ:")
@@ -52,7 +53,7 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
         )
         if specialized is not None:
             return UrlReadResult(
-                specialized.text,
+                neutralize_untrusted(specialized.text),
                 specialized.canonical_url,
                 specialized.backend,
                 True,
@@ -88,7 +89,9 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
                         return UrlReadResult(selected, crawl.source_url, "crawl4ai", True)
                     logger.warning("Crawl4AI returned no usable evidence; fallback generic reader")
                 else:
-                    return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
+                    return UrlReadResult(
+                        neutralize_untrusted(crawl.text), crawl.source_url, "crawl4ai", True
+                    )
             else:
                 logger.warning(
                     "Crawl4AI URL read failed (%s); fallback generic reader",

@@ -431,7 +431,9 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
                         article[:max_extracted_chars], url, query,
                         truncated=len(article) > max_extracted_chars,
                     )
-                return article[:MAX_CHARS]
+                from .evidence import neutralize_untrusted
+
+                return neutralize_untrusted(article[:MAX_CHARS])
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             logger.debug("Jina Reader lỗi (chuyển fallback): %s", type(exc).__name__)
         except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
@@ -458,7 +460,9 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
                     result.body, result.encoding, max_extracted_chars,
                 )
                 return select_evidence(article, url, query, truncated=truncated)
-            return await _extract_html(result.body, result.encoding)
+            from .evidence import neutralize_untrusted
+
+            return neutralize_untrusted(await _extract_html(result.body, result.encoding))
         except _FetchError as exc:
             return f"Không tải được trang: {exc}"
         except Exception as exc:  # noqa: BLE001 — không lộ lỗi parser trong tool result

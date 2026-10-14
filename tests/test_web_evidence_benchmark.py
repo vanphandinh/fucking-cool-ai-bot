@@ -23,8 +23,10 @@ from scripts.web_evidence_benchmark import (
     CONFIGS,
     FIXTURE_CATEGORIES,
     evaluate,
+    evaluate_auto_fetch,
     load_cases,
     replay,
+    replay_auto_fetch,
 )
 
 CATEGORIES = FIXTURE_CATEGORIES["cases.json"]
@@ -160,6 +162,56 @@ class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["metrics"]["synthesis_non_web_preservation_rate"], 1.0)
         self.assertIn("real_model_answer_accuracy", first["not_measured"])
         self.assertIn("conditional_auto_fetch", first["not_measured"])
+
+
+class HarnessTokenBaselineTests(unittest.IsolatedAsyncioTestCase):
+    async def test_v1_token_delta_is_a_harness_artifact(self) -> None:
+        """The 728 -> 743 median shift comes from the added non-web output.
+
+        The production V1 packer is byte-for-byte the pre-PR4 one; only the
+        benchmark context grew a fourth (non-web) tool output so non-web
+        preservation could be measured, which changes the equal-split share.
+        """
+        cases = load_cases()
+        legacy = await evaluate(cases, config="v1", include_non_web=False)
+        current = await evaluate(cases, config="v1", include_non_web=True)
+        self.assertEqual(legacy["harness"], "pr1")
+        self.assertEqual(current["harness"], "pr4")
+        self.assertEqual(
+            legacy["metrics"]["request_tokens_median_estimate"], 728.0
+        )
+        self.assertEqual(
+            current["metrics"]["request_tokens_median_estimate"], 743.0
+        )
+        self.assertEqual(
+            legacy["metrics"]["evidence_recall"], current["metrics"]["evidence_recall"]
+        )
+
+
+class AutoFetchReplayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_fetch_replay_bounds_sources_concurrency_and_output(self) -> None:
+        cases = load_cases()
+        report = await evaluate_auto_fetch(cases)
+        self.assertEqual(report["case_count"], 40)
+        self.assertEqual(
+            report["fixture_sha256"],
+            hashlib.sha256(Path(DESTINATION).read_bytes()).hexdigest(),
+        )
+        self.assertGreater(report["network_requests"], 0)
+        self.assertTrue(report["invariants"]["max_two_sources"])
+        self.assertTrue(report["invariants"]["max_two_concurrent_reads"])
+        self.assertTrue(report["invariants"]["output_within_cap"])
+        self.assertEqual(report["metrics"]["peak_concurrency_max"], 2)
+        self.assertLessEqual(report["metrics"]["auto_fetch_targets_max"], 2)
+        self.assertGreater(report["metrics"]["cases_with_auto_fetch"], 0)
+        self.assertNotIn("conditional_auto_fetch", report["not_measured"])
+
+    async def test_auto_fetch_replay_row_shape(self) -> None:
+        case = load_cases()[0]
+        row = await replay_auto_fetch(case)
+        self.assertLessEqual(row["auto_fetch_targets"], 2)
+        self.assertLessEqual(row["peak_concurrency"], 2)
+        self.assertTrue(row["output_within_cap"])
 
 
 class ThreeArmReplayTests(unittest.IsolatedAsyncioTestCase):

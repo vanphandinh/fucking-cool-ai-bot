@@ -48,6 +48,7 @@ def pack(outputs: list[str], *, query: str = QUERY, cap: int = MAX_SYNTHESIS_EVI
         [ChatMessage("user", (TextPart(query),))],
         outputs,
         max_evidence_chars=cap,
+        mode="v2",
     )
     return _message_text(messages[-1])
 
