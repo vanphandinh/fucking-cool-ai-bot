@@ -173,8 +173,9 @@ Khi bật, V2 thay đổi bốn điểm:
 
 1. **Evidence extraction:** nội dung trang được parse bounded, bỏ chrome/navigation, chọn chunk liên quan và giữ label `[SOURCE n / CHUNK m]` + URL thay vì cắt 8.000 ký tự đầu tiên.
 2. **Source ranking:** kết quả web được dedupe theo canonical URL và xếp theo lexical relevance (title trọng số 2, snippet 1) kèm đa dạng domain; `SEARCH_BACKEND=auto` chỉ chấp nhận SearXNG sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20.
-3. **Conditional auto-fetch:** chỉ khi cả hai flag V2 bật; tối đa 2 nguồn, song song <= 2, tổng budget 20 giây cho cả câu hỏi và bị chặn tiếp bởi budget question/job; ưu tiên URL người dùng, cache theo canonical URL trong request, nguồn không đọc được được báo đúng trạng thái.
-4. **Synthesis packing:** bằng chứng web được đóng gói theo độ liên quan và đa dạng nguồn, giữ URL/chunk label, tổng vẫn **<= 12.000 ký tự**; output của tool không thuộc web không bị bỏ.
+3. **Conditional auto-fetch:** chỉ khi cả hai flag V2 bật; tối đa 2 nguồn **cho toàn câu hỏi** nhờ một coordinator request-scoped (deadline monotonic + reservation canonical URL bằng lock + semaphore 2 lượt đọc song song), nên nhiều `web_search` đồng thời không thể vượt cap; tổng budget 20 giây cho cả câu hỏi và bị chặn tiếp bởi budget question/job; ưu tiên URL người dùng, cache theo canonical URL trong request, nguồn không đọc được được báo đúng trạng thái.
+4. **Synthesis packing:** bằng chứng web được đóng gói theo độ liên quan và đa dạng nguồn, giữ URL/chunk label, tổng vẫn **<= 12.000 ký tự**; output của tool không thuộc web không bị bỏ. `synthesis_mode` là request-scoped và **mặc định `v1`** (chia đều như trước PR4); `v2` mới dùng packing thích ứng. Search listing bị giới hạn <= 3.600 ký tự khi auto-fetch để dành tối thiểu 2.400 ký tự cho bằng chứng.
+5. **Framing hardening:** delimiter hệ thống trong nội dung không đáng tin bị vô hiệu hóa, nên trang độc hại không thể tạo marker đóng/mở khung giả hoặc nhãn nguồn giả.
 
 Rollback tức thời: đặt `WEB_EVIDENCE_V2_ENABLED=0` (và/hoặc `WEB_AUTO_FETCH_ENABLED=0`) rồi recreate bot. Không thay đổi image search, X/Twitter resolver, giới hạn tải **2 MiB**, cap **6.000 ký tự/tool**, cap **12.000 ký tự/synthesis**, SSRF/DNS pinning/redirect validation, timeout/cancellation, cache/circuit breaker và Crawl4AI isolation.
 
@@ -184,9 +185,10 @@ Benchmark offline tái lập bằng ba cấu hình trên cùng fixture 100 case:
 python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json
 python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json
 python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json
+python -m scripts.web_evidence_benchmark --auto-fetch
 ```
 
-Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production.
+Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Báo cáo kết quả triển khai và nghiệm thu ở [`docs/WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md`](docs/WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md); prompt để model khác kiểm chứng độc lập ở [`docs/WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md`](docs/WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production.
 
 ## Cài đặt nhanh
 

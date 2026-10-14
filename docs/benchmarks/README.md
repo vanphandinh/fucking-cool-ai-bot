@@ -18,6 +18,10 @@ python -m scripts.web_evidence_benchmark --config v2 --output docs/benchmarks/we
 python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v1.json
 python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_chars.json
 python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v2.json
+# conditional auto-fetch replay through Orchestrator.ask (mock router + reader)
+python -m scripts.web_evidence_benchmark --auto-fetch --output docs/benchmarks/web_evidence_auto_fetch.json
+# PR1/PR2 harness shape (three outputs) for the historical V1 token baseline
+python -m scripts.web_evidence_benchmark --config v1 --legacy-harness --output docs/benchmarks/web_evidence_v1_legacy_harness.json
 python -m scripts.generate_web_evidence_fixtures
 ```
 
@@ -43,6 +47,12 @@ The token metric is a character/4 **estimate**, not provider token usage.
 `source_recall_at_8` checks labeled source URLs among search results;
 `evidence_recall` checks literal labeled evidence in successfully fetched page
 outputs. These measures are distinct: a discoverable URL may yield no evidence.
+
+Arm C (`--config v2`) packs with `synthesis_mode="v2"`, so a fresh 40-case
+`--config v2` run matches the PR4 `web_evidence_100_v2.json` semantics rather
+than the historical `web_evidence_v2_pr2.json` / `web_evidence_v2_pr3.json`
+files, which predate the request-scoped synthesis-mode split and whose recorded
+numbers are kept unchanged. Arms A and B use `synthesis_mode="v1"`.
 
 `answer_accuracy_extractive_proxy`, `citation_precision_extractive_proxy`,
 and `unsupported_claim_rate_extractive_proxy` use a deterministic synthetic
@@ -137,6 +147,60 @@ All accuracy/citation numbers remain **extractive proxy** measurements. They do
 not establish model answer quality, human-verified citation precision,
 conditional auto-fetch behaviour, provider tokens or production latency; those
 remain `NOT MEASURED` in [`../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md`](../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md).
+
+## Conditional auto-fetch offline replay (2026-10-14 hardening)
+
+`--auto-fetch` is a second, separate replay: instead of a fixed first-two-source
+policy it drives the real `Orchestrator.ask` with a mock router that issues one
+`web_search`, a mock search backend returning the case's eight hits, and an
+intercepted `reader._fetch_limited` that serves the case snapshots. Both V2
+flags are on, so the request-scoped auto-fetch coordinator, URL service, reader
+and packing all execute for real. Report:
+`docs/benchmarks/web_evidence_auto_fetch.json`.
+
+| Measurement (40 cases) | Value |
+| --- | ---: |
+| Network page reads | 90 |
+| Cases with an auto-fetch block | 23 / 40 |
+| Auto-fetch targets, mean / max | 1.125 / 2 |
+| Peak read concurrency | 2 |
+| Read success rate | 0.9 |
+| Evidence delivery rate (expected phrases in the tool output) | 0.383 |
+| Tool output within 6,000 characters | 1.0 |
+| Estimated request tokens, median | 435.5 |
+| Offline elapsed p50 / p95 | 519.4 / 553.9 ms |
+
+The report carries machine-checked `invariants`: `max_two_sources`,
+`max_two_concurrent_reads` and `output_within_cap` are all `true`. The evidence
+numbers are still **proxy/offline**: no model is called and no live latency is
+measured, so `real_model_answer_accuracy`, `human_checked_citation_precision`,
+`provider_request_tokens`, `production_network_latency` and
+`live_rollout_safety` remain `NOT MEASURED`.
+
+## V1 token-estimate investigation: 728 -> 743
+
+The historical V1 baseline reported `request_tokens_median_estimate` **728**;
+after PR4 the same 40-case V1 arm reported **743**. This is a **benchmark
+harness artifact, not a production regression**:
+
+1. PR1/PR2 packed **three** outputs per case (the search listing plus the two
+   page reads).
+2. PR4 appended a fourth, synthetic **non-web** tool output
+   (`NON_WEB_TOOL_OUTPUT`) so that non-web preservation could be measured. The
+   V1 equal-split packer divides the body budget by the number of outputs, so a
+   fourth output changes each share and the total packed length.
+3. The production V1 packer itself is unchanged: `synthesis_mode="v1"` calls
+   `_compact_tool_outputs_v1`, a byte-for-byte copy of the pre-PR4 algorithm
+   (asserted in `tests/test_web_evidence_v2_hardening.py`).
+
+Reproduced deterministically by `--legacy-harness`, which restores the
+three-output shape. `docs/benchmarks/web_evidence_v1_legacy_harness.json`
+reproduces every shared metric of the committed baseline exactly:
+`request_tokens_median_estimate` 728.0, `evidence_recall` 0.4894,
+`answer_accuracy_extractive_proxy` 0.475, `source_recall_at_8` 0.8627,
+`citation_precision_extractive_proxy` 1.0,
+`unsupported_claim_rate_extractive_proxy` 0.0. `tests/test_web_evidence_benchmark.py`
+asserts both medians (728.0 legacy, 743.0 current) so the delta stays explained.
 
 ## PR2 offline comparison (2026-10-14)
 

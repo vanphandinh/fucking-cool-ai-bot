@@ -12,6 +12,11 @@ Legend used in section E: **PASS (offline)** = the criterion was met on the
 synthetic offline fixture and still needs live confirmation; **NOT MEASURED** =
 no valid evidence exists yet; nothing here is upgraded to `PASS`.
 
+**See also:** [`WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md`](WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md)
+— báo cáo kết quả triển khai sau hardening (FIX-01…FIX-08) — và
+[`WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md`](WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md)
+— prompt để model khác kiểm chứng độc lập.
+
 ## A. Implementation status
 
 | Stage | Status | Notes |
@@ -290,6 +295,60 @@ and the rollout evidence are missing.
 7. **Known limits, not defects:** the extractive judge's citation/unsupported
   numbers; token figures are estimates; `MAX_RESULTS=8`, 6,000/tool and
   12,000/synthesis remain untouched by design.
+
+## H. Hardening addendum (2026-10-14, after the independent review)
+
+Eight defects found by the independent review were fixed on top of `e7c7bb0`.
+No assertion was weakened, no test skipped, and neither the 6,000/tool nor the
+12,000/synthesis cap was raised. Both feature flags still default to `false`.
+
+| Fix | Defect | Resolution | Before -> after evidence |
+| --- | --- | --- | --- |
+| FIX-01 | Concurrent `web_search` bursts exceeded 2 sources / 2 reads | request-scoped `AutoFetchCoordinator` (monotonic deadline, atomic URL reservation under a lock, semaphore 2) | 4 reads, peak 4 -> 2 reads, peak 2 |
+| FIX-02 | A page could inject a fake closing frame or a fake source label | `evidence.neutralize_untrusted` + `defuse_frame_markers` applied at reader/url_service, selection, packing and the search listing | closing marker and fake label present -> absent; frame count stays exactly 1 |
+| FIX-03 | Turning V2 off did not restore V1 synthesis | `ChatRequest.synthesis_mode` (default `v1`, request-scoped) through `AIProviderRouter`; `_compact_tool_outputs_v1` is the pre-PR4 algorithm | default now byte-for-byte equal to the historical packer |
+| FIX-04 | A strong DDGS candidate was dropped before ranking | merge a `limit * 3` candidate pool before ranking, then truncate to 8 | strong DDGS present=False -> present in top 8 |
+| FIX-05 | A long search listing starved the auto-fetch evidence | reserve targets before rendering; listing <= 3,600 chars and >= 2,400 chars reserved for evidence when fetching | payload 10,314 chars / no evidence -> evidence delivered, output <= 6,000 |
+| FIX-06 | No adversarial coverage for cancellation, job budget, cleanup | 26 new tests including cancellation task-leak and `active_operations == 0` | all pass |
+| FIX-07 | Benchmark did not exercise conditional auto-fetch | `--auto-fetch` drives `Orchestrator.ask` through a mock router/reader and writes `docs/benchmarks/web_evidence_auto_fetch.json` | 40 cases, 90 reads, max 2 sources, peak 2, output within cap 1.0 |
+| FIX-08 | 40-case V1 median token estimate moved 728 -> 743 | diagnosed as a benchmark-harness artifact (PR4 added a fourth, non-web tool output); `--legacy-harness` reproduces the committed baseline exactly | legacy 728.0 vs current 743.0, both asserted |
+| FIX-02b | Re-spaced / loosely-bracketed look-alikes (`[/DỮ-LIỆU NGHIÊN CỨU]`, `[/DỮ.LIỆU.NGHIÊN.CỨU]`, `[/DỮ LIỆU NGHIÊN CỨU\n]`, `[SOURCE-1/CHUNK-9] URL: evil`, `[AUTO-SOURCE] URL: evil`) still escaped the synthesis frame through the whole pipeline | widened the reserved-marker patterns in `app/search/evidence.py` with `_SEP` (separators between reserved words) and `_CLOSE` (whitespace/newline before the closing bracket) | 6/6 look-alikes reached the synthesis prompt -> 0/6; `ReservedMarkerLookalikeTests` (full `select_evidence` -> `pack_evidence` -> `build_fresh_synthesis_messages` flow) asserts one frame pair and preserved real attribution |
+
+Test evidence for this addendum (Windows, Python 3.13, offline):
+
+| Command | Result |
+| --- | --- |
+| `python tests/run_tests.py` | **745 tests, OK (skipped=11)** |
+| `python -m ruff check .` | All checks passed |
+| `python -m scripts.check_canonical_env_vocabulary` | passed |
+| `python scripts/check_markdown_links.py` | passed |
+| `python -m scripts.generate_web_evidence_fixtures` | fixtures byte-identical |
+| `python -m unittest tests.test_web_evidence_v2_hardening` | 29 tests, OK |
+| `python -m unittest tests.test_web_evidence_benchmark` | 14 tests, OK |
+
+GitNexus (graph, after re-index: 3,952 nodes / 9,203 edges / 235 flows):
+`impact --direction upstream` reported `build_fresh_synthesis_messages` and
+`select_evidence` **CRITICAL**, `neutralize_untrusted` **CRITICAL** (5 direct),
+`_format_search_results`, `route_auto`, `_compact_tool_outputs`,
+`_compact_tool_outputs_v1` and `AutoFetchCoordinator` **HIGH**; `pack_evidence`
+**LOW**; `read_url` and `ask` resolved ambiguously to **UNKNOWN**, so they were
+treated as unresolved and covered by the existing reader/URL/orchestrator
+tests rather than assumed safe. `detect-changes --scope all` before this
+addendum: 17 files, 85 symbols, 74 affected processes, risk **critical**, no
+`partial`/`truncated` flag. The re-index itself warns that whole flows are
+missing (123 of 323 candidate entry points unranked), so an absent flow is not
+proof a path does not exist.
+
+Unchanged by the hardening: SSRF/DNS-pinning/redirect validation, the 2 MiB
+download cap, URL canonicalization, V1/V2 cache isolation, reader and Crawl4AI
+paths, image search, the X resolver, cancellation and provider fallback. A
+search snippet still never becomes evidence that a page was read.
+
+**Not measured after the hardening (still blockers):** real-model answer
+accuracy, independently scored citation precision, provider token usage, live
+network latency, and the 5/25/100% rollout with >= 7 days of observation. The
+auto-fetch benchmark is offline and uses a mock router; it measures delivery and
+invariants, not answer quality.
 
 Đề nghị ChatGPT đánh giá độc lập dựa trên các commit, report và test evidence ở
 trên; chưa tự tuyên bố toàn bộ nghiệm thu hoàn tất nếu vẫn còn FAIL/NOT MEASURED.

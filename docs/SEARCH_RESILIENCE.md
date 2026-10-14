@@ -120,8 +120,12 @@ X/Twitter resolver không đi qua policy này.
 - **Conditional auto-fetch:** chỉ khi cả `WEB_EVIDENCE_V2_ENABLED` và
   `WEB_AUTO_FETCH_ENABLED` bật. Sau một lần `web_search`, hệ thống tự đọc tối đa
   `WEB_AUTO_FETCH_MAX_SOURCES` (<= 2) nguồn xếp hạng cao nhất mà snippet chưa đủ và
-  chưa được đọc trong request; tối đa 2 lượt đọc song song; tổng budget
-  `WEB_AUTO_FETCH_BUDGET_SEC` (<= 20s) dùng chung cho cả câu hỏi và bị chặn tiếp bởi
+  chưa được đọc trong request.
+- **Request-scoped coordinator:** mọi burst `web_search` trong cùng một câu hỏi chia
+  sẻ một `AutoFetchCoordinator`: deadline monotonic, giữ chỗ (reservation) canonical URL
+  bằng lock nên tổng số nguồn auto-fetch không vượt 2 cho **toàn câu hỏi**, và semaphore
+  giới hạn 2 lượt đọc song song. Không trừ ngân sách sau `gather()` nên hai burst chạy
+  đồng thời không thể vượt cap hay tiêu budget hai lần; deadline bị chặn tiếp bởi
   budget/deadline của question/job.
 - **User URL:** nếu message hoặc quoted text chứa URL, auto-fetch không chạy; URL
   người dùng cung cấp vẫn được ưu tiên qua `fetch_url`.
@@ -131,15 +135,21 @@ X/Twitter resolver không đi qua policy này.
 - **Trạng thái trung thực:** nguồn không đọc được (timeout/lỗi/không có nội dung)
   được ghi rõ `KHÔNG đọc được nguồn này ... Không được coi là đã đọc trang`; nguồn
   lỗi không trở thành source của câu trả lời và không bật `searched`.
-- **Giới hạn chứng cứ:** bằng chứng auto-fetch được đóng gói trong phần còn lại của
-  cap 6.000 ký tự/tool; không nâng cap.
+- **Giới hạn chứng cứ:** khi có nguồn cần đọc, search listing bị giới hạn <= 3.600 ký
+  tự (title/snippet bị cắt, URL và nhãn nguồn giữ nguyên) để dành tối thiểu 2.400 ký tự
+  cho bằng chứng auto-fetch; không có auto-fetch thì listing được dùng tối đa ngân sách
+  còn lại. Tổng vẫn <= 6.000 ký tự/tool; không nâng cap.
 - **Rollback:** đặt một trong hai flag về `0` là quay lại hành vi V1 (routing, ranking,
   ordering và cache key V1).
 
 ## Synthesis evidence packing
 
 Fresh Synthesis (khi tool budget đóng) gửi bằng chứng trong khung dữ liệu không đáng
-tin, giới hạn **12.000 ký tự** tổng. Cách đóng gói:
+tin, giới hạn **12.000 ký tự** tổng. `ChatRequest.synthesis_mode` là request-scoped và
+**mặc định `v1`**: `v1` dùng đúng thuật toán chia đều trước PR4
+(`_compact_tool_outputs_v1`) — đây là đường rollback khi tắt feature flag; `v2` dùng
+packing theo relevance/đa dạng nguồn mô tả dưới đây. Không có global flag dùng chung
+giữa các request. Cách đóng gói của `v2`:
 
 - Output của reader (`[SOURCE n / CHUNK m]`, `[AUTO SOURCE]`) được cắt thành từng block
   theo label, mỗi block giữ nguyên dòng label + URL, `Heading` và trạng thái đọc.
@@ -154,6 +164,11 @@ tin, giới hạn **12.000 ký tự** tổng. Cách đóng gói:
 
 Hai cap không thay đổi trong V2: **6.000 ký tự/tool** ở router và **12.000 ký tự** ở
 synthesis. Muốn tăng ngân sách phải có benchmark và quyết định riêng.
+
+Khung bằng chứng chỉ do renderer tạo: mọi delimiter hệ thống (`[…DỮ LIỆU NGHIÊN CỨU…]`,
+`[SOURCE n / CHUNK m]`, `[AUTO SOURCE]`, `[WEB EVIDENCE…]`, `[TOOL_RESULT n]`) xuất hiện
+trong văn bản không đáng tin đều bị vô hiệu hóa (`[`/`]` đổi thành `⟦`/`⟧`) trước khi
+renderer tạo nhãn thật, nên một trang độc hại không thể đóng khung sớm hoặc gán nguồn giả.
 
 ## Cache và singleflight
 
