@@ -101,6 +101,55 @@ async def check():
 raise SystemExit(asyncio.run(check()))
 '''
 
+PROXIED_SUBRESOURCE_PROBE = r'''
+import asyncio
+import sys
+from playwright.async_api import async_playwright
+
+async def check():
+    public_url = sys.argv[1]
+    private_urls = {
+        'http://172.30.71.50:8099/private-image': 'image',
+        'http://172.30.71.50:8099/private-frame': 'iframe',
+    }
+    public_assets = {'/public.png', '/public-frame'}
+    observed_private = set()
+    observed_public = set()
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(
+            headless=True, args=['--no-sandbox'],
+            proxy={'server': 'http://crawl4ai-proxy:3128'},
+        )
+        try:
+            page = await browser.new_page()
+
+            def record_request(request):
+                if request.url in private_urls:
+                    print('BROWSER_PRIVATE_ATTEMPT', private_urls[request.url],
+                          request.url, flush=True)
+                    observed_private.add(request.url)
+                for path in public_assets:
+                    if request.url == public_url.removesuffix('/rich') + path:
+                        print('BROWSER_PUBLIC_ASSET', path, flush=True)
+                        observed_public.add(path)
+
+            page.on('request', record_request)
+            response = await page.goto(public_url, timeout=20000, wait_until='load')
+            if response is None or response.status != 200:
+                raise AssertionError('Proxied public fixture did not load successfully')
+            await page.wait_for_timeout(1000)
+            if observed_private != set(private_urls):
+                raise AssertionError(f'Private request attempts missing: {observed_private}')
+            if observed_public != public_assets:
+                raise AssertionError(f'Public controls missing: {observed_public}')
+            print('PASS: Chromium requested both private image/iframe through Squid',
+                  flush=True)
+        finally:
+            await browser.close()
+
+asyncio.run(check())
+'''
+
 
 def run(*args: str, check: bool = True, timeout: int = 180) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
@@ -193,6 +242,21 @@ for host, port in [('11.23.0.50', 80), ('172.30.71.50', 8099)]:
         )
     print(chromium.stdout.strip(), flush=True)
     assert_sink("unproxied Chromium bypass", baseline)
+
+
+def check_proxied_subresources(baseline: int) -> None:
+    """Observe actual Chromium network requests for both denied subresources."""
+    result = run("docker", "exec", "fcai-crawl4ai", "python", "-c",
+                 PROXIED_SUBRESOURCE_PROBE, f"http://{PUBLIC_IP}/rich",
+                 check=False, timeout=90)
+    if (result.returncode or result.stdout.count("BROWSER_PRIVATE_ATTEMPT") != 2
+            or result.stdout.count("BROWSER_PUBLIC_ASSET") != 2
+            or "PASS: Chromium requested both private image/iframe" not in result.stdout):
+        raise AssertionError(
+            f"Proxied subresource evidence incomplete: {result.stdout} {result.stderr}"
+        )
+    print(result.stdout.strip(), flush=True)
+    assert_sink("Chromium private image/iframe attempts", baseline)
 
 
 def crawl(url: str, *, expect: str, contains: str = "Controlled public fixture") -> None:
@@ -289,6 +353,7 @@ networks:
         if f"PUBLIC_GET {path}" not in public_log:
             raise AssertionError(f"Browser did not load positive-control subresource: {path}")
     assert_sink("private image and iframe", baseline)
+    check_proxied_subresources(baseline)
     hostname = f"ci-{secrets.token_hex(5)}.fcai.test"
     docker("exec", "fcai-crawl4ai", "python", "-c",
            "import socket,sys;print(socket.gethostbyname(sys.argv[1]))", hostname)
@@ -308,7 +373,8 @@ networks:
     print("PASS: live CI SSRF fixtures and firewall postflight", flush=True)
     print("UNVERIFIED: independent application-level redirect/rebinding rejection reason",
           flush=True)
-    print("UNVERIFIED: browser attempted each private image/iframe URL", flush=True)
+    print("UNVERIFIED: private subresource request attempts by the REST crawler itself",
+          flush=True)
     print("UNVERIFIED: actual VPS host reboot and firewall startup interval", flush=True)
 
 
