@@ -56,6 +56,86 @@ CRAWL4AI_SHM_SIZE=512m
 
 If enabled but the token, fixed crawler endpoint, or fixed proxy endpoint is absent or incorrect, the bot logs a coarse warning and keeps using the generic reader. The timeout budget check is enforced for a configured crawler. No user-supplied browser configuration is accepted.
 
+## Production activation (operator runbook)
+
+**Current gate: NO-GO until the remaining checks below are verified on the
+target host.** GitHub's isolated SSRF workflow and the VPS `SAFE DORMANT`
+report do not establish firewall protection throughout the actual VPS Docker
+startup interval. A firewall restoration service running *after* Docker starts
+also does not, by itself, prove that packets were blocked before the service
+applied its rules. If the bot is already enabled without this evidence, use
+the [rollback procedure](#rollback) first.
+
+1. **Prepare without activating.** Check out the intended audited release on
+   the VPS and review its diff/configuration. Keep `.env` and the running bot at
+   `CRAWL4AI_ENABLED=0`. Set the pinned image, private
+   `CRAWL4AI_URL=http://crawl4ai:11235`, private
+   `CRAWL4AI_EGRESS_PROXY_URL=http://crawl4ai-proxy:3128`, and the *same*
+   nonempty `CRAWL4AI_API_TOKEN` for bot and crawler. Do not expose the token.
+   Validate the deployment file with `docker compose --profile crawl4ai config
+   --quiet`; check that crawler, Squid and CoreDNS have `restart: "no"` and no
+   host-published port. A plain bot restart does not reload `.env`.
+2. **Qualify on a dedicated staging Docker engine.** Pass the
+   [controlled SSRF fixture suite](#deploy) (public redirect to private,
+   DNS rebinding, image/iframe subresources, direct egress, browser proxy
+   bypass, Squid outage, container restart). Verify the *independent* public
+   fixture, DNS, private-sink, Squid and firewall logs; require zero
+   unauthorized private-sink requests. An HTTP 403, timeout or `crawl_failed`
+   alone is inconclusive. Pass the representative 20-URL smoke test and record
+   extraction, fallback, latency and resource usage.
+3. **Prove the target-host startup boundary before starting production
+   crawler services.** Review the actual Docker firewall backend, network
+   attachments, reboot/restart policies and boot service; obtain evidence that
+   a default-deny path protects **the entire interval from Docker/container
+   startup until the address-bound rules are restored**. Use an authorized
+   maintenance window or a faithful isolated host/boot rehearsal. The
+   `REBOOT AFTER PASS (SAFE_DORMANT)` result only proves the crawler stayed
+   stopped; it does not satisfy this running-service gate. If continuous
+   protection cannot be shown, **stop here and keep Crawl4AI disabled**.
+4. **Start the vetted profile, only after step 3 passes.** From the release
+   directory on the VPS, with the bot still disabled:
+
+   ```bash
+   docker compose --profile crawl4ai pull crawl4ai crawl4ai-proxy crawl4ai-dns
+   docker compose --profile crawl4ai up -d --no-deps crawl4ai-dns crawl4ai-proxy crawl4ai
+   sudo bash scripts/crawl4ai_firewall.sh apply
+   sudo bash scripts/crawl4ai_firewall.sh check
+   docker compose --profile crawl4ai ps
+   sudo python3 scripts/check_crawl4ai_vps_live.py --live
+   ```
+
+   `up` creates or replaces real containers and can change their IPs. Applying
+   the firewall *after* `up` is **not** a substitute for step 3's proven
+   startup-time deny policy. Require each command to pass; repeat firewall
+   verification after any recreation. Inspect the report locally before
+   sharing it, removing secrets and sensitive URLs.
+5. **Activate the bot only after every gate passes.** Change the single
+   `.env` assignment to `CRAWL4AI_ENABLED=1`, then run:
+
+   ```bash
+   docker compose up -d --no-deps --force-recreate bot
+   docker compose cp ./scripts/smoke_crawl4ai.py bot:/tmp/smoke_crawl4ai.py
+   docker compose exec -e PYTHONPATH=/app bot python /tmp/smoke_crawl4ai.py
+   ```
+
+   Check `docker compose ps`, bot logs, real public page rendering, Squid
+   access logs, generic-reader fallback and resource usage. The smoke script
+   is copied into the bot container because the production image does not
+   include `scripts/`. Recopy it after recreating the bot. Do not rerun the
+   disabled-bot `--live` preflight once the bot is enabled.
+6. **Rollback on any failure.** Set `CRAWL4AI_ENABLED=0` in `.env` and run
+   `docker compose up -d --no-deps --force-recreate bot`. Confirm its effective
+   setting is disabled and the generic reader works. Stop the optional
+   crawler-side services with `docker compose --profile crawl4ai stop crawl4ai
+   crawl4ai-proxy crawl4ai-dns` if isolation is uncertain. Retain firewall
+   protections and collect logs for investigation. Do not remove protective
+   rules as part of rollback.
+
+Activation remains an explicit operator decision after all gates are evidenced;
+this runbook does not authorize a production reboot, firewall change, or
+deployment. Further detail: [DNS and egress verification](CRAWL4AI_DNS_EGRESS.md)
+and [verification gates](#verification-gates).
+
 ### Crawl4AI 0.9.3 REST compatibility gate (October 2026)
 
 An isolated Docker Desktop test with the pinned image reproduced HTTP 400 for
@@ -268,7 +348,7 @@ This source inspection is separate from the mandatory network isolation tests.
 
 ## Deploy
 
-Leave `CRAWL4AI_ENABLED=0` on the initial deploy. On a dedicated **Linux staging VPS** with Docker Compose and root firewall access:
+Leave `CRAWL4AI_ENABLED=0` on the initial deploy. On a dedicated **Linux staging VPS** with Docker Compose and root firewall access (the following startup sequence must **not** be treated as proven safe for production):
 
 ```bash
 docker compose --profile crawl4ai pull
