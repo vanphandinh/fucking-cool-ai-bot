@@ -102,6 +102,39 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("proxy_config", payload[section]["params"])
         self.assertNotIn("extra_args", payload["browser_config"]["params"])
 
+    async def test_article_after_long_navigation_is_included_before_truncation(self):
+        url = (
+            "https://dantri.com.vn/thoi-su/"
+            "ha-noi-nghien-cuu-dieu-chinh-mat-do-cay-hoa-sua-o-khu-dan-cu-"
+            "20261014101516579.htm"
+        )
+        title = "Hà Nội nghiên cứu điều chỉnh mật độ cây hoa sữa ở khu dân cư"
+        article = "Cơ quan chức năng nghiên cứu điều chỉnh mật độ cây hoa sữa."
+        navigation = (
+            f"# [{title}]({url})\n"
+            + "* [Quảng cáo và chuyên mục](https://dantri.com.vn/)\n" * 350
+        )
+        markdown = navigation + f"\n# {title}\n\n**(Dân trí)** - {article}\n"
+        self.assertGreater(len(navigation), 12000)
+        response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://crawl4ai:11235/crawl"),
+            json={
+                "success": True,
+                "results": [{"success": True, "url": url,
+                             "markdown": {"fit_markdown": markdown}}],
+            },
+        )
+        with patch("app.search.crawl4ai_client._get_client",
+                   new=AsyncMock(return_value=_stream_client(response))):
+            result = await read_page(url, self.settings(crawl4ai_max_chars=12000))
+
+        self.assertTrue(result.ok)
+        self.assertIn(article, result.text)
+        self.assertTrue(result.text.startswith(f"# {title}"))
+        self.assertNotIn("Quảng cáo và chuyên mục", result.text)
+        self.assertLessEqual(len(result.text), 12000)
+
     async def test_oversized_response_is_rejected_before_json_use(self):
         huge_markdown = "x" * (4 * 1024 * 1024 + 1)
         response = httpx.Response(

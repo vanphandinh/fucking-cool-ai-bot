@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -94,6 +96,39 @@ def _extract_markdown(value: object) -> str:
                 return _extract_markdown(parsed)
         return text
     return ""
+
+
+def _heading_slug(text: str) -> str:
+    """Normalize Unicode headlines to the ASCII slugs used in article URLs."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold().replace("đ", "d"))
+    plain = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "-", plain).strip("-")
+
+
+def _focus_article_markdown(text: str, url: str, max_chars: int) -> str:
+    """Skip site navigation if the actual article heading is beyond the output cap.
+
+    The crawler can return successful, valid Markdown dominated by ad/menu
+    links. Match a plain Markdown heading to the article URL's title slug; avoid
+    link headings, whose titles often appear in related-article navigation.
+    When there is no reliable match, retain the original text.
+    """
+    if len(text) <= max_chars:
+        return text
+    filename = unquote(urlsplit(url).path.rsplit("/", 1)[-1])
+    stem = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", filename)
+    stem = re.sub(r"-\d{10,}$", "", stem)
+    target = _heading_slug(stem)
+    if len(target) < 20:
+        return text
+
+    for match in re.finditer(r"(?m)^#{1,3}[ \t]+([^\r\n]+)$", text):
+        heading = match.group(1).strip()
+        if heading.startswith(("[", "!")):
+            continue
+        if _heading_slug(heading.strip(" *#")) == target:
+            return text[match.start():]
+    return text
 
 
 def _declared_response_too_large(response: httpx.Response) -> bool:
@@ -213,7 +248,9 @@ async def read_page(url: str, settings: Settings) -> Crawl4AIReadResult:
             source_url = candidate
 
     return Crawl4AIReadResult(
-        text=text[: settings.crawl4ai_max_chars],
+        text=_focus_article_markdown(text, source_url, settings.crawl4ai_max_chars)[
+            : settings.crawl4ai_max_chars
+        ],
         source_url=source_url,
         ok=True,
     )

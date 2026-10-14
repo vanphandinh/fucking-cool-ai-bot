@@ -372,6 +372,30 @@ async def read_page(
         return "Không tải được trang: quá thời gian cho phép."
 
 
+def _focus_jina_article(text: str) -> str:
+    """Keep the article when a long Jina page starts with navigation links.
+
+    Jina's Markdown Content can include a full site menu before the article.
+    Taking the first MAX_CHARS of that response hides the actual story.
+    Only move the start when a standalone Markdown heading matches the page
+    title; otherwise retain the original response rather than guessing.
+    """
+    if len(text) <= MAX_CHARS:
+        return text
+    title_match = re.search(r"(?m)^Title:[ \t]*(.+?)[ \t]*$", text)
+    content_match = re.search(r"(?m)^Markdown Content:[ \t]*$", text)
+    if not title_match or not content_match or title_match.start() > content_match.start():
+        return text
+
+    title = " ".join(title_match.group(1).split()).casefold()
+    content = text[content_match.end():]
+    for heading in re.finditer(r"(?m)^#{1,6}[ \t]+([^\r\n]+?)[ \t]*#*[ \t]*$", content):
+        if " ".join(heading.group(1).split()).casefold() == title:
+            metadata = text[:content_match.end()].rstrip()
+            return f"{metadata}\n\n{content[heading.start():].lstrip()}"
+    return text
+
+
 async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
                      operations=None, budget=None) -> str:
     """Trả về văn bản rút gọn của trang (<= MAX_CHARS) hoặc lý do không tải được.
@@ -396,7 +420,7 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
             result = await fetch(f"https://r.jina.ai/{url}", "Jina")
             text = result.body.decode("utf-8", errors="replace").strip()
             if text:
-                return text[:MAX_CHARS]
+                return _focus_jina_article(text)[:MAX_CHARS]
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             logger.debug("Jina Reader lỗi (chuyển fallback): %s", type(exc).__name__)
         except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
