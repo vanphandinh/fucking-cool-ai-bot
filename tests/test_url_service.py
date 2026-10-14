@@ -13,7 +13,8 @@ from app.search.x_reader import XReadResult
 class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_crawl4ai_defaults(self):
         settings = Settings(_env_file=None)
-        self.assertTrue(settings.crawl4ai_enabled)
+        self.assertFalse(settings.crawl4ai_enabled)
+        self.assertFalse(settings.crawl4ai_ready)
         self.assertEqual(settings.crawl4ai_url, "http://crawl4ai:11235")
         self.assertEqual(settings.crawl4ai_timeout_sec, 25.0)
         self.assertEqual(settings.crawl4ai_max_chars, 12000)
@@ -22,7 +23,9 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             Settings(
                 _env_file=None,
+                crawl4ai_enabled=True,
                 crawl4ai_api_token="secret",
+                crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
                 crawl4ai_timeout_sec=60,
                 question_timeout_sec=30,
             )
@@ -36,7 +39,9 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         generic = AsyncMock(return_value="generic text")
-        settings = Settings(_env_file=None, crawl4ai_api_token="secret")
+        settings = Settings(_env_file=None, crawl4ai_enabled=True,
+                            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+                            crawl4ai_api_token="secret")
         with (
             patch("app.search.url_service.crawl4ai_client.read_page", new=crawl),
             patch("app.search.url_service.reader.read_page", new=generic),
@@ -49,15 +54,19 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.text, "rendered markdown")
 
     async def test_crawl4ai_failure_falls_back_generic_exactly_once(self):
-        settings = Settings(_env_file=None, crawl4ai_api_token="secret")
+        settings = Settings(_env_file=None, crawl4ai_enabled=True,
+                            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+                            crawl4ai_api_token="secret")
         reasons = (
             "timeout",
+            "network",
             "auth",
             "rate_limited",
             "upstream_5xx",
             "malformed_json",
             "empty_content",
             "response_too_large",
+            "crawl_failed",
         )
         for reason in reasons:
             with self.subTest(reason=reason):
@@ -80,7 +89,9 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_unexpected_crawl4ai_error_falls_back_generic_exactly_once(self):
         crawl = AsyncMock(side_effect=RuntimeError("unexpected client failure"))
         generic = AsyncMock(return_value="generic text")
-        settings = Settings(_env_file=None, crawl4ai_api_token="secret")
+        settings = Settings(_env_file=None, crawl4ai_enabled=True,
+                            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+                            crawl4ai_api_token="secret")
         with (
             patch("app.search.url_service.crawl4ai_client.read_page", new=crawl),
             patch("app.search.url_service.reader.read_page", new=generic),
@@ -132,6 +143,8 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             _env_file=None,
             x_fetch_enabled=True,
             crawl4ai_api_token="secret",
+            crawl4ai_enabled=True,
+            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
         )
         with (
             patch("app.search.url_service.x_reader.read_x_url", new=specialized),
@@ -159,6 +172,8 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             _env_file=None,
             x_fetch_enabled=True,
             crawl4ai_api_token="secret",
+            crawl4ai_enabled=True,
+            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
         )
         with (
             patch("app.search.url_service.x_reader.read_x_url", new=specialized),
@@ -211,7 +226,12 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancellation_propagates_without_generic_fallback(self):
         crawl = AsyncMock(side_effect=asyncio.CancelledError())
         generic = AsyncMock()
-        settings = Settings(_env_file=None, crawl4ai_api_token="secret")
+        settings = Settings(
+            _env_file=None,
+            crawl4ai_enabled=True,
+            crawl4ai_api_token="secret",
+            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+        )
         with (
             patch("app.search.url_service.crawl4ai_client.read_page", new=crawl),
             patch("app.search.url_service.reader.read_page", new=generic),

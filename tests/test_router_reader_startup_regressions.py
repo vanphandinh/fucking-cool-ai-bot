@@ -225,7 +225,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
             locks,
         )
         self.assertEqual(memory.history_for(-100200), [])
-        self.assertFalse((await locks.get(-100200)).locked())
+        self.assertEqual(locks._locks, {})
         self.assertIn("quá thời gian", message.reply.call_args.args[0])
 
     async def test_timeout_includes_waiting_for_chat_lock(self):
@@ -236,8 +236,6 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
         from app.core.stats import Stats
 
         locks = _ChatLocks()
-        lock = await locks.get(-100200)
-        await lock.acquire()
         message = SimpleNamespace(
             from_user=SimpleNamespace(id=42),
             chat=SimpleNamespace(id=-100200),
@@ -247,28 +245,29 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
         )
         answer = Answer("answer", "xkiro")
         orchestrator = SimpleNamespace(ask=AsyncMock(return_value=answer))
-        task = asyncio.create_task(
-            _handle_question(
-                message,
-                "q",
-                None,
-                Settings(_env_file=None, question_timeout_sec=0.02),
-                orchestrator,
-                ChatMemory(),
-                RateLimiter(),
-                Stats(),
-                locks,
+        async with locks.hold(-100200):
+            task = asyncio.create_task(
+                _handle_question(
+                    message,
+                    "q",
+                    None,
+                    Settings(_env_file=None, question_timeout_sec=0.02),
+                    orchestrator,
+                    ChatMemory(),
+                    RateLimiter(),
+                    Stats(),
+                    locks,
+                )
             )
-        )
-        try:
-            done, _ = await asyncio.wait({task}, timeout=0.06)
-            self.assertIn(task, done, "queued questions must expire too")
-            await task
-            orchestrator.ask.assert_not_awaited()
-        finally:
-            lock.release()
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            try:
+                done, _ = await asyncio.wait({task}, timeout=0.06)
+                self.assertIn(task, done, "queued questions must expire too")
+                await task
+                orchestrator.ask.assert_not_awaited()
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        self.assertEqual(locks._locks, {})
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):

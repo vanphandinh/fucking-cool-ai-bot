@@ -59,6 +59,8 @@ Với multipart answer, part đầu dùng `message.reply`; các part sau dùng `
 
 Conversation memory lưu **plain text** của assistant response, không lưu HTML markup.
 
+Ở controlled-question mode, chỉ phần trả lời chính mà Telegram **xác nhận đã nhận** được ghi nhận. Nếu việc gửi bị ngắt giữa chừng, job kết thúc `PARTIALLY_DELIVERED` với `sent_parts/total_parts`; memory chỉ giữ prefix plain text cùng dấu `[...] Câu trả lời chưa hoàn chỉnh` (tối đa 4.000 ký tự). Không tự gửi lại phần đã xác nhận. Nếu chưa phần nào thành công thì job `FAILED`; đủ mọi phần thì `COMPLETED` và ghi nhận thống kê câu trả lời thành công. Lỗi không rõ Telegram đã nhận hay chưa vẫn không thể đảm bảo exactly-once.
+
 Telegram forum topic được cô lập bằng conversation key `(chat_id, message_thread_id)`, nên formatting/multipart delivery của một topic không làm history của topic khác bị lẫn.
 
 ## 6. Source footer và image delivery

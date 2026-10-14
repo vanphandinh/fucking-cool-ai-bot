@@ -63,13 +63,12 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         stats = Stats()
         memory = SimpleNamespace(push_exchange=MagicMock())
         processor = QuestionProcessor(
-            bot=SimpleNamespace(),
+            bot=SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=11))),
             settings=Settings(_env_file=None),
             orchestrator=SimpleNamespace(),
             memory=memory,
             stats=stats,
         )
-        processor._send_answer_parts = AsyncMock()
         submission = SimpleNamespace(
             question="hello",
             chat_id=1,
@@ -80,6 +79,11 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
             prepared_request=None,
             submission=submission,
             delivery_committed=False,
+            memory_committed=False,
+            partial_accounted=False,
+            sent_parts=0,
+            total_parts=0,
+            acknowledged_parts=[],
         )
         answer = SimpleNamespace(
             text="answer",

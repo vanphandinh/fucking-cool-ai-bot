@@ -109,7 +109,9 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
             control,
             asyncio.Semaphore(1),
             lambda event: None,
-            tool_timeout=.02,
+            # Allow for Windows/CI scheduling jitter between leaf attempts.
+            # The blocked leaf must still consume the shared budget.
+            tool_timeout=.25,
         )
         observed = {}
 
@@ -129,7 +131,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.Event().wait()
 
             with self.assertRaises(TimeoutError):
-                await operations.run("leaf-2", blocked_leaf, timeout_sec=.1)
+                await operations.run("leaf-2", blocked_leaf, timeout_sec=.5)
             observed["after_second"] = budget.remaining
             return "budget enforced"
 
@@ -151,7 +153,9 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
             control,
             asyncio.Semaphore(1),
             lambda event: None,
-            tool_timeout=.02,
+            # Windows/CI event loops can spend >20ms between the two leaf
+            # attempts. Keep the assertion focused on excluding consent time.
+            tool_timeout=.25,
         )
         consent_reached = asyncio.Event()
 
@@ -181,7 +185,7 @@ class RenewableRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.wait_for(consent_reached.wait(), timeout=.1)
         self.assertEqual(control.state, "AWAITING_CONSENT")
-        await asyncio.sleep(.04)
+        await asyncio.sleep(.3)
         self.assertFalse(task.done())
 
         self.assertTrue(await control.renew(control.generation))

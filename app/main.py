@@ -77,7 +77,7 @@ async def _amain(settings: Settings) -> int:
         try:
             provider_router = build_provider_router(settings)
         except ValueError as exc:
-            logger.error("Cấu hình AI provider không hợp lệ: %s", exc)
+            logger.error("Cấu hình AI provider không hợp lệ: exc_type=%s", type(exc).__name__)
             return 1
 
         text_names = provider_router.configured_provider_names(False)
@@ -109,15 +109,21 @@ async def _amain(settings: Settings) -> int:
             logger.warning(
                 "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
             )
+        if settings.crawl4ai_enabled and not settings.crawl4ai_ready:
+            logger.warning("Crawl4AI isolation configuration unavailable; generic reader")
 
         try:
             bot = Bot(token=settings.bot_token, default=DefaultBotProperties())
         except TokenValidationError as exc:
-            logger.error("BOT_TOKEN không đúng định dạng: %s", exc)
+            logger.error("BOT_TOKEN không đúng định dạng: exc_type=%s", type(exc).__name__)
             return 1
 
         stats = Stats()
-        memory = ChatMemory(max_turns_per_chat=settings.max_context_turns)
+        memory = ChatMemory(
+            max_turns_per_chat=settings.max_context_turns,
+            max_conversations=settings.max_context_conversations,
+            ttl_sec=settings.context_ttl_sec,
+        )
         limiter = RateLimiter(max_requests_per_min=settings.max_questions_per_min_per_user)
         orchestrator = Orchestrator(settings, provider_router)
 
@@ -156,7 +162,7 @@ async def _amain(settings: Settings) -> int:
             logger.info("Kết nối Telegram OK — bot @%s (%s)", me.username, me.first_name)
             settings.bot_username = me.username or settings.bot_username
         except TelegramAPIError as exc:
-            logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: %s", exc)
+            logger.error("BOT_TOKEN không hợp lệ hoặc bot bị chặn: exc_type=%s", type(exc).__name__)
             return 1
 
         mode = "renewable" if settings.question_controls_enabled else "legacy-timeout"
@@ -184,7 +190,7 @@ async def _amain(settings: Settings) -> int:
         try:
             await bot.delete_webhook(drop_pending_updates=False)
         except TelegramAPIError as exc:
-            logger.warning("Không xoá được webhook cũ: %s", exc)
+            logger.warning("Không xoá được webhook cũ: exc_type=%s", type(exc).__name__)
 
         await dp.start_polling(
             bot,
@@ -222,7 +228,9 @@ def main() -> None:
             level=logging.INFO,
             format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         )
-        logging.getLogger(__name__).error("Cấu hình không hợp lệ: %s", exc)
+        logging.getLogger(__name__).error(
+            "Cấu hình không hợp lệ: exc_type=%s", type(exc).__name__
+        )
         raise SystemExit(1) from exc
     try:
         code = asyncio.run(_amain(settings))

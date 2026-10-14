@@ -69,7 +69,7 @@ def scan_markdown_file(path: Path, root: Path) -> tuple[str, ...]:
     """Return broken local links as ``source:line:target`` strings."""
 
     hits: list[str] = []
-    relative_source = path.relative_to(root)
+    relative_source = path.relative_to(root).as_posix()
     markdown = path.read_text(encoding="utf-8")
 
     for line_number, raw_target in _markdown_links(markdown):

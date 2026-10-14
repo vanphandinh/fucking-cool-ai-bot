@@ -104,14 +104,17 @@ class Settings(BaseSettings):
     x_fetch_enabled: bool = True
 
     # URL rendering/extraction backend. Set CRAWL4AI_ENABLED=0 for instant rollback.
-    crawl4ai_enabled: bool = True
+    crawl4ai_enabled: bool = False
     crawl4ai_url: str = "http://crawl4ai:11235"
     crawl4ai_api_token: str = ""
+    crawl4ai_egress_proxy_url: str = ""
     crawl4ai_timeout_sec: float = Field(default=25.0, gt=0, allow_inf_nan=False)
     crawl4ai_max_chars: int = Field(default=12000, ge=1000, le=50000)
 
     max_questions_per_min_per_user: int = Field(default=3, ge=0)
     max_context_turns: int = Field(default=6, ge=1)
+    max_context_conversations: int = Field(default=2048, ge=1, le=100000)
+    context_ttl_sec: float = Field(default=86400.0, gt=0, allow_inf_nan=False)
     max_tool_rounds: int = Field(default=5, ge=0)
     request_timeout_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     question_timeout_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
@@ -235,6 +238,7 @@ class Settings(BaseSettings):
             self.crawl4ai_enabled
             and bool(self.crawl4ai_url.strip())
             and bool(self.crawl4ai_api_token.strip())
+            and bool(self.crawl4ai_egress_proxy_url.strip())
         )
         if (
             not self.question_controls_enabled
@@ -243,6 +247,17 @@ class Settings(BaseSettings):
         ):
             raise ValueError("CRAWL4AI_TIMEOUT_SEC phải nhỏ hơn QUESTION_TIMEOUT_SEC")
         return self
+
+    @property
+    def crawl4ai_ready(self) -> bool:
+        """Restrict the opt-in crawler to isolated Docker service endpoints."""
+        return (
+            self.crawl4ai_enabled
+            and bool(self.crawl4ai_api_token.strip())
+            and self.crawl4ai_url.strip().rstrip("/") == "http://crawl4ai:11235"
+            and self.crawl4ai_egress_proxy_url.strip().rstrip("/")
+            == "http://crawl4ai-proxy:3128"
+        )
 
     @property
     def allowed_group_ids_list(self) -> list[int]:

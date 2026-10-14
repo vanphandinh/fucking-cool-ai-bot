@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from typing import AsyncIterator
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -148,19 +151,36 @@ def _conversation_key(chat_id: int, message_thread_id: int | None) -> int | tupl
     return chat_id, message_thread_id
 
 
+@dataclass
+class LockEntry:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    references: int = 0
+
+
 class _ChatLocks:
     def __init__(self) -> None:
-        self._locks: dict[int | tuple[int, int], asyncio.Lock] = {}
+        self._locks: dict[int | tuple[int, int], LockEntry] = {}
         self._guard = asyncio.Lock()
 
-    async def get(self, chat_id: int, message_thread_id: int | None = None) -> asyncio.Lock:
+    @asynccontextmanager
+    async def hold(
+        self, chat_id: int, message_thread_id: int | None = None
+    ) -> AsyncIterator[None]:
         key = _conversation_key(chat_id, message_thread_id)
         async with self._guard:
-            lock = self._locks.get(key)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._locks[key] = lock
-            return lock
+            entry = self._locks.get(key)
+            if entry is None:
+                entry = LockEntry()
+                self._locks[key] = entry
+            entry.references += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            async with self._guard:
+                entry.references -= 1
+                if entry.references == 0 and self._locks.get(key) is entry:
+                    del self._locks[key]
 
 
 def build_message_router(
@@ -196,6 +216,7 @@ def build_message_router(
             f"- Uptime: {stats.uptime_text()}",
             f"- Câu hỏi: {stats.questions_total} (hôm nay {stats.live_questions_today()})",
             f"- Số lần tìm web/ảnh: {stats.searches}",
+            f"- Câu trả lời gửi chưa hoàn chỉnh: {stats.partial_deliveries}",
             f"- Lỗi gần nhất: {stats.last_error or 'không có'}",
         ]
         lines.extend(f"- {line}" for line in _provider_status_lines(orchestrator.router, stats))
@@ -279,7 +300,11 @@ def build_lifecycle_router(settings: Settings) -> Router:
             await bot.leave_chat(chat_id)
             logger.info("Đã tự rời chat KHÔNG thuộc allowlist: id=%s title=%s", chat_id, title)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Không tự rời chat %s được: %s", chat_id, exc)
+            logger.warning(
+                "Không tự rời chat %s được: exc_type=%s",
+                chat_id,
+                type(exc).__name__,
+            )
 
     return router
 
@@ -326,8 +351,12 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
 
     try:
         await send_first(parts[0])
-    except Exception:  # noqa: BLE001
-        logger.exception("Gửi câu trả lời đầu tiên thất bại (chat %s)", message.chat.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Gửi câu trả lời đầu tiên thất bại (chat %s): exc_type=%s",
+            message.chat.id,
+            type(exc).__name__,
+        )
         return False
 
     extra_kwargs = {}
@@ -356,8 +385,12 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
                     **extra_kwargs,
                 )
             await asyncio.sleep(0.15)
-    except Exception:  # noqa: BLE001
-        logger.exception("Gửi phần tiếp theo thất bại (chat %s)", message.chat.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Gửi phần tiếp theo thất bại (chat %s): exc_type=%s",
+            message.chat.id,
+            type(exc).__name__,
+        )
         return False
     return True
 
@@ -390,8 +423,7 @@ async def _handle_question(
 
     try:
         async with asyncio.timeout(settings.question_timeout_sec):
-            lock = await chat_locks.get(chat_id, message_thread_id)
-            async with lock:
+            async with chat_locks.hold(chat_id, message_thread_id):
                 try:
                     images = await active_media_loader.load(message)
                 except UnsupportedImageFormat:
@@ -430,7 +462,7 @@ async def _handle_question(
                             quoted=quoted,
                         )
                 except NoCapableProvider as exc:
-                    stats.record_error(str(exc))
+                    stats.record_error(type(exc).__name__)
                     await message.reply(_NO_CAPABLE_PROVIDER_TEXT)
                     return
                 except AllProvidersFailed as exc:
@@ -440,13 +472,19 @@ async def _handle_question(
                         model_rotations=getattr(exc, "model_rotations", 0),
                         credential_failovers=getattr(exc, "credential_failovers", 0),
                     )
-                    stats.record_error(str(exc))
-                    logger.error("AI providers không thể hoàn tất request: %s", exc)
+                    stats.record_error(type(exc).__name__)
+                    logger.error(
+                        "AI providers không thể hoàn tất request: exc_type=%s",
+                        type(exc).__name__,
+                    )
                     await message.reply(_ALL_PROVIDERS_FAILED_TEXT)
                     return
                 except Exception as exc:  # noqa: BLE001
-                    stats.record_error(str(exc))
-                    logger.exception("Lỗi không lường trước khi xử lý câu hỏi")
+                    stats.record_error(type(exc).__name__)
+                    logger.error(
+                        "Lỗi không lường trước khi xử lý câu hỏi: exc_type=%s",
+                        type(exc).__name__,
+                    )
                     await message.reply("❌ Có lỗi bất ngờ xảy ra. Bạn thử lại câu hỏi nhé!")
                     return
                 finally:
@@ -495,8 +533,12 @@ async def _handle_question(
                                 link_preview_options=LinkPreviewOptions(is_disabled=True),
                                 **extra_kwargs,
                             )
-                except Exception:  # noqa: BLE001
-                    logger.exception("Gửi phần tiếp theo thất bại (chat %s)", chat_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "Gửi phần tiếp theo thất bại (chat %s): exc_type=%s",
+                        chat_id,
+                        type(exc).__name__,
+                    )
     except TimeoutError:
         stats.record_error("Câu hỏi quá thời gian xử lý")
         logger.warning("Câu hỏi quá thời gian xử lý (chat %s)", chat_id)

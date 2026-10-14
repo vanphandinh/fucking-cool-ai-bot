@@ -398,21 +398,30 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
             if text:
                 return text[:MAX_CHARS]
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
-            logger.debug("Jina Reader lỗi (chuyển fallback): %s", exc)
+            logger.debug("Jina Reader lỗi (chuyển fallback): %s", type(exc).__name__)
         except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
-            logger.debug("Jina Reader lỗi lạ (chuyển fallback): %s", exc)
+            logger.debug("Jina Reader lỗi lạ (chuyển fallback): %s", type(exc).__name__)
 
         # 2) Fallback: tải HTML trực tiếp và parse văn bản
         try:
             result = await fetch(url, "Đọc trang trực tiếp")
-        except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
+        except _FetchError as exc:
             return f"Không tải được trang: {exc}"
+        except SSRFBlocked:
+            return "Không tải được trang: địa chỉ không được phép."
+        except httpx.HTTPError as exc:
+            logger.debug("Đọc trang trực tiếp lỗi mạng: %s", type(exc).__name__)
+            return "Không tải được trang: lỗi kết nối."
         except Exception as exc:  # noqa: BLE001 — không để lỗi mạng lạ sập tool
-            return f"Không tải được trang: {exc}"
+            logger.debug("Đọc trang trực tiếp lỗi nội bộ: %s", type(exc).__name__)
+            return "Không tải được trang: lỗi nội bộ."
         try:
             return await _extract_html(result.body, result.encoding)
-        except (_FetchError, ValueError, AssertionError) as exc:
+        except _FetchError as exc:
             return f"Không tải được trang: {exc}"
+        except Exception as exc:  # noqa: BLE001 — không lộ lỗi parser trong tool result
+            logger.debug("Trích xuất HTML thất bại: %s", type(exc).__name__)
+            return "Không tải được trang: lỗi xử lý nội dung."
     finally:
         if own_client:
             await http.aclose()

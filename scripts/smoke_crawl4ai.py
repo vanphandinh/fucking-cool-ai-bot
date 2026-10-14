@@ -7,12 +7,18 @@ This script is intentionally not imported or executed by ordinary CI.
 from __future__ import annotations
 
 import asyncio
+import argparse
 import json
+import math
 import os
 import sys
 import time
+from pathlib import Path
 
 import httpx
+
+from app.search.crawl4ai_client import _crawl_payload
+from app.search.reader import validate_public_url
 
 
 def _markdown_text(item: dict) -> str:
@@ -34,34 +40,86 @@ def _markdown_text(item: dict) -> str:
     return ""
 
 
-async def _crawl(client: httpx.AsyncClient, base_url: str, token: str, url: str) -> None:
+async def _crawl(
+    client: httpx.AsyncClient, base_url: str, token: str, url: str, proxy_url: str
+) -> float:
     started = time.perf_counter()
     response = await client.post(
         f"{base_url.rstrip('/')}/crawl",
         headers={"Authorization": f"Bearer {token}"},
-        json={"urls": [url], "browser_config": {}, "crawler_config": {}},
+        json=_crawl_payload(url, proxy_url),
     )
     elapsed = time.perf_counter() - started
     response.raise_for_status()
     body = response.json()
+    if not isinstance(body, dict):
+        raise RuntimeError("Crawl4AI returned a non-object response")
     results = body.get("results") if isinstance(body, dict) else None
     if not body.get("success") or not isinstance(results, list) or not results:
         raise RuntimeError("Crawl4AI returned no successful results")
     item = results[0]
     if not isinstance(item, dict) or item.get("success") is False:
         raise RuntimeError("Crawl4AI first result failed")
+    for key in ("url", "redirected_url"):
+        destination = item.get(key)
+        if destination is not None and (
+            not isinstance(destination, str) or validate_public_url(destination) is not None
+        ):
+            raise RuntimeError("Crawl4AI returned a forbidden destination")
     text = _markdown_text(item)
     if not text:
         raise RuntimeError("Crawl4AI returned empty Markdown")
     print(f"crawl ok url={url} seconds={elapsed:.3f} chars={len(text)}")
+    return elapsed
+
+
+def load_urls(path: Path) -> list[str]:
+    """Require 20 distinct, public, manually selected URLs for the staging gate."""
+    urls = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+    if len(urls) < 20 or len(set(urls)) != len(urls):
+        raise ValueError("smoke manifest requires at least 20 distinct URLs")
+    for url in urls:
+        if validate_public_url(url) is not None:
+            raise ValueError("smoke manifest contains a blocked or malformed URL")
+    return urls
+
+
+def report_timings(durations: list[float]) -> None:
+    ordered = sorted(durations)
+    p50 = ordered[math.ceil(len(ordered) * 0.50) - 1]
+    p95 = ordered[math.ceil(len(ordered) * 0.95) - 1]
+    print(f"smoke passed={len(ordered)} p50={p50:.3f}s p95={p95:.3f}s "
+          f"min={ordered[0]:.3f}s max={ordered[-1]:.3f}s")
 
 
 async def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--urls-file", type=Path,
+                        help="Staging gate: at least 20 unique public URLs, one per line")
+    args = parser.parse_args()
     base_url = os.getenv("CRAWL4AI_URL", "http://crawl4ai:11235").strip()
     token = os.getenv("CRAWL4AI_API_TOKEN", "").strip()
-    if not base_url or not token:
-        print("CRAWL4AI_URL and CRAWL4AI_API_TOKEN are required", file=sys.stderr)
+    proxy_url = os.getenv("CRAWL4AI_EGRESS_PROXY_URL", "").strip()
+    isolated = (base_url, proxy_url) == (
+        "http://crawl4ai:11235", "http://crawl4ai-proxy:3128"
+    )
+    if not isolated or not token:
+        print("Crawl4AI isolated endpoint, proxy and token required", file=sys.stderr)
         return 2
+
+    try:
+        urls = load_urls(args.urls_file) if args.urls_file else ["https://example.com"]
+    except (OSError, UnicodeError, ValueError) as exc:
+        print(f"Invalid smoke manifest: {exc}", file=sys.stderr)
+        return 2
+    if not args.urls_file:
+        js_url = os.getenv("CRAWL4AI_SMOKE_JS_URL", "").strip()
+        if js_url:
+            if validate_public_url(js_url) is not None:
+                print("Invalid JS smoke URL", file=sys.stderr)
+                return 2
+            urls.append(js_url)
 
     timeout = httpx.Timeout(30.0)
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
@@ -69,10 +127,21 @@ async def main() -> int:
         health = await client.get(f"{base_url.rstrip('/')}/health")
         health.raise_for_status()
         print(f"health ok seconds={time.perf_counter() - started:.3f}")
-        await _crawl(client, base_url, token, "https://example.com")
-        js_url = os.getenv("CRAWL4AI_SMOKE_JS_URL", "").strip()
-        if js_url:
-            await _crawl(client, base_url, token, js_url)
+        durations = []
+        failures = []
+        for url in urls:
+            try:
+                durations.append(await _crawl(client, base_url, token, url, proxy_url))
+            except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+                failures.append(url)
+                print(f"smoke FAILED url={url} reason={type(exc).__name__}",
+                      file=sys.stderr)
+        if durations:
+            report_timings(durations)
+        if failures:
+            print(f"smoke INCOMPLETE passed={len(durations)} failed={len(failures)} "
+                  f"total={len(urls)}", file=sys.stderr)
+            return 1
     return 0
 
 

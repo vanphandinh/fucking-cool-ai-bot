@@ -51,6 +51,17 @@ _HEALTH_SCOPES = (
 )
 
 
+def _safe_tool_error(exc: Exception) -> str:
+    """Provider-visible error categories never contain exception messages or inputs."""
+    if isinstance(exc, TimeoutError):
+        return "tool_timeout"
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return "invalid_input"
+    if isinstance(exc, (ConnectionError, OSError)):
+        return "tool_unavailable"
+    return "tool_internal_error"
+
+
 @dataclass(frozen=True)
 class CompletionResult:
     content: str
@@ -226,7 +237,13 @@ async def _execute_tool_batch(
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                output = f"Lỗi khi chạy tool '{tc.name}': {exc}"
+                category = _safe_tool_error(exc)
+                logger.warning(
+                    "Tool execution failed category=%s exc_type=%s",
+                    category,
+                    type(exc).__name__,
+                )
+                output = f"Tool execution failed: {category}"
             normalized = str(output)[:6000]
             if retain is not None:
                 retain(index, normalized)

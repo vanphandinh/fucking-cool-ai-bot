@@ -12,6 +12,61 @@ from tests.provider_fakes import fetch_url_definition, text_request
 
 
 class ProviderPayloadExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unknown_tool_name_cannot_inject_provider_diagnostics(self) -> None:
+        marker = "PROVIDER-TOOL-NAME-PRIVACY-SENTINEL"
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": f"unknown-{marker}\nFORGED-LOG-LINE",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+                request=request,
+            )
+
+        provider = make_catalog_target(
+            "chainnode",
+            model="privacy-model",
+            credential="test-key",
+            target_id="chainnode:text:privacy-tool-name:c1",
+        )
+        await provider.aclose()
+        provider._client = httpx.AsyncClient(
+            base_url="https://example.test/v1/",
+            transport=httpx.MockTransport(respond),
+        )
+        try:
+            with self.assertRaises(ProviderError) as raised:
+                await provider.chat(
+                    text_request("use tool", tools=(fetch_url_definition(),))
+                )
+        finally:
+            await provider.aclose()
+
+        error = raised.exception
+        self.assertIn("active schema", str(error))
+        self.assertNotIn(marker, str(error))
+        self.assertNotIn("FORGED-LOG-LINE", str(error))
+        self.assertNotIn("\n", str(error))
+        self.assertIsNone(error.__cause__)
+        self.assertIsNone(error.__context__)
+
     async def test_invalid_json_response_does_not_retain_raw_document(self) -> None:
         payload_secret = "PR58-INVALID-JSON-PAYLOAD"
 

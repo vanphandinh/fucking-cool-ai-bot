@@ -54,7 +54,9 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
 
     def settings(self, **overrides) -> Settings:
         values = {
+            "crawl4ai_enabled": True,
             "crawl4ai_api_token": "secret-test-token",
+            "crawl4ai_egress_proxy_url": "http://crawl4ai-proxy:3128",
             "crawl4ai_max_chars": 1000,
         }
         values.update(overrides)
@@ -94,8 +96,11 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["Authorization"], "Bearer secret-test-token")
         payload = client.stream.call_args.kwargs["json"]
         self.assertEqual(payload["urls"], ["https://example.org/article"])
-        self.assertEqual(payload["browser_config"], {})
-        self.assertEqual(payload["crawler_config"], {})
+        self.assertEqual(payload["browser_config"]["type"], "BrowserConfig")
+        self.assertEqual(payload["crawler_config"]["type"], "CrawlerRunConfig")
+        for section in ("browser_config", "crawler_config"):
+            self.assertNotIn("proxy_config", payload[section]["params"])
+        self.assertNotIn("extra_args", payload["browser_config"]["params"])
 
     async def test_oversized_response_is_rejected_before_json_use(self):
         huge_markdown = "x" * (4 * 1024 * 1024 + 1)
@@ -276,8 +281,23 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(return_value=client),
         ):
             result = await read_page("https://example.org", self.settings())
-        self.assertTrue(result.ok)
-        self.assertEqual(result.source_url, "https://example.org")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "blocked_redirect")
+
+    async def test_rejects_bad_initial_url_before_request(self):
+        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock()) as get_client:
+            result = await read_page("http://127.0.0.1/private", self.settings())
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "blocked_url")
+        get_client.assert_not_awaited()
+
+    async def test_rejects_unconfigured_proxy_before_request(self):
+        with patch("app.search.crawl4ai_client._get_client", new=AsyncMock()) as get_client:
+            result = await read_page(
+                "https://example.org", self.settings(crawl4ai_egress_proxy_url="")
+            )
+        self.assertEqual(result.reason, "disabled")
+        get_client.assert_not_awaited()
 
     async def test_cancelled_error_propagates(self):
         client = _raising_stream_client(asyncio.CancelledError())

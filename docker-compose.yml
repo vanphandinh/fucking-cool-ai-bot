@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    networks:
+      - default
+      - crawl4ai_api
 
   # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
   # - Bật theo yêu cầu bằng profile:  docker compose --profile searxng up -d
@@ -50,20 +53,86 @@ services:
     image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0.9.3}
     container_name: fcai-crawl4ai
     profiles: ["crawl4ai"]
-    restart: unless-stopped
+    # Fail closed: do not start crawler before the firewall on host reboot.
+    restart: "no"
     init: true
     stop_grace_period: 30s
     shm_size: "${CRAWL4AI_SHM_SIZE:-512m}"
+    networks:
+      - crawl4ai_api
+      - crawl4ai_proxy
+      - crawl4ai_dns
+    # Docker's embedded resolver sends external lookups to the restricted
+    # CoreDNS service. The crawler has no route to the Internet uplink.
+    dns:
+      - ${CRAWL4AI_DNS_IP:-10.221.57.53}
     environment:
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
       CRAWL4AI_EXECUTE_JS_ENABLED: "false"
       CRAWL4AI_HOOKS_ENABLED: "false"
+      # The image's localhost DNS-pinning proxy chains through Squid.
+      # The REST API forbids client-provided proxy_config in version 0.9.3.
+      CRAWL4AI_UPSTREAM_PROXY: http://crawl4ai-proxy:3128
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11235/health"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 40s
+
+  # Only this service has an Internet-connected Docker network.
+  crawl4ai-proxy:
+    image: ${CRAWL4AI_PROXY_IMAGE:-ubuntu/squid:6.10-24.10_edge@sha256:e0a69e6c6f6a9f5bf1fb4edd6afa9c0aec23ea89ff8f3077dd5c55e7772438f0}
+    container_name: fcai-crawl4ai-proxy
+    profiles: ["crawl4ai"]
+    restart: "no"
+    init: true
+    volumes:
+      - ./crawl4ai/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - crawl4ai_proxy
+      - crawl4ai_uplink
+
+  # Resolve external names for Crawl4AI's DNS-pinning broker. This service
+  # forwards only to Docker's local DNS stub; host firewall rules prohibit
+  # raw egress from its uplink interface and any access to internal services.
+  crawl4ai-dns:
+    image: ${CRAWL4AI_DNS_IMAGE:-coredns/coredns:1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1}
+    container_name: fcai-crawl4ai-dns
+    profiles: ["crawl4ai"]
+    restart: "no"
+    read_only: true
+    cap_drop: ["ALL"]
+    # CoreDNS' executable has a file capability for binding port 53.
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt: ["no-new-privileges:true"]
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./crawl4ai/Corefile:/etc/coredns/Corefile:ro
+    networks:
+      crawl4ai_dns:
+        ipv4_address: ${CRAWL4AI_DNS_IP:-10.221.57.53}
+      crawl4ai_uplink:
+
+networks:
+  crawl4ai_dns:
+    name: fcai-crawl4ai-dns
+    internal: true
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: ${CRAWL4AI_DNS_SUBNET:-10.221.57.0/24}
+  crawl4ai_api:
+    name: fcai-crawl4ai-api
+    internal: true
+    enable_ipv6: false
+  crawl4ai_proxy:
+    name: fcai-crawl4ai-proxy
+    internal: true
+    enable_ipv6: false
+  crawl4ai_uplink:
+    name: fcai-crawl4ai-uplink
+    enable_ipv6: false
 
 volumes:
   searxng-cache:

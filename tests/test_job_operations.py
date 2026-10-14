@@ -1,5 +1,7 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.core.job_control import JobControl
 from app.core.job_operations import OperationBudget, OperationRunner
@@ -89,21 +91,24 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_nested_context_budget_is_charged_once_per_attempt(self):
         r = OperationRunner(JobControl(renewal_sec=10), asyncio.Semaphore(1), lambda e: None)
+        now = [100.0]
 
         async def tiny():
-            await asyncio.sleep(.005)
+            now[0] += .007
             return "ok"
 
-        with r.budget(.05) as shared:
-            before = shared.remaining
-            self.assertEqual(
-                await r.run("nested", tiny, timeout_sec=.1, budget=shared),
-                "ok",
-            )
-            spent = before - shared.remaining
+        # Control only OperationRunner's elapsed-time clock. Real scheduling
+        # jitter must not decide whether a single budget was charged twice.
+        with patch("app.core.job_operations.time", SimpleNamespace(monotonic=lambda: now[0])):
+            with r.budget(.05) as shared:
+                before = shared.remaining
+                self.assertEqual(
+                    await r.run("nested", tiny, timeout_sec=.1, budget=shared),
+                    "ok",
+                )
+                spent = before - shared.remaining
 
-        self.assertGreater(spent, 0)
-        self.assertLess(spent, .02)
+        self.assertAlmostEqual(spent, .007, places=6)
 
     async def test_reader_fallback_waits_for_consent(self):
         from unittest.mock import patch

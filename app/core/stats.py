@@ -18,6 +18,7 @@ class Stats:
         self.questions_total = 0
         self.questions_today = 0
         self.searches = 0
+        self.partial_deliveries = 0
         self.fallback_count = 0
         self.target_rotation_count = 0
         self.model_rotation_count = 0
@@ -40,6 +41,9 @@ class Stats:
         self._roll_day()
         self.by_provider[provider] += 1
         self.last_provider = provider
+
+    def record_partial_delivery(self) -> None:
+        self.partial_deliveries += 1
 
     def record_fallbacks(self, fallbacks: tuple[str, ...]) -> None:
         self.fallback_count += len(fallbacks)

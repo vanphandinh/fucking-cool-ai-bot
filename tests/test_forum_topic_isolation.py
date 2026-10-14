@@ -136,5 +136,119 @@ class ForumTopicIsolationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class TopicLockLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_topic_serializes_many_waiters_and_reclaims(self):
+        locks = _ChatLocks()
+        active = 0
+        max_active = 0
+
+        async def work():
+            nonlocal active, max_active
+            async with locks.hold(-100200, 101):
+                active += 1
+                max_active = max(active, max_active)
+                await asyncio.sleep(0)
+                active -= 1
+
+        await asyncio.gather(*(work() for _ in range(80)))
+        self.assertEqual(max_active, 1)
+        self.assertEqual(locks._locks, {})
+
+    async def test_different_topics_are_parallel(self):
+        locks = _ChatLocks()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def first():
+            async with locks.hold(10, 1):
+                started.set()
+                await release.wait()
+
+        task = asyncio.create_task(first())
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            async with asyncio.timeout(1):
+                async with locks.hold(10, 2):
+                    self.assertEqual(len(locks._locks), 2)
+        finally:
+            release.set()
+            await task
+        self.assertEqual(locks._locks, {})
+
+    async def test_cancellation_while_waiting_retains_owner(self):
+        locks = _ChatLocks()
+        async with locks.hold(10, 1):
+            waiter = asyncio.create_task(self._acquire(locks, 10, 1))
+            await asyncio.sleep(0)
+            entry = locks._locks[(10, 1)]
+            self.assertEqual(entry.references, 2)
+            waiter.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await waiter
+            self.assertIs(locks._locks[(10, 1)], entry)
+            self.assertEqual(entry.references, 1)
+        self.assertEqual(locks._locks, {})
+
+    async def test_timeout_while_waiting_reclaims(self):
+        locks = _ChatLocks()
+        async with locks.hold(10, 1):
+            with self.assertRaises(TimeoutError):
+                async with asyncio.timeout(0.01):
+                    async with locks.hold(10, 1):
+                        self.fail("waiter must not enter")
+            self.assertEqual(locks._locks[(10, 1)].references, 1)
+        self.assertEqual(locks._locks, {})
+
+    async def test_exception_releases_entry(self):
+        locks = _ChatLocks()
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            async with locks.hold(10, 1):
+                raise RuntimeError("boom")
+        self.assertEqual(locks._locks, {})
+
+    async def test_release_race_reuses_entry_for_waiter(self):
+        locks = _ChatLocks()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def owner():
+            async with locks.hold(10, 1):
+                started.set()
+                await release.wait()
+
+        owner_task = asyncio.create_task(owner())
+        await started.wait()
+        entry = locks._locks[(10, 1)]
+        waiter = asyncio.create_task(self._acquire(locks, 10, 1))
+        await asyncio.sleep(0)
+        self.assertIs(locks._locks[(10, 1)], entry)
+        self.assertEqual(entry.references, 2)
+        release.set()
+        new_arrival = asyncio.create_task(self._acquire(locks, 10, 1))
+        await asyncio.gather(owner_task, waiter, new_arrival)
+        self.assertEqual(locks._locks, {})
+
+    async def test_thousands_of_topics_do_not_accumulate(self):
+        locks = _ChatLocks()
+        for topic in range(3000):
+            async with locks.hold(10, topic):
+                self.assertEqual(len(locks._locks), 1)
+        self.assertEqual(locks._locks, {})
+
+    async def test_new_request_after_reclamation_gets_new_entry(self):
+        locks = _ChatLocks()
+        async with locks.hold(10, 1):
+            original = locks._locks[(10, 1)]
+        self.assertEqual(locks._locks, {})
+        async with locks.hold(10, 1):
+            self.assertIsNot(locks._locks[(10, 1)], original)
+        self.assertEqual(locks._locks, {})
+
+    @staticmethod
+    async def _acquire(locks: _ChatLocks, chat_id: int, topic_id: int):
+        async with locks.hold(chat_id, topic_id):
+            await asyncio.sleep(0)
+
+
 if __name__ == "__main__":
     unittest.main()

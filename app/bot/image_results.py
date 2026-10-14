@@ -34,5 +34,8 @@ async def send_image_results(
                 sent += 1
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.info("Telegram không gửi được ảnh URL, thử fallback: %s", exc)
+                logger.info(
+                    "Telegram không gửi được ảnh URL, thử fallback: exc_type=%s",
+                    type(exc).__name__,
+                )
     return sent

@@ -106,16 +106,15 @@ Delivered controlled exchanges are retained in Telegram request-message order, n
 
 ## Delivery completion boundary
 
-The controlled-question completion boundary is the successful primary answer commit:
+The controlled-question completion boundary is the acknowledged final primary answer chunk:
 
-1. all primary answer parts have been sent;
-2. provider/fallback/search success accounting has been recorded;
-3. `ChatMemory.push_exchange()` has committed the user/assistant exchange; and
-4. the job records `delivery_committed=True` immediately, with no cancellable await between the memory commit and that flag.
+1. Telegram returns successfully for each primary answer part (`sent_parts/total_parts` tracks confirmed acknowledgments);
+2. immediately after the last acknowledgment, the job records `delivery_committed=True` and attempts full history/stat accounting, without a cancellable await;
+3. any error in history/stat accounting is logged by exception **type**, while the Telegram delivery outcome remains truthful.
 
-Before this boundary, an interrupted delivery is failed/interrupted and must not claim successful memory or success accounting. After this boundary, the job is logically `COMPLETED` even if shutdown cancels later enrichment work.
+Before this boundary, an interrupted delivery with zero acknowledged parts is `FAILED`; with **1..N-1** acknowledged parts it is `PARTIALLY_DELIVERED`. Only the confirmed plain-text prefix, suffixed with `[...] Câu trả lời chưa hoàn chỉnh`, is committed to conversation memory (bounded to the existing 4,000-character turn limit), with its original Telegram request ordering. A partial-delivery counter increments once, and full-answer/search/fallback success counters do not increment. The partial terminal status shows `sent_parts/total_parts` and has no active controls. After the final acknowledgment, the job is logically `COMPLETED` even if shutdown cancels later enrichment work.
 
-If a multi-part primary answer fails after one or more leading parts were already sent, the job remains uncommitted and ends failed. A manual whole-question retry can therefore repeat those already-sent leading parts; Telegram does not provide a transactional multi-message send, so cross-job exactly-once delivery is not promised in Release 1.
+The bot never automatically retries or replays acknowledged parts. Failed transport operations may have reached Telegram without a successful acknowledgment, so ambiguous delivery is **not** exactly-once; manual whole-question retries can still repeat visible text. The job registry/acknowledgments are RAM-only and do not survive restarts.
 
 Images and source/footer messages sent after the primary commit are **best-effort extras**. Failure or cancellation of those extras must not replay the primary answer, duplicate memory/stat accounting, or turn an already committed answer into `FAILED`.
 
@@ -134,7 +133,8 @@ Shutdown semantics are state-aware:
 - `QUEUED`: execution must not start after cancellation;
 - `RUNNING`: active operation/semaphore capacity is released by cleanup;
 - `AWAITING_CONSENT`: the consent waiter is woken/cancelled without renewing or dispatching new work;
-- `DELIVERING` before the primary commit: interruption is failed/interrupted;
+- `DELIVERING` with zero acknowledged parts: `FAILED`;
+- `DELIVERING` with some, but not all, primary parts acknowledged: `PARTIALLY_DELIVERED`, with prefix-only memory and partial accounting;
 - `DELIVERING` after the primary commit: the job remains `COMPLETED`, while images/sources may be abandoned as best effort.
 
 ## Rollout

@@ -19,6 +19,8 @@ Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docke
 
 `README.md`, `.env.example`, runtime source, Docker/CI và các active operator guide là source of truth cho current deployment contract.
 
+Hội thoại giữ tối đa `MAX_CONTEXT_CONVERSATIONS=2048` chat/topic trong RAM (LRU) và hết hạn sau `CONTEXT_TTL_SEC=86400` giây không truy cập; giới hạn lượt mỗi key vẫn theo `MAX_CONTEXT_TURNS`. Với controlled multipart trả lời, Telegram xác nhận 1..N-1 phần sẽ kết thúc `PARTIALLY_DELIVERED` và lưu prefix được đánh dấu, không tự động gửi lại.
+
 ## AI architecture
 
 ```text
