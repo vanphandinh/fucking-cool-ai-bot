@@ -1,6 +1,6 @@
 # Kế hoạch triển khai Web Evidence V2 — Search, Fetch và Synthesis
 
-> **Trạng thái:** IN PROGRESS — PR1/PR2 code và kiểm thử offline hoàn thành; PR3–PR4, nghiệm thu thực tế và rollout còn chờ. Chỉ xóa sau nghiệm thu và 7 ngày theo dõi.
+> **Trạng thái:** IN PROGRESS — PR1/PR2/PR3 code, kiểm thử và gate offline hoàn thành; PR4, nghiệm thu thực tế và rollout còn chờ. Chỉ xóa sau nghiệm thu và 7 ngày theo dõi.
 > **Ngày lập:** 2026-10-14.
 > **Áp dụng cho:** `fucking-cool-ai-bot`.
 > **Quy tắc lưu trữ:** giữ file này trong working tree khi triển khai; bảo đảm file đã được commit vào Git trước khi xóa; xóa file bằng một commit dọn dẹp cuối cùng sau khi tất cả điều kiện ở mục 8 đạt. Bản kế hoạch hoàn thành chỉ tồn tại trong Git history, phù hợp `docs/README.md`.
@@ -85,7 +85,7 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 
 **Gate PR2:** test chứng minh câu trả lời nằm sau 8.000 ký tự vẫn có trong evidence; test trang ngắn, HTML lỗi, nhiều section, website chỉ có navigation, tóm tắt toàn trang, nguồn không đọc được; không lỗi SSRF/timeout/cancellation và regressions reader/Crawl4AI/X.
 
-### PR3 — Ranking nguồn và auto-fetch có điều kiện [ ]
+### PR3 — Ranking nguồn và auto-fetch có điều kiện [x]
 
 1. Giữ `MAX_RESULTS=8`, dedupe bằng URL canonicalization hiện có; xếp hạng web dựa trên normalized query ↔ title/snippet, trọng số title 2 và snippet 1, rồi đa dạng domain. Không áp dụng logic này cho image search.
 2. Với `SEARCH_BACKEND=auto`, chỉ dừng ở SearXNG nếu có **ít nhất hai kết quả web từ hai domain khác nhau có điểm lexical >=0,20**; nếu không thì gọi DDGS top-up trong search timeout hiện có, merge/dedupe/rank lại. Thiếu date đáng tin cậy thì không suy diễn độ mới của bài viết.
@@ -138,7 +138,7 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 
 - [x] PR1: Baseline 40 cases, metrics + file plan đã commit
 - [x] PR2: Extraction/chunking/evidence selection, có chứng cứ sâu trong trang (offline; chưa rollout)
-- [ ] PR3: Source ranking, quality top-up, conditional auto-fetch
+- [x] PR3: Source ranking, quality top-up, conditional auto-fetch (offline; flag OFF mặc định, chưa rollout)
 - [ ] PR4: Synthesis packing, 100-case benchmark, docs + rollout
 - [ ] Toàn bộ unit/integration/security/regression tests pass
 - [ ] Các mục tiêu chất lượng/token/latency ở mục 4 đã được đo và đạt
@@ -163,5 +163,8 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 
 - PR1: 40 synthetic offline snapshots đã chạy; 6 benchmark tests pass. V1 source recall@8 = 0,8627; evidence recall = 0,4894; extractive accuracy proxy = 0,4750; citation precision proxy = 1,0000; unsupported claims proxy = 0,0000; trung bình 2 fetch/case. Token 728 median (estimate). Chi tiết latency và SHA-256 trong `docs/benchmarks/web_evidence_v1_baseline.json`; cách diễn giải và giới hạn trong `docs/benchmarks/README.md`.
 - PR2: Đã đưa extraction HTML/Jina/Crawl4AI và selection chunk sau feature flag OFF mặc định; giữ URL/X precedence, 2 MiB tải về, SSRF/redirect/DNS pinning, cancellation, giới hạn 6k/tool và 12k/synthesis. Test sâu >25k ký tự, HTML hỏng, trang chỉ có navigation (trả `ok=false`), fallback, V1 rollback. Benchmark 40 cases V2: source recall@8 0,8627; evidence recall 0,6383 (**+14,89 điểm phần trăm**); accuracy **extractive proxy** 0,6500 (**+17,50 điểm phần trăm**); citation proxy 1,0000; unsupported proxy 0; median token estimate 782 (+7,4%); p95 offline 632,316 ms (V1 764,749 ms, thời gian dao động theo máy); 2 fetch/case, 0 network. `python -m unittest tests.test_web_evidence_v2 tests.test_reader_article_focus tests.test_url_service tests.test_tool_url_dedupe -q`: 27 OK; full suite sau bản sửa cuối: 659 OK, 11 skipped; Ruff pass. Report trong `docs/benchmarks/web_evidence_v2_pr2.json`.
-- Bàn giao triển khai kế tiếp: xem `docs/WEB_EVIDENCE_V2_CHECKPOINT.md` và `docs/WEB_EVIDENCE_V2_NEXT_MODEL_PROMPT.md`. Cần tiếp tục PR3→PR4, chạy benchmark/test theo gate; không đánh dấu các mục nghiệm thu tổng thể chỉ từ proxy offline.
+- PR3: thêm `app/search/source_ranking.py` (lexical score title×2/snippet×1, canonical dedupe, domain diversity, gate >=2 domain >=0,20) và `app/search/auto_fetch.py` (chọn target, budget question-scoped, pack evidence trong cap tool). `app/search/router.py` dùng quality gate khi `WEB_EVIDENCE_V2_ENABLED=1` và tách cache key `:v2`; `app/core/orchestrator.py` auto-fetch tối đa 2 nguồn, song song <=2, budget 20s/câu hỏi, chặn bởi budget question/job, bỏ qua khi user đã đưa URL, cache theo canonical URL trong request (chia sẻ với `fetch_url`), báo rõ nguồn không đọc được. Image search và X resolver không đổi; budget/SSRF/2 MiB/6k/12k giữ nguyên.
+  Test: `tests/test_web_evidence_source_ranking.py` (20) và `tests/test_web_auto_fetch.py` (16) bao phủ ranking, gate, top-up, flag rollback, image không đổi, cache tách V1/V2, cancellation, duplicate URL/domain, budget, concurrency và 2 câu hỏi đồng thời. `python tests/run_tests.py`: **695 OK, 11 skipped**; `python -m ruff check .`: pass. Benchmark 40 case (fixture SHA-256 không đổi `1bf0e345…c6323d`): evidence recall **0,7234** (V1 0,4894; +23,40 điểm phần trăm), accuracy **extractive proxy** 0,6750 (+20,00 điểm phần trăm), source recall@8 0,8627, citation/unsupported proxy không đổi, token median estimate 783,5 (+7,6%), p95 tổng offline 587,2 ms (V1 baseline đã commit: 764,7 ms; PR2: 632,3 ms — số theo máy). Report: `docs/benchmarks/web_evidence_v2_pr3.json`. Vẫn là proxy offline, không phải chất lượng model thật.
+  GitNexus: `impact --direction upstream` cho `route_auto` và `_format_search_results` là **HIGH** (mỗi symbol 2 direct dependents, 3–4 process, 3 module) — đã kiểm thử reader/navigation/SSRF/cancellation/url-dedupe/search-resilience để chặn hồi quy; `read_url` và `ask` trả `UNKNOWN` khi tra theo tên nên đã xác minh bằng test hiện có thay vì coi là an toàn.
+- Bàn giao triển khai kế tiếp: xem `docs/WEB_EVIDENCE_V2_CHECKPOINT.md` và `docs/WEB_EVIDENCE_V2_NEXT_MODEL_PROMPT.md`. Cần tiếp tục PR4, chạy benchmark/test theo gate; không đánh dấu các mục nghiệm thu tổng thể chỉ từ proxy offline.
 - Chưa có đánh giá câu trả lời của model thật, chi phí provider, latency network, hoặc rollout. Những mục đó vẫn là blockers của acceptance PR4 và mục 7.

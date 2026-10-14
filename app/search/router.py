@@ -13,6 +13,7 @@ from ..config import Settings
 from ..core.job_operations import OperationBudget
 from .resilience import BackendKey, FailureKind
 from .runtime import get_search_runtime
+from .source_ranking import has_independent_coverage, rank_web_results
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,24 @@ def _merge_results(
         if len(out) >= limit:
             break
     return out[:limit]
+
+
+def _meets_minimum(
+    *,
+    quality_gate: bool,
+    query: str,
+    results: list[dict],
+    min_results: int,
+) -> bool:
+    """Decide whether an early backend result set is good enough to stop.
+
+    The V2 web policy accepts a backend only when at least two independent
+    domains carry a lexically relevant result (>= 0.20). Image routing and the
+    flag-off V1 path keep the original count-based threshold.
+    """
+    if quality_gate:
+        return has_independent_coverage(query, results)
+    return len(results) >= min_results
 
 
 def _classify_failure(exc: Exception) -> FailureKind:
@@ -167,7 +186,10 @@ async def route_auto(
 ) -> list[dict]:
     runtime = get_search_runtime(settings)
     normalized = _normalize_query(query)
-    cache_key = f"{kind}:{limit}:{normalized}"
+    # Ranking and the independence gate change web ordering, so V1 and V2
+    # answers for the same query must never share a cache entry.
+    quality_gate = kind == "web" and settings.web_evidence_v2_enabled
+    cache_key = f"{kind}:{limit}:{normalized}" + (":v2" if quality_gate else "")
 
     fresh = runtime.cache.get_fresh(cache_key)
     if fresh is not None:
@@ -190,6 +212,7 @@ async def route_auto(
         attempted: set[str] = set()
         merged: list[dict] = []
         had_successful_backend = False
+        searxng_sufficient = False
         failures: list[str] = []
         min_results = (
             _MIN_IMAGE_RESULTS_BEFORE_TOPUP
@@ -219,7 +242,15 @@ async def route_auto(
                     key_name=result_url_key,
                     limit=limit,
                 )
-                if len(merged) >= min_results:
+                searxng_sufficient = _meets_minimum(
+                    quality_gate=quality_gate,
+                    query=normalized,
+                    results=merged,
+                    min_results=min_results,
+                )
+                if searxng_sufficient:
+                    if quality_gate:
+                        merged = rank_web_results(normalized, merged, limit=limit)
                     _cache_success(runtime, cache_key, merged, settings, kind)
                     return merged
             elif error is not None:
@@ -231,7 +262,7 @@ async def route_auto(
                     summary,
                 )
 
-        if len(merged) < min_results:
+        if not searxng_sufficient:
             attempted_now, results, error = await _attempt(
                 name="ddgs",
                 kind=kind,
@@ -259,6 +290,8 @@ async def route_auto(
                 logger.warning("DDGS %s search lỗi (%s)", kind, summary)
 
         if merged:
+            if quality_gate:
+                merged = rank_web_results(normalized, merged, limit=limit)
             _cache_success(runtime, cache_key, merged, settings, kind)
             return merged
         if had_successful_backend:

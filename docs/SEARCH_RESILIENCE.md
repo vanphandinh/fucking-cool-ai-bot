@@ -94,9 +94,47 @@ Rate limit/429 mở circuit ngay với cooldown dài hơn. Riêng 429 của mộ
 
 ## Partial top-up
 
-- Web: SearXNG trả 2+ usable results thì return ngay. Nếu chỉ có 1 result, giữ result đó và gọi DDGS để top-up.
+- Web (V1, `WEB_EVIDENCE_V2_ENABLED=false`): SearXNG trả 2+ usable results thì return ngay. Nếu chỉ có 1 result, giữ result đó và gọi DDGS để top-up.
+- Web (V2): SearXNG chỉ được chấp nhận sớm khi có ít nhất 2 result từ 2 domain độc lập đạt lexical score >= 0,20; nếu không thì DDGS top-up trong cùng timeout budget. Chi tiết ở mục dưới.
 - Image: 1 usable SearXNG result là đủ; không top-up để giảm upstream traffic.
 - Merge ưu tiên result SearXNG trước và dedupe theo canonical URL.
+
+## Web Evidence V2 policy (flag-gated)
+
+Chỉ áp dụng cho web search và chỉ khi `WEB_EVIDENCE_V2_ENABLED=1`; image search và
+X/Twitter resolver không đi qua policy này.
+
+- **Source ranking:** query, title và snippet được chuẩn hóa Unicode/casefold có gấp
+  dấu tiếng Việt, bỏ stopwords; score = (2 × title coverage + 1 × snippet coverage)/3.
+- **Dedupe + diversity:** result được dedupe theo canonical URL (bỏ tracking params,
+  fragment, default port, trailing slash), sắp theo score rồi round-robin domain để
+  nguồn từ domain chưa xuất hiện lên trước, sau đó mới lấp phần còn lại theo score.
+  `MAX_RESULTS=8` không đổi.
+- **Không suy diễn freshness:** ranker không đọc trường date; thiếu timestamp không
+  được hiểu là bài mới hay bài cũ.
+- **Quality gate:** ở `SEARCH_BACKEND=auto`, SearXNG chỉ được chấp nhận sớm khi có
+  >= 2 result từ 2 domain độc lập (eTLD+1) đạt score >= 0,20. Nếu không, DDGS top-up
+  một lần trong cùng budget, rồi merge/rank lại.
+- **Cache key tách V1/V2:** entry V2 dùng key `kind:limit:query:v2` nên bật/tắt flag
+  không trả lại ordering hoặc quyết định gate của chế độ kia.
+- **Conditional auto-fetch:** chỉ khi cả `WEB_EVIDENCE_V2_ENABLED` và
+  `WEB_AUTO_FETCH_ENABLED` bật. Sau một lần `web_search`, hệ thống tự đọc tối đa
+  `WEB_AUTO_FETCH_MAX_SOURCES` (<= 2) nguồn xếp hạng cao nhất mà snippet chưa đủ và
+  chưa được đọc trong request; tối đa 2 lượt đọc song song; tổng budget
+  `WEB_AUTO_FETCH_BUDGET_SEC` (<= 20s) dùng chung cho cả câu hỏi và bị chặn tiếp bởi
+  budget/deadline của question/job.
+- **User URL:** nếu message hoặc quoted text chứa URL, auto-fetch không chạy; URL
+  người dùng cung cấp vẫn được ưu tiên qua `fetch_url`.
+- **Request-scoped cache:** nội dung đã đọc được cache theo canonical URL trong phạm
+  vi request và chia sẻ với `fetch_url` (cùng singleflight), nên model gọi lại cùng
+  trang sẽ không fetch lần hai.
+- **Trạng thái trung thực:** nguồn không đọc được (timeout/lỗi/không có nội dung)
+  được ghi rõ `KHÔNG đọc được nguồn này ... Không được coi là đã đọc trang`; nguồn
+  lỗi không trở thành source của câu trả lời và không bật `searched`.
+- **Giới hạn chứng cứ:** bằng chứng auto-fetch được đóng gói trong phần còn lại của
+  cap 6.000 ký tự/tool; không nâng cap.
+- **Rollback:** đặt một trong hai flag về `0` là quay lại hành vi V1 (routing, ranking,
+  ordering và cache key V1).
 
 ## Cache và singleflight
 

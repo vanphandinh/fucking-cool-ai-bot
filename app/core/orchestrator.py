@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -10,11 +11,21 @@ from ..ai.contracts import ChatMessage, ChatRequest, TextPart, ToolDefinition
 from ..ai.multimodal import build_user_parts
 from ..ai.router import AIProviderRouter
 from ..config import Settings
-from ..search import image_service, service as search_service, url_service
+from ..search import auto_fetch, image_service, service as search_service, url_service
 from .request import UserRequest
 from .source_policy import canonicalize_source_url, select_diverse_sources
 
 _VN_TZ = timezone(timedelta(hours=7))
+
+# Mirrors the router's per-tool output cap so appended evidence always fits
+# inside it without the truncation dropping source labels or status lines.
+_TOOL_OUTPUT_CAP = 6000
+_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+
+def _request_urls(request: UserRequest) -> tuple[str, ...]:
+    """URLs the user pointed at explicitly (message body or quoted text)."""
+    return tuple(_URL_RE.findall(f"{request.text or ''}\n{request.quoted_text or ''}"))
 
 TOOLS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
@@ -167,6 +178,109 @@ class Orchestrator:
         image_results: list[dict] = []
         url_cache: dict[tuple[str, str], str] = {}
         url_inflight: dict[tuple[str, str], asyncio.Task[str]] = {}
+        url_results: dict[str, url_service.UrlReadResult] = {}
+        # One wall clock per question, shared by every auto-fetch burst.
+        auto_fetch_budget = auto_fetch.AutoFetchBudget(
+            self.settings.web_auto_fetch_budget_sec
+        )
+        user_supplied_url = bool(_request_urls(request))
+
+        async def cached_read(key: tuple[str, str], factory) -> str:
+            """Request-scoped canonical cache with singleflight on concurrent reads."""
+            cached = url_cache.get(key)
+            if cached is not None:
+                return cached
+            task = url_inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(factory())
+                url_inflight[key] = task
+            try:
+                payload = await task
+            finally:
+                if task.done() and url_inflight.get(key) is task:
+                    url_inflight.pop(key, None)
+            url_cache[key] = payload
+            return payload
+
+        async def auto_fetch_evidence(query: str, results: list[dict], payload: str) -> str:
+            """Read top-ranked sources when both V2 flags allow it and budget lasts."""
+            nonlocal searched
+            settings = self.settings
+            if not auto_fetch.auto_fetch_active(settings):
+                return ""
+            if auto_fetch_budget.exhausted or user_supplied_url:
+                return ""
+            targets = auto_fetch.select_targets(
+                query,
+                results,
+                limit=settings.web_auto_fetch_max_sources,
+                already_fetched=[key[0] for key in url_cache],
+            )
+            if not targets:
+                return ""
+            started = asyncio.get_running_loop().time()
+
+            async def read(target: str) -> dict:
+                if auto_fetch_budget.exhausted:
+                    return {
+                        "url": target,
+                        "ok": False,
+                        "text": "",
+                        "reason": "hết ngân sách auto-fetch",
+                    }
+
+                async def perform() -> str:
+                    nonlocal searched
+                    result = await asyncio.wait_for(
+                        url_service.read_url(
+                            target,
+                            settings,
+                            "auto",
+                            operations=operations,
+                            query=query,
+                        ),
+                        timeout=max(0.05, auto_fetch_budget.remaining),
+                    )
+                    url_results[target] = result
+                    if result.ok:
+                        searched = True
+                        sources.append(
+                            {"title": result.source_url, "url": result.source_url, "snippet": ""}
+                        )
+                    return f"Nội dung URL {result.source_url}:\n{result.text}"
+
+                try:
+                    await cached_read((target, "auto"), perform)
+                except asyncio.CancelledError:
+                    raise
+                except (TimeoutError, asyncio.TimeoutError):
+                    return {
+                        "url": target,
+                        "ok": False,
+                        "text": "",
+                        "reason": "quá thời gian auto-fetch",
+                    }
+                except Exception as exc:  # noqa: BLE001 - report, never claim success
+                    return {
+                        "url": target,
+                        "ok": False,
+                        "text": "",
+                        "reason": type(exc).__name__,
+                    }
+                result = url_results.get(target)
+                if result is None:
+                    return {
+                        "url": target,
+                        "ok": False,
+                        "text": "",
+                        "reason": "không có kết quả đọc trang",
+                    }
+                return {"url": target, "ok": result.ok, "text": result.text, "reason": ""}
+
+            entries = await asyncio.gather(*(read(target) for target in targets))
+            auto_fetch_budget.spend(asyncio.get_running_loop().time() - started)
+            room = max(0, _TOOL_OUTPUT_CAP - len(payload) - 64)
+            return auto_fetch.pack_evidence(list(entries), max_chars=room)
 
         async def tool_executor(name: str, args: dict) -> str:
             nonlocal searched
@@ -179,7 +293,9 @@ class Orchestrator:
                 results = await search_service.search(q, self.settings, operations=operations)
                 sources.extend(results)
                 searched = True
-                return _format_search_results(q, results)
+                payload = _format_search_results(q, results)
+                extra = await auto_fetch_evidence(q, results, payload)
+                return f"{payload}\n{extra}" if extra else payload
             if name == "image_search":
                 q = str(args.get("query") or "").strip()[:300]
                 if not q:
@@ -208,41 +324,30 @@ class Orchestrator:
                 mode = str(args.get("mode") or "auto").strip().lower()
                 cache_url = canonicalize_source_url(url) or url
                 key = (cache_url, mode)
-                if key in url_cache:
-                    return url_cache[key]
 
-                task = url_inflight.get(key)
-                if task is None:
-                    async def fetch() -> str:
-                        nonlocal searched
-                        result = await url_service.read_url(
-                            url,
-                            self.settings,
-                            mode,
-                            operations=operations,
-                            **(
-                                {"query": request.text}
-                                if self.settings.web_evidence_v2_enabled else {}
-                            ),
-                        )
-                        if result.ok:
-                            searched = True
-                            sources.append({
-                                "title": result.source_url,
-                                "url": result.source_url,
-                                "snippet": "",
-                            })
-                        payload = f"Nội dung URL {result.source_url}:\n{result.text}"
-                        url_cache[key] = payload
-                        return payload
+                async def fetch() -> str:
+                    nonlocal searched
+                    result = await url_service.read_url(
+                        url,
+                        self.settings,
+                        mode,
+                        operations=operations,
+                        **(
+                            {"query": request.text}
+                            if self.settings.web_evidence_v2_enabled else {}
+                        ),
+                    )
+                    url_results[cache_url] = result
+                    if result.ok:
+                        searched = True
+                        sources.append({
+                            "title": result.source_url,
+                            "url": result.source_url,
+                            "snippet": "",
+                        })
+                    return f"Nội dung URL {result.source_url}:\n{result.text}"
 
-                    task = asyncio.create_task(fetch())
-                    url_inflight[key] = task
-                try:
-                    return await task
-                finally:
-                    if task.done() and url_inflight.get(key) is task:
-                        url_inflight.pop(key, None)
+                return await cached_read(key, fetch)
             return f"Tool '{name}' không tồn tại."
 
         try:
