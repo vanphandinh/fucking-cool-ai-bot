@@ -41,6 +41,14 @@ class WebEvidenceFixturesTests(unittest.TestCase):
 
 
 class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_v2_reaches_buried_conclusion_using_same_fixture(self) -> None:
+        case = next(case for case in load_cases() if case["id"] == "buried-01")
+        baseline = await replay(case)
+        enhanced = await replay(case, v2=True)
+        self.assertEqual(baseline["evidence_hits"], 0)
+        self.assertEqual(enhanced["evidence_hits"], 1)
+        self.assertTrue(enhanced["answer_correct_proxy"])
+
     async def test_buried_gold_is_not_reached_by_v1_reader(self) -> None:
         case = next(case for case in load_cases() if case["id"] == "buried-01")
         result = await replay(case)

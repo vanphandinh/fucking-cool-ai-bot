@@ -57,14 +57,15 @@ def _percentile(samples: list[float], percentile: float) -> float:
     return round(ordered[max(0, math.ceil(len(ordered) * percentile / 100) - 1)], 3)
 
 
-async def replay(case: dict) -> dict:
-    """Replay fixed V1 policy: search eight, read first two, compact evidence.
+async def replay(case: dict, *, v2: bool = False) -> dict:
+    """Replay fixed policy: search eight, read first two, compact evidence.
 
     The real app lets the LLM choose which URLs to fetch. This deterministic
     fixed policy isolates retrieval and extraction quality across revisions.
     """
     settings = Settings(
-        _env_file=None, search_backend="auto", searxng_url="https://searx.example.org"
+        _env_file=None, search_backend="auto", searxng_url="https://searx.example.org",
+        web_evidence_v2_enabled=v2,
     )
     pages = {item["url"]: item for item in case["sources"]}
     durations: dict[str, float] = {}
@@ -97,7 +98,9 @@ async def replay(case: dict) -> dict:
     with patch("app.search.reader._fetch_limited", new=fake_fetch):
         for hit in results[:2]:
             fetch_count += 1
-            read = await url_service.read_url(hit["url"], settings)
+            read = await url_service.read_url(
+                hit["url"], settings, **({"query": case["query"]} if v2 else {}),
+            )
             if not read.ok:
                 continue
             outputs.append(f"Nội dung URL {read.source_url}:\n{read.text}")
@@ -155,9 +158,9 @@ async def replay(case: dict) -> dict:
     }
 
 
-async def evaluate(cases: list[dict] | None = None) -> dict:
+async def evaluate(cases: list[dict] | None = None, *, v2: bool = False) -> dict:
     cases = cases if cases is not None else load_cases()
-    rows = [await replay(case) for case in cases]
+    rows = [await replay(case, v2=v2) for case in cases]
 
     def totals(key: str) -> int:
         return sum(row[key] for row in rows)
@@ -175,7 +178,7 @@ async def evaluate(cases: list[dict] | None = None) -> dict:
     }
     total_claims = totals("total_claims_proxy")
     return {
-        "pipeline": "V1",
+        "pipeline": "V2-extraction" if v2 else "V1",
         "case_count": len(rows),
         "category_counts": dict(Counter(row["category"] for row in rows)),
         "fixture_sha256": hashlib.sha256(FIXTURE.read_bytes()).hexdigest(),
@@ -220,8 +223,9 @@ async def evaluate(cases: list[dict] | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--v2", action="store_true", help="Replay with V2 evidence extraction")
     args = parser.parse_args()
-    report = asyncio.run(evaluate())
+    report = asyncio.run(evaluate(v2=args.v2))
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(

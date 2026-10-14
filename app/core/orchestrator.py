@@ -220,6 +220,10 @@ class Orchestrator:
                             self.settings,
                             mode,
                             operations=operations,
+                            **(
+                                {"query": request.text}
+                                if self.settings.web_evidence_v2_enabled else {}
+                            ),
                         )
                         if result.ok:
                             searched = True

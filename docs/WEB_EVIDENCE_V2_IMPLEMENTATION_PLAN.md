@@ -1,6 +1,6 @@
 # Kế hoạch triển khai Web Evidence V2 — Search, Fetch và Synthesis
 
-> **Trạng thái:** IN PROGRESS — PR1 baseline hoàn thành; PR2–PR4 và rollout còn chờ. Chỉ xóa sau nghiệm thu và 7 ngày theo dõi.
+> **Trạng thái:** IN PROGRESS — PR1/PR2 code và kiểm thử offline hoàn thành; PR3–PR4, nghiệm thu thực tế và rollout còn chờ. Chỉ xóa sau nghiệm thu và 7 ngày theo dõi.
 > **Ngày lập:** 2026-10-14.
 > **Áp dụng cho:** `fucking-cool-ai-bot`.
 > **Quy tắc lưu trữ:** giữ file này trong working tree khi triển khai; bảo đảm file đã được commit vào Git trước khi xóa; xóa file bằng một commit dọn dẹp cuối cùng sau khi tất cả điều kiện ở mục 8 đạt. Bản kế hoạch hoàn thành chỉ tồn tại trong Git history, phù hợp `docs/README.md`.
@@ -76,7 +76,7 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 
 **Gate PR1:** suite chạy ổn định, có số đo baseline cho mọi metric, snapshot/fixtures không chứa secret hoặc nội dung thu thập trái phép.
 
-### PR2 — Lấy chứng cứ nằm sâu trong trang [ ]
+### PR2 — Lấy chứng cứ nằm sâu trong trang [x]
 
 1. Thêm pipeline extraction/chunking/ranking bên trong reader và URL orchestration, chỉ kích hoạt khi `WEB_EVIDENCE_V2_ENABLED=true`; khi flag off phải giữ hành vi V1.
 2. Generic HTML parser cần đọc tiếp sau ký tự 8.000 ở tầng nội bộ, bảo toàn giới hạn byte, timeouts, redirect/SSRF protection và bounded parser buffer. Jina và Crawl4AI được xử lý qua cùng chuẩn evidence; nếu backend đã cắt nội dung trước đó thì metadata `truncated` phản ánh đúng sự kiện.
@@ -137,14 +137,14 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 ## 7. Theo dõi tiến độ
 
 - [x] PR1: Baseline 40 cases, metrics + file plan đã commit
-- [ ] PR2: Extraction/chunking/evidence selection, có chứng cứ sâu trong trang
+- [x] PR2: Extraction/chunking/evidence selection, có chứng cứ sâu trong trang (offline; chưa rollout)
 - [ ] PR3: Source ranking, quality top-up, conditional auto-fetch
 - [ ] PR4: Synthesis packing, 100-case benchmark, docs + rollout
 - [ ] Toàn bộ unit/integration/security/regression tests pass
 - [ ] Các mục tiêu chất lượng/token/latency ở mục 4 đã được đo và đạt
 - [ ] Rollout 100% ổn định ít nhất 7 ngày, có ghi nhận kiểm tra rollback
 - [ ] Code và docs vận hành đã cập nhật; không còn blocker hoặc PR dở
-- [ ] File này đã từng tồn tại trong Git commit và có thể xem bằng `git log -- docs/WEB_EVIDENCE_V2_IMPLEMENTATION_PLAN.md`
+- [x] File này đã từng tồn tại trong Git commit và có thể xem bằng `git log -- docs/WEB_EVIDENCE_V2_IMPLEMENTATION_PLAN.md` (commit `5f93dc8`)
 - [ ] Cleanup commit cuối: xóa file này khỏi working tree sau khi xác nhận các điều kiện trên
 
 **Cập nhật checklist theo từng PR** ngay trong file để chat mới hoặc agent khác có thể tiếp tục. Nếu không đạt metric, giữ file/flag, ghi rõ blocker và tiếp tục điều chỉnh; **không xóa chỉ vì đã viết xong code**.
@@ -162,4 +162,6 @@ Không thêm cấu hình mới cho 6.000/tool và 12.000/synthesis cho đến kh
 ### Nhật ký triển khai (2026-10-14)
 
 - PR1: 40 synthetic offline snapshots đã chạy; 6 benchmark tests pass. V1 source recall@8 = 0,8627; evidence recall = 0,4894; extractive accuracy proxy = 0,4750; citation precision proxy = 1,0000; unsupported claims proxy = 0,0000; trung bình 2 fetch/case. Token 728 median (estimate). Chi tiết latency và SHA-256 trong `docs/benchmarks/web_evidence_v1_baseline.json`; cách diễn giải và giới hạn trong `docs/benchmarks/README.md`.
+- PR2: Đã đưa extraction HTML/Jina/Crawl4AI và selection chunk sau feature flag OFF mặc định; giữ URL/X precedence, 2 MiB tải về, SSRF/redirect/DNS pinning, cancellation, giới hạn 6k/tool và 12k/synthesis. Test sâu >25k ký tự, HTML hỏng, trang chỉ có navigation (trả `ok=false`), fallback, V1 rollback. Benchmark 40 cases V2: source recall@8 0,8627; evidence recall 0,6383 (**+14,89 điểm phần trăm**); accuracy **extractive proxy** 0,6500 (**+17,50 điểm phần trăm**); citation proxy 1,0000; unsupported proxy 0; median token estimate 782 (+7,4%); p95 offline 632,316 ms (V1 764,749 ms, thời gian dao động theo máy); 2 fetch/case, 0 network. `python -m unittest tests.test_web_evidence_v2 tests.test_reader_article_focus tests.test_url_service tests.test_tool_url_dedupe -q`: 27 OK; full suite sau bản sửa cuối: 659 OK, 11 skipped; Ruff pass. Report trong `docs/benchmarks/web_evidence_v2_pr2.json`.
+- Bàn giao triển khai kế tiếp: xem `docs/WEB_EVIDENCE_V2_CHECKPOINT.md` và `docs/WEB_EVIDENCE_V2_NEXT_MODEL_PROMPT.md`. Cần tiếp tục PR3→PR4, chạy benchmark/test theo gate; không đánh dấu các mục nghiệm thu tổng thể chỉ từ proxy offline.
 - Chưa có đánh giá câu trả lời của model thật, chi phí provider, latency network, hoặc rollout. Những mục đó vẫn là blockers của acceptance PR4 và mục 7.

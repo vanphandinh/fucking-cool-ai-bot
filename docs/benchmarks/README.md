@@ -11,7 +11,8 @@ Run from the repository root:
 
 ```sh
 python -m unittest tests.test_web_evidence_benchmark -v
-python scripts/web_evidence_benchmark.py --output docs/benchmarks/web_evidence_v1_baseline.json
+python -m scripts.web_evidence_benchmark --output docs/benchmarks/web_evidence_v1_baseline.json
+python -m scripts.web_evidence_benchmark --v2 --output docs/benchmarks/web_evidence_v2_pr2.json
 ```
 
 The replay intercepts both search backends and URL HTTP reads, then exercises
@@ -38,3 +39,29 @@ comparison (V1, expanded-character baseline, and adaptive V2).
 `fixture_sha256` identifies the replay dataset. Repeated runs must match case
 results and non-timing aggregate metrics; wall-clock latency naturally varies.
 The benchmark must continue to run with network requests equal to zero.
+
+## PR2 offline comparison (2026-10-14)
+
+Both reports use the **same 40 snapshots** (`fixture_sha256` agrees) and
+fixed first-two-source fetch policy. PR2 selects bounded evidence from up to
+120,000 characters of candidate text; it does **not** lift the 2 MiB download
+limit, 6,000-character tool cap, or 12,000-character synthesis cap.
+
+| Measurement | V1 baseline | V2 PR2 | Difference |
+| --- | ---: | ---: | ---: |
+| Source recall@8 | 0.8627 | 0.8627 | 0.0000 |
+| Evidence recall | 0.4894 | 0.6383 | +0.1489 |
+| Extractive answer-accuracy **proxy** | 0.4750 | 0.6500 | +0.1750 |
+| Extractive citation-precision **proxy** | 1.0000 | 1.0000 | 0.0000 |
+| Extractive unsupported-claim-rate **proxy** | 0.0000 | 0.0000 | 0.0000 |
+| Estimated median request tokens | 728 | 782 | +7.4% |
+| Offline total-latency p95 | 764.749 ms | 632.316 ms | -17.3% |
+| Mean fetches per case | 2 | 2 | 0 |
+
+The timing comparison is **not** controlled network/provider latency and
+varies between runs; the 7.4% token change is estimated from characters.
+The accuracy/citation/unsupported results are deterministic *extractive proxy*
+numbers, not measured model answers or independent citation reviews. They
+cannot satisfy rollout acceptance alone. PR3 source ranking, PR4 synthesis,
+100-case three-way replay, human assessment, real-model evaluation, and
+staged production monitoring remain outstanding.

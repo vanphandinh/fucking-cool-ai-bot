@@ -10,6 +10,7 @@ from ..config import Settings
 from . import crawl4ai_client, reader, x_reader
 
 logger = logging.getLogger(__name__)
+_EMPTY_EVIDENCE = ("Không tìm được nội dung bài viết.", "Không thể đóng gói chứng cứ:")
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,7 @@ class UrlReadResult:
 
 
 async def read_url(url: str, settings: Settings, mode: str = "auto",
-                   *, operations=None) -> UrlReadResult:
+                   *, operations=None, query: str = "") -> UrlReadResult:
     from ..core.job_operations import OperationBudget
     budget = OperationBudget(settings.url_read_total_timeout_sec)
     url = str(url or "").strip()
@@ -76,14 +77,29 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
             )
         else:
             if crawl.ok:
-                return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
-            logger.warning(
-                "Crawl4AI URL read failed (%s); fallback generic reader",
-                crawl.reason,
-            )
+                if settings.web_evidence_v2_enabled:
+                    from .evidence import select_evidence
+
+                    selected = select_evidence(
+                        crawl.text, crawl.source_url, query,
+                        truncated=len(crawl.text) >= settings.crawl4ai_max_chars,
+                    )
+                    if not selected.startswith(_EMPTY_EVIDENCE):
+                        return UrlReadResult(selected, crawl.source_url, "crawl4ai", True)
+                    logger.warning("Crawl4AI returned no usable evidence; fallback generic reader")
+                else:
+                    return UrlReadResult(crawl.text, crawl.source_url, "crawl4ai", True)
+            else:
+                logger.warning(
+                    "Crawl4AI URL read failed (%s); fallback generic reader",
+                    crawl.reason,
+                )
 
     text = await reader.read_page(
         fetch_url, timeout=settings.request_timeout_sec,
-        **({"operations": operations, "budget": budget} if operations else {}))
-    ok = bool(text) and not text.startswith("Không tải được trang")
+        **({"operations": operations, "budget": budget} if operations else {}),
+        **({"query": query, "max_extracted_chars": settings.web_evidence_max_extracted_chars}
+           if settings.web_evidence_v2_enabled else {}),
+    )
+    ok = bool(text) and not text.startswith(("Không tải được trang", *_EMPTY_EVIDENCE))
     return UrlReadResult(text, fetch_url, "generic_reader", ok)

@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     image_search_max_results: int = Field(default=4, ge=1, le=8)
     x_fetch_enabled: bool = True
 
+    # Experimental bounded web evidence pipeline; flags default off for rollback.
+    web_evidence_v2_enabled: bool = False
+    web_evidence_max_extracted_chars: int = Field(default=120000, ge=8000, le=120000)
+    web_auto_fetch_enabled: bool = False
+    web_auto_fetch_max_sources: int = Field(default=2, ge=1, le=2)
+    web_auto_fetch_budget_sec: float = Field(default=20.0, gt=0, le=20, allow_inf_nan=False)
+
     # URL rendering/extraction backend. Set CRAWL4AI_ENABLED=0 for instant rollback.
     crawl4ai_enabled: bool = False
     crawl4ai_url: str = "http://crawl4ai:11235"

@@ -358,16 +358,18 @@ def _build_client(timeout: float) -> httpx.AsyncClient:
 
 async def read_page(
     url: str, timeout: float = 30.0, client: httpx.AsyncClient | None = None,
-    *, operations=None, budget=None,
+    *, operations=None, budget=None, query: str = "", max_extracted_chars: int | None = None,
 ) -> str:
     """Bound the whole read, including DNS, redirects and the Jina fallback."""
     try:
         if operations is not None:
             from ..core.job_operations import OperationBudget
             return await _read_page(url, timeout, client, operations,
-                                    budget or OperationBudget(timeout))
+                                    budget or OperationBudget(timeout), query,
+                                    max_extracted_chars)
         async with asyncio.timeout(timeout):
-            return await _read_page(url, timeout, client)
+            return await _read_page(url, timeout, client, query=query,
+                                    max_extracted_chars=max_extracted_chars)
     except TimeoutError:
         return "Không tải được trang: quá thời gian cho phép."
 
@@ -397,7 +399,8 @@ def _focus_jina_article(text: str) -> str:
 
 
 async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
-                     operations=None, budget=None) -> str:
+                     operations=None, budget=None, query: str = "",
+                     max_extracted_chars: int | None = None) -> str:
     """Trả về văn bản rút gọn của trang (<= MAX_CHARS) hoặc lý do không tải được.
 
     ``client`` chỉ dành cho kiểm thử (chèn transport giả); bình thường để None.
@@ -420,7 +423,15 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
             result = await fetch(f"https://r.jina.ai/{url}", "Jina")
             text = result.body.decode("utf-8", errors="replace").strip()
             if text:
-                return _focus_jina_article(text)[:MAX_CHARS]
+                article = _focus_jina_article(text)
+                if max_extracted_chars is not None:
+                    from .evidence import select_evidence
+
+                    return select_evidence(
+                        article[:max_extracted_chars], url, query,
+                        truncated=len(article) > max_extracted_chars,
+                    )
+                return article[:MAX_CHARS]
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             logger.debug("Jina Reader lỗi (chuyển fallback): %s", type(exc).__name__)
         except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
@@ -440,6 +451,13 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
             logger.debug("Đọc trang trực tiếp lỗi nội bộ: %s", type(exc).__name__)
             return "Không tải được trang: lỗi nội bộ."
         try:
+            if max_extracted_chars is not None:
+                from .evidence import extract_html, select_evidence
+
+                article, truncated = await extract_html(
+                    result.body, result.encoding, max_extracted_chars,
+                )
+                return select_evidence(article, url, query, truncated=truncated)
             return await _extract_html(result.body, result.encoding)
         except _FetchError as exc:
             return f"Không tải được trang: {exc}"
