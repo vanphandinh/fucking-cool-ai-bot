@@ -160,7 +160,7 @@ and packing all execute for real. Report:
 
 | Measurement (40 cases) | Value |
 | --- | ---: |
-| Network page reads | 90 |
+| Mock page-read attempts (`network_requests`; real HTTP = 0) | 90 |
 | Cases with an auto-fetch block | 23 / 40 |
 | Auto-fetch targets, mean / max | 1.125 / 2 |
 | Peak read concurrency | 2 |
@@ -169,6 +169,10 @@ and packing all execute for real. Report:
 | Tool output within 6,000 characters | 1.0 |
 | Estimated request tokens, median | 435.5 |
 | Offline elapsed p50 / p95 | 519.4 / 553.9 ms |
+
+The `network_requests` field in this auto-fetch JSON counts **intercepted mock
+reader calls**, not external HTTP traffic. It is 90 here; the three 100-case
+comparison reports separately record `network_requests = 0`.
 
 The report carries machine-checked `invariants`: `max_two_sources`,
 `max_two_concurrent_reads` and `output_within_cap` are all `true`. The evidence

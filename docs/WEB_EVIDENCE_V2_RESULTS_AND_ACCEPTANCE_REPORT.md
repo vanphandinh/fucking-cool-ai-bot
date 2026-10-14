@@ -20,12 +20,12 @@ kẽ hở FIX-02 phát hiện trong phiên này.
 | --- | --- |
 | Commit gốc trước phiên này | `e7c7bb0e45ec6d5c920e0983d70a194dbb887a72` (working tree khi đó: 18 file tracked sửa + 6 mục untracked, hardening **chưa commit**) |
 | Commit phiên này | `13ff71a` (code + test + 2 report benchmark), `bd73aa6` (tài liệu + harness smoke test) |
-| HEAD hiện tại | `bd73aa67eeb1fd7d46fbcaf54dc4648d22f654f0` |
+| HEAD của snapshot kiểm thử đã ghi nhận | `bd73aa67eeb1fd7d46fbcaf54dc4648d22f654f0` (không phải HEAD hiện tại; kiểm tra lại bằng `git rev-parse HEAD`) |
 | `git status --short --branch` | `## codex/web-evidence-v2` + `?? .freebuff/` — **working tree sạch**, chỉ còn thư mục cá nhân `.freebuff/` cố ý không stage |
 | Push / merge / deploy / rollout / nhánh mới | **không có** |
 | Feature flag | `WEB_EVIDENCE_V2_ENABLED=false`, `WEB_AUTO_FETCH_ENABLED=false` — mặc định tắt, là đường rollback |
 
-HEAD `bd73aa6` là trạng thái **code + tests** đã được kiểm thử (bảng mục 5). Chính hai
+Commit `bd73aa6` là trạng thái **code + tests** đã được kiểm thử (bảng mục 5). Chính hai
 tài liệu báo cáo này nằm trong một commit tài liệu **ngay sau đó** (doc-only, không đổi
 code hay test): lấy SHA bằng `git log -1 --oneline` và `git log -3 --oneline` để thấy cả
 ba commit của phiên. `git status` phải sạch (`?? .freebuff/` là ngoại lệ cố ý).
@@ -164,7 +164,7 @@ Chạy `Orchestrator.ask` thật với mock router/reader, cả hai flag bật. 
 
 | Metric | Giá trị |
 | --- | ---: |
-| Network page reads | 90 (`network_requests = 0`) |
+| Lượt đọc trang được mock chặn lại | 90 (`network_requests = 90` trong JSON mock; **0 HTTP thực**) |
 | Case có block auto-fetch | 23 / 40 |
 | Target auto-fetch, mean / max | 1.125 / **2** |
 | Peak concurrency | **2** |
