@@ -37,7 +37,9 @@ Active documentation không được dạy superseded environment/provider contr
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
 - Controlled multipart delivery có terminal `PARTIALLY_DELIVERED` khi Telegram xác nhận một số phần, nhưng chưa đủ; lưu prefix có đánh dấu và chỉ đếm partial metric. Không có auto-replay.
 - Conversation memory là in-memory, tối đa `MAX_CONTEXT_CONVERSATIONS=2048` keys (LRU), TTL từ truy cập cuối `CONTEXT_TTL_SEC=86400`; rate-limit records được dọn dần theo thời gian bằng monotonic clock.
-- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy.
+- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy. Khi `WEB_EVIDENCE_V2_ENABLED=1`, web result được dedupe canonical, xếp hạng lexical (title×2/snippet×1), đa dạng domain, và SearXNG chỉ được chấp nhận sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20; cache key tách V1/V2 (`:v2`).
+- `WEB_AUTO_FETCH_ENABLED=1` chỉ có hiệu lực khi V2 bật: tự đọc tối đa 2 nguồn xếp hạng cao nhất, song song <= 2, budget `WEB_AUTO_FETCH_BUDGET_SEC` (<= 20s) dùng chung cả câu hỏi và bị chặn bởi budget question/job; bỏ qua khi user đã đưa URL; nguồn lỗi được báo đúng trạng thái. Cả hai flag mặc định `false` là đường rollback.
+- Fresh Synthesis đóng gói chứng cứ web theo relevance + đa dạng nguồn, giữ URL/chunk label; output của tool không thuộc web giữ thứ tự và ngân sách riêng. Cap không đổi: 6.000 ký tự/tool và 12.000 ký tự/synthesis.
 - Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
 - `.env.example` là complete supported key schema. `scripts/sync_env.py` không migrate/infer/rename/copy key values; unknown `.env` assignments làm sync exit `2` trước rewrite.
 - Operational provider rollback là Chainnode-only bằng `TEXT_PROVIDER_ORDER=chainnode` và `VISION_PROVIDER_ORDER=chainnode`.

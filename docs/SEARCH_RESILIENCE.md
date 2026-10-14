@@ -136,6 +136,25 @@ X/Twitter resolver không đi qua policy này.
 - **Rollback:** đặt một trong hai flag về `0` là quay lại hành vi V1 (routing, ranking,
   ordering và cache key V1).
 
+## Synthesis evidence packing
+
+Fresh Synthesis (khi tool budget đóng) gửi bằng chứng trong khung dữ liệu không đáng
+tin, giới hạn **12.000 ký tự** tổng. Cách đóng gói:
+
+- Output của reader (`[SOURCE n / CHUNK m]`, `[AUTO SOURCE]`) được cắt thành từng block
+  theo label, mỗi block giữ nguyên dòng label + URL, `Heading` và trạng thái đọc.
+- Block được xếp theo lexical relevance với query của user, rồi round-robin theo nguồn
+  để nhiều domain xuất hiện trước khi lấy đoạn thứ hai của cùng một nguồn; block bị cắt
+  thì cắt ở cuối body, không cắt mất label.
+- Query không có term (ví dụ yêu cầu tóm tắt) thì giữ nguyên thứ tự tài liệu.
+- Output của tool không thuộc web giữ nguyên thứ tự gốc và một phần ngân sách riêng, nên
+  không bị bỏ chỉ vì thiếu metadata chứng cứ.
+- Chỉ dẫn nằm trong nội dung trang luôn ở trong khung dữ liệu không đáng tin; instruction
+  kết thúc prompt không lấy nội dung trang làm lệnh.
+
+Hai cap không thay đổi trong V2: **6.000 ký tự/tool** ở router và **12.000 ký tự** ở
+synthesis. Muốn tăng ngân sách phải có benchmark và quyết định riêng.
+
 ## Cache và singleflight
 
 ```env

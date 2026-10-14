@@ -11,9 +11,27 @@ Run from the repository root:
 
 ```sh
 python -m unittest tests.test_web_evidence_benchmark -v
-python -m scripts.web_evidence_benchmark --output docs/benchmarks/web_evidence_v1_baseline.json
-python -m scripts.web_evidence_benchmark --v2 --output docs/benchmarks/web_evidence_v2_pr3.json
+# 40-case PR1-PR3 replay set (frozen; kept for the historical reports)
+python -m scripts.web_evidence_benchmark --config v1 --output docs/benchmarks/web_evidence_v1_baseline.json
+python -m scripts.web_evidence_benchmark --config v2 --output docs/benchmarks/web_evidence_v2_pr3.json
+# 100-case PR4 comparison set, three arms on the same data
+python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v1.json
+python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_chars.json
+python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v2.json
+python -m scripts.generate_web_evidence_fixtures
 ```
+
+Two synthetic fixtures are checked in, both produced by
+`scripts/generate_web_evidence_fixtures.py`:
+
+| Fixture | Cases | Category counts | SHA-256 |
+| --- | ---: | --- | --- |
+| `cases.json` | 40 | 10 fact, 8 buried, 8 multi-source, 7 fresh, 7 unknown/conflicting | `1bf0e34571ea0360d06a348c8d930089e8174b5b60318a37060dab0c75c6323d` |
+| `cases_100.json` | 100 | 30 fact, 20 buried, 20 multi-source, 15 fresh, 15 unknown/conflicting | `51e189382cad7efaeb245a75d9b11e9d1bb73e4077c1ac746b02f05012d9e399` |
+
+The 40-case file is generated from the first entries of each group, so it stays
+byte-identical while the 100-case file grows. Both files contain only synthetic
+`*.example.*` snapshots and no live content.
 
 The replay intercepts both search backends and URL HTTP reads, then exercises
 the application's search routing, URL service, generic reader, and synthesis
@@ -66,6 +84,59 @@ negligible next to fetch time. The accuracy/citation numbers remain
 **extractive proxy** results, not model answers; PR3 also cannot measure
 conditional auto-fetch, because the replay never enables it (it needs both
 `WEB_EVIDENCE_V2_ENABLED` and `WEB_AUTO_FETCH_ENABLED`).
+
+## PR4 three-way comparison on the 100-case fixture (2026-10-14)
+
+All three arms run on the same 100 snapshots (`fixture_sha256`
+`51e18938…d9e399`), the same fixed first-two-source fetch policy and the same
+installed code. Only the documented knobs differ:
+
+- **A. `--config v1`** — production V1: 8000-character reader output, 12000-character synthesis cap, no ranking.
+- **B. `--config chars`** — V1 with only the character limits raised, simulated by patching `reader.MAX_CHARS=32000` and the synthesis cap to 32000. This is a comparison arm, **not** a shipped configuration.
+- **C. `--config v2`** — `WEB_EVIDENCE_V2_ENABLED=1`, unchanged 8000-character reader path replaced by bounded excerpt selection, source ranking, and relevance/diversity synthesis packing under the still-12000-character cap.
+
+| Measurement | A. V1 | B. chars-only | C. V2 | C − A | C − B |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Source recall@8 | 0.8031 | 0.8031 | 0.8031 | 0.0000 | 0.0000 |
+| Evidence recall (fetched output) | 0.4790 | 0.6134 | 0.6891 | +0.2101 | +0.0757 |
+| Evidence recall (packed synthesis context) | 0.4790 | 0.4790 | 0.6891 | +0.2101 | +0.2101 |
+| Labeled excerpts in the packed context | 0 | 0 | 169 | +169 | +169 |
+| Non-web tool output preserved | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.0000 |
+| Extractive answer-accuracy **proxy** | 0.4600 | 0.6200 | 0.6300 | +0.1700 | +0.0100 |
+| Extractive citation-precision **proxy** | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.0000 |
+| Extractive unsupported-claim-rate **proxy** | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| Estimated tokens, median | 744.5 | 744.5 | 794.0 | +6.6% | +6.6% |
+| Estimated tokens, mean | 897.8 | 1164.5 | 995.5 | +10.9% | −14.5% |
+| Estimated tokens, p90 | 1710.0 | 3377.0 | 2081.0 | +21.7% | −38.4% |
+| Mean fetches per case | 2 | 2 | 2 | 0 | 0 |
+| Offline total-latency p50 / p95 | 641.775 / 800.736 ms | 610.686 / 773.582 ms | 617.603 / 786.210 ms | −3.8% / −1.8% | +1.1% / +1.6% |
+
+Per-category evidence recall shows where each arm acts:
+
+| Category | A. V1 | B. chars-only | C. V2 |
+| --- | ---: | ---: | ---: |
+| fact (30) | 0.800 | 0.800 | 0.800 |
+| buried (20) | 0.000 | 0.800 | 0.800 |
+| multi-source (20) | 0.400 | 0.400 | 0.575 |
+| fresh (15) | 0.800 | 0.800 | 0.800 |
+| unknown/conflicting (15) | 0.357 | 0.357 | 0.500 |
+
+Two honest readings of this table:
+
+1. Raising the character limits alone recovers buried evidence in the *fetched*
+text, but the **equal-split** synthesis packer then cuts those long outputs
+again: `chars` scores 0.6134 fetched and 0.4790 in the context the model
+actually receives. V2 reaches 0.6891 in the packed context and is the only arm
+that keeps source labels (169 labeled excerpts total).
+2. The `chars` arm's token median is unchanged only because 80% of cases are
+short; its mean (+29.7%) and p90 (+97.5%) grow far more than V2's, i.e. it buys
+its recall with a much larger tail. V2 gains evidence while staying inside the
+unchanged 12000-character synthesis cap.
+
+All accuracy/citation numbers remain **extractive proxy** measurements. They do
+not establish model answer quality, human-verified citation precision,
+conditional auto-fetch behaviour, provider tokens or production latency; those
+remain `NOT MEASURED` in [`WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md`](WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md).
 
 ## PR2 offline comparison (2026-10-14)
 

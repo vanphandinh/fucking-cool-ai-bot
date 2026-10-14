@@ -157,6 +157,37 @@ Retry bounds validation:
 - per-request cumulative: `1..20` và `>= consecutive`;
 - recovery hops: `1..20`.
 
+## Web Evidence V2 (flag-gated)
+
+Pipeline evidence V2 nằm sau feature flag và **mặc định tắt**:
+
+```env
+WEB_EVIDENCE_V2_ENABLED=false
+WEB_EVIDENCE_MAX_EXTRACTED_CHARS=120000
+WEB_AUTO_FETCH_ENABLED=false
+WEB_AUTO_FETCH_MAX_SOURCES=2
+WEB_AUTO_FETCH_BUDGET_SEC=20
+```
+
+Khi bật, V2 thay đổi bốn điểm:
+
+1. **Evidence extraction:** nội dung trang được parse bounded, bỏ chrome/navigation, chọn chunk liên quan và giữ label `[SOURCE n / CHUNK m]` + URL thay vì cắt 8.000 ký tự đầu tiên.
+2. **Source ranking:** kết quả web được dedupe theo canonical URL và xếp theo lexical relevance (title trọng số 2, snippet 1) kèm đa dạng domain; `SEARCH_BACKEND=auto` chỉ chấp nhận SearXNG sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20.
+3. **Conditional auto-fetch:** chỉ khi cả hai flag V2 bật; tối đa 2 nguồn, song song <= 2, tổng budget 20 giây cho cả câu hỏi và bị chặn tiếp bởi budget question/job; ưu tiên URL người dùng, cache theo canonical URL trong request, nguồn không đọc được được báo đúng trạng thái.
+4. **Synthesis packing:** bằng chứng web được đóng gói theo độ liên quan và đa dạng nguồn, giữ URL/chunk label, tổng vẫn **<= 12.000 ký tự**; output của tool không thuộc web không bị bỏ.
+
+Rollback tức thời: đặt `WEB_EVIDENCE_V2_ENABLED=0` (và/hoặc `WEB_AUTO_FETCH_ENABLED=0`) rồi recreate bot. Không thay đổi image search, X/Twitter resolver, giới hạn tải **2 MiB**, cap **6.000 ký tự/tool**, cap **12.000 ký tự/synthesis**, SSRF/DNS pinning/redirect validation, timeout/cancellation, cache/circuit breaker và Crawl4AI isolation.
+
+Benchmark offline tái lập bằng ba cấu hình trên cùng fixture 100 case:
+
+```bash
+python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json
+python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json
+python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json
+```
+
+Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production.
+
 ## Cài đặt nhanh
 
 Yêu cầu: Docker + Docker Compose plugin, Telegram bot token, ít nhất một Chainnode API key cho primary route; Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
