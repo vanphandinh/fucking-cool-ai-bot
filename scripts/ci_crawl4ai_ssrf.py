@@ -66,6 +66,41 @@ class Handler(BaseHTTPRequestHandler):
 HTTPServer(('0.0.0.0', 8099), Handler).serve_forever()
 '''
 
+CHROMIUM_EGRESS_PROBE = r'''
+import asyncio
+import sys
+from playwright.async_api import Error, TimeoutError as BrowserTimeout, async_playwright
+
+async def check():
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True, args=['--no-sandbox'])
+        print('BROWSER_STARTED', flush=True)
+        try:
+            page = await browser.new_page()
+            for url in sys.argv[1:]:
+                try:
+                    response = await page.goto(url, timeout=6000, wait_until='domcontentloaded')
+                except Error as exc:
+                    if not isinstance(exc, BrowserTimeout) and not any(
+                        marker in str(exc) for marker in (
+                            'net::ERR_ADDRESS_UNREACHABLE', 'net::ERR_TIMED_OUT',
+                            'net::ERR_CONNECTION_TIMED_OUT', 'net::ERR_CONNECTION_REFUSED',
+                        )
+                    ):
+                        print('BROWSER_UNVERIFIED_ERROR', type(exc).__name__, file=sys.stderr)
+                        return 2
+                    print('BROWSER_EGRESS_BLOCKED', url, flush=True)
+                    continue
+                print('BROWSER_DIRECT_ACCESS', url,
+                      response.status if response else 'no-response', file=sys.stderr)
+                return 1
+            return 0
+        finally:
+            await browser.close()
+
+raise SystemExit(asyncio.run(check()))
+'''
+
 
 def run(*args: str, check: bool = True, timeout: int = 180) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
@@ -125,6 +160,39 @@ def assert_sink(label: str, baseline: int) -> None:
     if count != baseline:
         raise AssertionError(f"{label}: SSRF sink was reached ({baseline} -> {count})")
     print(f"PASS: {label}; no new private sink requests", flush=True)
+
+
+def check_direct_egress(public_url: str, private_url: str, baseline: int) -> None:
+    """Exercise direct sockets and Chromium with the proxy intentionally absent."""
+    # Explicit socket probe, independent of HTTP proxies and Chromium's options.
+    socket_probe = r'''
+import socket
+for host, port in [('11.23.0.50', 80), ('172.30.71.50', 8099)]:
+    try:
+        connection = socket.create_connection((host, port), timeout=4)
+    except OSError as exc:
+        print('DIRECT_EGRESS_BLOCKED', host, type(exc).__name__, flush=True)
+    else:
+        connection.close()
+        raise AssertionError(f'Direct TCP egress reached {host}:{port}')
+'''
+    outcome = run("docker", "exec", "fcai-crawl4ai", "python", "-c",
+                  socket_probe, check=False, timeout=30)
+    if outcome.returncode or outcome.stdout.count("DIRECT_EGRESS_BLOCKED") != 2:
+        raise AssertionError(f"Direct TCP bypass uncertain: {outcome.stdout} {outcome.stderr}")
+    print(outcome.stdout.strip(), flush=True)
+    assert_sink("direct TCP bypass", baseline)
+
+    chromium = run("docker", "exec", "fcai-crawl4ai", "python", "-c",
+                   CHROMIUM_EGRESS_PROBE, private_url, public_url,
+                   check=False, timeout=60)
+    if (chromium.returncode or "BROWSER_STARTED" not in chromium.stdout
+            or chromium.stdout.count("BROWSER_EGRESS_BLOCKED") != 2):
+        raise AssertionError(
+            f"Unproxied Chromium bypass uncertain: {chromium.stdout} {chromium.stderr}"
+        )
+    print(chromium.stdout.strip(), flush=True)
+    assert_sink("unproxied Chromium bypass", baseline)
 
 
 def crawl(url: str, *, expect: str, contains: str = "Controlled public fixture") -> None:
@@ -206,6 +274,7 @@ networks:
     run("bash", "/workspace/scripts/crawl4ai_firewall.sh", "apply")
     run("bash", "/workspace/scripts/crawl4ai_firewall.sh", "check")
     print("PASS: exact network topology and firewall rules", flush=True)
+    check_direct_egress(f"http://{PUBLIC_IP}/", f"http://{PRIVATE_IP}:8099/ping", baseline)
     crawl(f"http://{PUBLIC_IP}/", expect="success")
     assert_sink("public crawl", baseline)
     crawl(f"http://{PRIVATE_IP}:8099/ping", expect="blocked")
@@ -223,16 +292,23 @@ networks:
     hostname = f"ci-{secrets.token_hex(5)}.fcai.test"
     docker("exec", "fcai-crawl4ai", "python", "-c",
            "import socket,sys;print(socket.gethostbyname(sys.argv[1]))", hostname)
+    primed_log = docker("logs", "fcai-crawl4ai-dns")
+    if (primed_log.count(f"DNS_QUERY host={hostname} type=1 answer={PUBLIC_IP}") != 1
+            or f"DNS_QUERY host={hostname} type=1 answer={PRIVATE_IP}" in primed_log):
+        raise AssertionError("DNS positive control did not return exactly one public A answer")
     crawl(f"http://{hostname}/", expect="blocked")
     dns_log = docker("logs", "fcai-crawl4ai-dns")
-    if (f"DNS_QUERY host={hostname} type=1 answer={PUBLIC_IP}" not in dns_log
-            or f"DNS_QUERY host={hostname} type=1 answer={PRIVATE_IP}" not in dns_log):
+    if f"DNS_QUERY host={hostname} type=1 answer={PRIVATE_IP}" not in dns_log:
         raise AssertionError(
-            "Rebinding hostname did not resolve to both public and private addresses"
+            "Crawler did not trigger a private DNS answer after the public prime"
         )
+    print("PASS: DNS A answer changed public -> private during real /crawl", flush=True)
     assert_sink("DNS rebinding to private", baseline)
     run("bash", "/workspace/scripts/crawl4ai_firewall.sh", "check")
     print("PASS: live CI SSRF fixtures and firewall postflight", flush=True)
+    print("UNVERIFIED: independent application-level redirect/rebinding rejection reason",
+          flush=True)
+    print("UNVERIFIED: browser attempted each private image/iframe URL", flush=True)
     print("UNVERIFIED: actual VPS host reboot and firewall startup interval", flush=True)
 
 
