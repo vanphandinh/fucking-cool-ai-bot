@@ -136,7 +136,7 @@ unchanged 12000-character synthesis cap.
 All accuracy/citation numbers remain **extractive proxy** measurements. They do
 not establish model answer quality, human-verified citation precision,
 conditional auto-fetch behaviour, provider tokens or production latency; those
-remain `NOT MEASURED` in [`WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md`](WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md).
+remain `NOT MEASURED` in [`../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md`](../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md).
 
 ## PR2 offline comparison (2026-10-14)
 
