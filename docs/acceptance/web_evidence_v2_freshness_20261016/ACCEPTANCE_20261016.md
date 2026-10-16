@@ -25,6 +25,8 @@ Flags vẫn **OFF**: `WEB_EVIDENCE_V2_ENABLED=false`, `WEB_AUTO_FETCH_ENABLED=fa
 | Canonical env | `python scripts/check_canonical_env_vocabulary.py` + test trong suite | sạch |
 | Benchmark offline V1/V2 | `PYTHONPATH=. python scripts/web_evidence_benchmark.py --config {v1,v2} --fixture tests/fixtures/web_evidence_v2/cases_100.json` | `network_requests=0`, fixture SHA `51e189382cad7efa…` khớp baseline |
 | Benchmark auto-fetch | `... --config v2 --auto-fetch ...` | `max_two_sources/max_two_concurrent_reads/output_within_cap = true` |
+| **Linux + image** (hình dạng CI: clean clone + lock) | `docker build` → `git clone` trong `python:3.12-slim` → `pip install -r requirements.lock.txt --no-deps` → `pip check` → suite | `pip check` sạch; **905 tests OK (skipped=1)** trên Python 3.12.15, exit 0; `check_markdown_links` + `check_canonical_env_vocabulary` pass; artifact `artifacts/linux_image_verification_20261016.txt` |
+| Healthcheck trong image | `docker run ... -m app.core.liveness` (chưa có heartbeat) và có heartbeat | exit 1 "no heartbeat" / exit 0 "heartbeat 0.4s old"; `docker compose config --quiet` exit 0 |
 
 Số đo (artifact trong `artifacts/benchmark_*_20261016.txt`):
 
@@ -60,7 +62,7 @@ trên pool thật (H1).
 | **Gate G2 live**: bộ 21 câu × 2 lượt, V2 ≥ V1, 0 claim phụ sai, guard error = 0 | cần provider thật + chấm rubric của người | `python -m scripts.web_evidence_live_smoke --mode both --no-auto-fetch` rồi `python scripts/web_evidence_pilot_audit.py <artifact.json>` |
 | **Phase 3.5** smoke Telegram thật (text/vision/tool/fallback/input sai/callback) | cần bot đang chạy + nhóm allowlist | theo runbook canary §3–§5 |
 | Latency/token production | không có lượt chạy thật trong phiên này | harness nay đã ghi `provider_token_usage` + median; xem `*_summary` trong artifact |
-| Docker build / CI Linux | phiên này chỉ chạy trên Windows local | CI sẽ chạy khi push |
+| GitHub Actions CI (trên runner GitHub) | phiên này chỉ chạy Docker Desktop cục bộ | push sẽ kích hoạt job `audit.yml`; hình dạng lệnh đã tái lập cục bộ (mục 2) |
 | Crawl4AI | ngoài phạm vi plan (vẫn `BLOCKED`) | — |
 
 ## 5. Sai lệch so với plan (có lý do)
@@ -116,9 +118,35 @@ Tài liệu vận hành tương ứng đã được track ở dạng cập nhậ
 - Phát sinh: `packaging` là dependency **test-only** mới (dùng cho check version), được pin
   trong `requirements-audit.txt` chứ không vào lock runtime.
 
+## 6c. Phase 4.4 — liveness (A06)
+
+- `app/core/liveness.py`: heartbeat + probe + CLI; `app/main.py` chạy probe sau khi có bot
+  và huỷ trong `finally`; `docker-compose.yml` thêm healthcheck cho service `bot`
+  (`start_period: 90s`, retries 3); `.env.example` thêm 3 biến `LIVENESS_*`.
+- Probe chỉ touch file khi `getMe` thành công → Telegram hỏng hoặc event loop kẹt thì
+  container chuyển unhealthy thay vì "Up" im lặng; log lỗi chỉ ghi `exc_type` (không lộ payload). Khi tắt hẳn, file heartbeat được xoá.
+- 14 test offline (`tests/test_liveness.py`) + kiểm chứng trong image (mục 2).
+
+## 6d. Phase 4.5 — static type check ở chế độ báo cáo
+
+- `pyrightconfig.json` (basic, Python 3.11, scope `app` + `scripts`) + `pyright_baseline.json`
+  ghi mức đo đầu tiên: **55 lỗi / 85 file** (pyright 1.1.414, 2026-10-16).
+  Phân bố: `reportArgumentType` 30, `reportOptionalMemberAccess` 11,
+  `reportAttributeAccessIssue` 9, `reportCallIssue` 3, `reportAssignmentType` 1,
+  `reportOperatorIssue` 1; nặng nhất `app/bot/handlers.py` (16).
+- `scripts/check_types.py` chạy pyright rồi **so với baseline**: vượt baseline ⇒ exit 1
+  (chặn regression), bằng/thấp hơn ⇒ 0, không có pyright/npx ⇒ exit 2 = NOT EXECUTED
+  (không được đọc là PASS). `--write-baseline` là hành động có ý thức.
+- CI (`audit.yml`, chỉ nhánh 3.12) chạy bước này với pyright lấy qua `npx` có sẵn trên runner.
+- Lưu ý trung thực: con số baseline **phụ thuộc** `pyrightconfig.json` và version pyright
+  (lượt đo đầu tiên truyền scope qua CLI cho 71 lỗi); nếu nâng pyright phải đo lại
+  có chủ đích, không nới baseline cho tiện.
+- `tests/test_type_check_ratchet.py` (12 test) pin đúng các hướng trên (tăng ⇒ fail,
+  thiếu tool ⇒ 2, baseline thiếu ⇒ không claim PASS).
+
 ## 7. Trạng thái Gate G2
 
-- Phần offline: **ĐẠT** (mục 2).
+- Phần offline: **ĐẠT** (mục 2), gồm cả lượt Linux/3.12 hình dạng CI.
 - Phần live (2 lượt × 21 câu, chấm rubric, guard error = 0): **NOT EXECUTED**.
   ⇒ Gate G2 **chưa đạt**, vì vậy không chat nào được allowlist và không flag nào được bật.
 

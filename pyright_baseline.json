@@ -1,0 +1,15 @@
+{
+  "errors": 55,
+  "rule_counts": {
+    "reportArgumentType": 30,
+    "reportOptionalMemberAccess": 11,
+    "reportAttributeAccessIssue": 9,
+    "reportCallIssue": 3,
+    "reportAssignmentType": 1,
+    "reportOperatorIssue": 1
+  },
+  "tool_version": "pyright 1.1.414",
+  "scope": "pyrightconfig.json include",
+  "measured": "2026-10-16",
+  "note": "Report-mode baseline: these findings predate any type checking and the count depends on pyrightconfig.json plus the pyright version. scripts/check_types.py fails only when the count grows."
+}

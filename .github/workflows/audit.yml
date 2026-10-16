@@ -61,6 +61,12 @@ jobs:
           python -m compileall -q app tests scripts
       - name: Check canonical environment vocabulary
         run: python scripts/check_canonical_env_vocabulary.py
+      - name: Static type check (report mode, ratcheted)
+        if: matrix.python == '3.12'
+        run: |
+          # pyright comes from the runner's node via npx; the script measures the
+          # repo, compares with pyright_baseline.json and fails only on growth.
+          python scripts/check_types.py
       - name: Check Markdown links
         run: python scripts/check_markdown_links.py
       - name: Targeted Crawl4AI tests
