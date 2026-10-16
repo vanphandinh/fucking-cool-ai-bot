@@ -41,9 +41,19 @@ _GUIDE_CATEGORIES = {
 _CITED_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
 
 _TOKEN_NOTE = (
-    "NOT AVAILABLE: ai provider adapters discard API usage payloads, so token "
-    "usage cannot be measured on this path."
+    "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token "
+    "counts are unavailable for this row."
 )
+
+
+def _usage_medians(rows: list[dict], key: str) -> float | None:
+    counts = [
+        row["provider_token_usage"][key]
+        for row in rows
+        if isinstance(row.get("provider_token_usage"), dict)
+        and isinstance(row["provider_token_usage"].get(key), int)
+    ]
+    return statistics.median(counts) if counts else None
 
 
 def load_questions(x_url: str) -> list[tuple[int, str]]:
@@ -239,7 +249,9 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                             if diagnostics is not None
                             else None  # V1 path never rewrites the answer
                         ),
-                        "provider_token_usage": _TOKEN_NOTE,
+                        "provider_token_usage": (
+                            dict(answer.usage) if answer.usage else _TOKEN_NOTE
+                        ),
                     })
                 except asyncio.TimeoutError:
                     row.update({
@@ -269,16 +281,19 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
     await close_search_runtimes()
     await close_crawl4ai_client()
     for mode in modes:
-        times = [r["elapsed_seconds"] for r in report["results"] if r["mode"] == mode]
+        rows = [r for r in report["results"] if r["mode"] == mode]
+        times = [r["elapsed_seconds"] for r in rows]
         report[f"{mode}_summary"] = {
-            "completed": sum(
-                r["status"] == "completed"
-                for r in report["results"]
-                if r["mode"] == mode
-            ),
+            "completed": sum(r["status"] == "completed" for r in rows),
             "attempted": len(times),
             "latency_median_sec": statistics.median(times) if times else None,
             "latency_p95_sec": sorted(times)[math.ceil(len(times) * 0.95) - 1] if times else None,
+            # Median of the rows that reported usage; None when none did.
+            "prompt_tokens_median": _usage_medians(rows, "prompt_tokens"),
+            "completion_tokens_median": _usage_medians(rows, "completion_tokens"),
+            "usage_reported_rows": sum(
+                isinstance(r.get("provider_token_usage"), dict) for r in rows
+            ),
         }
     _write(args.output, report)
     print(f"Results saved to {args.output} (quality review still required)")

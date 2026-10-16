@@ -7,6 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import Mapping
 
 from ..ai.contracts import ChatMessage, ChatRequest, TextPart, ToolDefinition
 from ..ai.multimodal import build_user_parts
@@ -150,6 +151,9 @@ class Answer:
     # V2 only: what the deterministic citation guard found and changed. ``None``
     # on the V1 path, where the answer text is never rewritten.
     citation_diagnostics: CitationDiagnostics | None = None
+    # Provider-reported token usage summed over the whole request; ``None`` when
+    # the provider reports nothing. Never used for routing decisions.
+    usage: Mapping[str, int] | None = None
 
 
 class Orchestrator:
@@ -516,6 +520,15 @@ class Orchestrator:
         # evidence actually placed in the generation context (tool results and
         # read pages) plus the URLs the user supplied: never model output, so an
         # invented link cannot legitimize itself.
+        if result.usage:
+            logger.info(
+                "ai_usage provider=%s prompt=%s completion=%s total=%s",
+                result.provider,
+                result.usage.get("prompt_tokens", "-"),
+                result.usage.get("completion_tokens", "-"),
+                result.usage.get("total_tokens", "-"),
+            )
+
         answer_text = result.content
         citation_diagnostics: CitationDiagnostics | None = None
         if settings.web_evidence_v2_enabled:
@@ -549,6 +562,7 @@ class Orchestrator:
             model_rotations=result.model_rotations,
             credential_failovers=result.credential_failovers,
             citation_diagnostics=citation_diagnostics,
+            usage=result.usage,
         )
 
 

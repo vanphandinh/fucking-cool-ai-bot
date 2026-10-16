@@ -108,11 +108,20 @@ class ChatRequest:
         object.__setattr__(self, "synthesis_mode", mode)
 
 
+def _freeze_usage(value: Mapping[str, int] | None) -> Mapping[str, int] | None:
+    if not value:
+        return None
+    return MappingProxyType({str(key): int(count) for key, count in value.items()})
+
+
 @dataclass(frozen=True, slots=True)
 class ChatResponse:
     content: str | None = None
     tool_calls: tuple[ToolCallPart, ...] = ()
     provider_state: Mapping[str, object] = field(default_factory=lambda: _EMPTY_MAPPING)
+    # Provider-reported token counts for this response, integers only. None when
+    # the provider omits the payload; observability only, never used for routing.
+    usage: Mapping[str, int] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
@@ -121,3 +130,4 @@ class ChatResponse:
             "provider_state",
             _freeze_mapping(self.provider_state),
         )
+        object.__setattr__(self, "usage", _freeze_usage(self.usage))

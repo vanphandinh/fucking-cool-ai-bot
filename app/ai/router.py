@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Mapping
 
 from ..config import Settings
 from .base import (
@@ -70,6 +70,9 @@ class CompletionResult:
     target_rotations: int = 0
     model_rotations: int = 0
     credential_failovers: int = 0
+    # Summed token usage of every successful provider response in this request;
+    # None when no provider reported a usable payload. Observability only.
+    usage: Mapping[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,23 @@ class _RequestState:
     retry: RequestRetryState
     unsupported_tool_models: set[tuple[str, str, str]]
     successful_health_snapshot: _HealthGenerationSnapshot | None
+    usage: dict[str, int] | None = None
+
+
+def _accumulate_usage(state: _RequestState, usage: Mapping[str, int] | None) -> None:
+    """Add one response's token counts to the request total.
+
+    Tool rounds and provider rotations each cost tokens, so the request reports
+    the sum of every successful response rather than the last one alone. A
+    provider that reports nothing contributes nothing; the request reports
+    ``None`` only when no response carried a usable payload.
+    """
+    if not usage:
+        return
+    totals = state.usage if state.usage is not None else {}
+    for key, count in usage.items():
+        totals[str(key)] = totals.get(str(key), 0) + int(count)
+    state.usage = totals
 
 
 def _synthesis_messages(state: _RequestState) -> list[ChatMessage]:
@@ -548,6 +568,7 @@ class AIProviderRouter:
                 target_rotations,
                 model_rotations,
                 credential_failovers,
+                dict(state.usage) if state.usage else None,
             )
 
         _flush_all_pending_health_errors(candidates, state)
@@ -649,6 +670,7 @@ class AIProviderRouter:
             response = await provider.chat(
                 ChatRequest(messages=tuple(messages), tools=tools)
             )
+            _accumulate_usage(state, response.usage)
             return response, health_snapshot
 
         while True:

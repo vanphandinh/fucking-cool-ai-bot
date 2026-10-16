@@ -105,6 +105,25 @@ def _tool_names(tools: tuple[ToolDefinition, ...]) -> set[str]:
     return {tool.name for tool in tools}
 
 
+def _parse_usage(usage: object) -> dict[str, int] | None:
+    """Extract token counts from a provider ``usage`` payload.
+
+    Only the three well-known integer counters survive; anything else is
+    dropped, and a payload without a single usable counter stays ``None`` so a
+    missing measurement is never reported as zero. Observability only: the
+    numbers never participate in routing or health decisions.
+    """
+    if not isinstance(usage, Mapping):
+        return None
+    parsed: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            continue
+        parsed[key] = value
+    return parsed or None
+
+
 def _parse_structured_tool_calls(
     message: Mapping[str, object],
     tools: tuple[ToolDefinition, ...],
@@ -283,6 +302,7 @@ def parse_response(
         content=content,
         tool_calls=tool_calls,
         provider_state=state,
+        usage=_parse_usage(data.get("usage")),
     )
 
 
