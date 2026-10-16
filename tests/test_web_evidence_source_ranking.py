@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
-from app.search import image_service, service, source_ranking
+from app.search import image_service, router, service, source_ranking
 from app.search.runtime import get_search_runtime
 
 
@@ -58,6 +59,121 @@ class LexicalSourceScoreTests(unittest.TestCase):
 
 
 class RankWebResultsTests(unittest.TestCase):
+    def test_canonical_duplicates_keep_the_strongest_snippet_for_ranking(self):
+        """A weak first backend excerpt must not suppress a stronger duplicate."""
+        query = "water safety advisory"
+        ranked = source_ranking.rank_web_results(query, [
+            _hit("https://civic.example.org/notice?utm_source=search", "Home", "Menu"),
+            _hit("https://civic.example.org/notice", query, "water safety advisory update"),
+            _hit("https://other.example.net/report", "water safety advisory", ""),
+        ])
+        self.assertEqual(len(ranked), 2)
+        self.assertEqual(ranked[0]["url"], "https://civic.example.org/notice")
+        self.assertEqual(ranked[0]["title"], query)
+
+    def test_verification_keeps_a_relevant_recent_alternative_in_full_result_pool(self):
+        """A recently changed policy should remain discoverable behind eight old hits."""
+        cases = (
+            ("verify workplace evacuation policy update", "workplace evacuation policy"),
+            ("xác minh tiêu chuẩn nước uống cập nhật", "tiêu chuẩn nước uống"),
+            ("verify software security release date", "software security release"),
+        )
+        for query, updated_title in cases:
+            with self.subTest(query=query):
+                older = [
+                    _hit(f"https://archive{i}.archive{i}.org/history", query, query)
+                    for i in range(8)
+                ]
+                update = _hit(
+                    "https://updates.example.net/revision", updated_title,
+                    "new revision notice", published_at=(
+                        datetime.now(timezone.utc) - timedelta(days=3)
+                    ).isoformat(),
+                )
+                self.assertGreaterEqual(source_ranking.lexical_score(query, update), 0.3)
+                ranked = source_ranking.rank_web_results(
+                    query, older + [update], limit=8, verification_context=True,
+                )
+                self.assertEqual(len(ranked), 8)
+                self.assertIn(update["url"], [item["url"] for item in ranked])
+
+    def test_recency_slot_requires_query_intent_and_relevance(self):
+        query = "workplace evacuation policy"
+        older = [
+            _hit(f"https://archive{i}.archive{i}.org/history", query, query)
+            for i in range(8)
+        ]
+        recent = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        weak = _hit(
+            "https://unrelated.example.net/story", "gardening", "flowers", published_at=recent
+        )
+        related = _hit(
+            "https://updates.example.net/revision", "workplace evacuation",
+            "new revision", published_at=recent,
+        )
+        for tail, verify in (([weak], True), ([related], False)):
+            with self.subTest(verify=verify):
+                ranked = source_ranking.rank_web_results(
+                    query, older + tail, limit=8, verification_context=verify,
+                )
+                self.assertEqual([item["url"] for item in ranked], [item["url"] for item in older])
+
+    def test_verification_does_not_trust_government_tld_over_relevance(self):
+        """A domain suffix alone says nothing about which claim a page supports."""
+        query = "medical treatment guideline evidence"
+        weak_gov = _hit("https://catalog.gov/news", "medical treatment", "press archive")
+        relevant = _hit(
+            "https://medical-society.org/guideline", query, "updated consensus document"
+        )
+        ranked = source_ranking.rank_web_results(
+            query, [weak_gov, relevant], verification_context=True
+        )
+        self.assertEqual(ranked[0]["url"], relevant["url"])
+
+    def test_verification_intent_is_multilingual_and_domain_neutral(self):
+        for text in (
+            "Hãy xác minh tin này",
+            "Thông tin đó có đúng không?",
+            "Fact-check this report",
+            "Is this claim true or false?",
+            "Theo nguồn cập nhật mới nhất",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(source_ranking.verification_intent(text))
+        self.assertFalse(source_ranking.verification_intent("How do I boil rice?"))
+
+    def test_recent_published_sources_win_ties_only_for_freshness_queries(self):
+        now = datetime.now(timezone.utc)
+        older = _hit("https://catalog.example.com/old", "Artemis mission", "NASA",
+                     published_at=(now - timedelta(days=450)).isoformat())
+        recent = _hit("https://catalog.example.com/new", "Artemis mission", "NASA",
+                      published_at=(now - timedelta(days=3)).isoformat())
+        self.assertEqual(
+            source_ranking.rank_web_results(
+                "latest Artemis mission NASA", [older, recent],
+            )[0]["url"],
+            "https://catalog.example.com/new",
+        )
+        self.assertEqual(
+            source_ranking.rank_web_results("Artemis mission NASA", [older, recent])[0]["url"],
+            "https://catalog.example.com/old",
+        )
+
+    def test_official_source_queries_get_the_recency_hint_too(self):
+        now = datetime.now(timezone.utc)
+        older = _hit("https://catalog.example.com/old", "Artemis mission", "NASA",
+                     published_at=(now - timedelta(days=450)).isoformat())
+        recent = _hit("https://catalog.example.com/new", "Artemis mission", "NASA",
+                      published_at=(now - timedelta(days=3)).isoformat())
+        # "Theo trang chính thức" asks for current official facts even without
+        # an explicit newest/updated keyword, so recency may break the tie.
+        self.assertEqual(
+            source_ranking.rank_web_results(
+                "theo trang chinh thuc cua NASA ve chuong trinh Artemis", [older, recent],
+            )[0]["url"],
+            "https://catalog.example.com/new",
+        )
+
     def test_canonical_dedupe_and_limit(self):
         results = [
             _hit("https://a.example.com/x?utm_source=tool#frag", QUERY),
@@ -154,6 +270,55 @@ class IndependenceGateTests(unittest.TestCase):
         )
 
 
+class MergePoolTests(unittest.TestCase):
+    """The V2 candidate pool must keep distinct pages ahead of extra excerpts."""
+
+    def _merge(self, current, incoming, *, limit, keep=True):
+        return router._merge_results(
+            current, incoming, key_name="url", limit=limit, keep_duplicate_excerpts=keep
+        )
+
+    def test_flood_of_one_url_cannot_evict_urls_from_the_next_backend(self):
+        flooded = _hit("https://echo.example.org/solar", "Danh mục chung", "trang phụ")
+        flood = [{**flooded, "snippet": f"trang phụ {i}"} for i in range(24)]
+        later = [_hit(f"https://new{i}.example.net/report", f"báo cáo {i}") for i in range(5)]
+
+        pool = self._merge([], flood, limit=24)
+        pool = self._merge(pool, later, limit=24)
+
+        urls = [item["url"] for item in pool]
+        self.assertLessEqual(len(urls), 24)
+        self.assertIn(flooded["url"], urls)
+        for item in later:
+            self.assertIn(item["url"], urls, "a page no backend had offered yet was evicted")
+
+    def test_alternate_excerpts_are_kept_while_the_pool_has_room(self):
+        url = "https://city.example.org/advisory"
+        pool = self._merge(
+            [_hit(url, "City homepage", "Welcome")],
+            [_hit(url, QUERY, "Revised advisory update")],
+            limit=24,
+        )
+        self.assertEqual([item["url"] for item in pool], [url, url])
+        self.assertEqual(pool[1]["title"], QUERY)
+
+    def test_flag_off_keeps_first_hit_wins_without_extra_excerpts(self):
+        url = "https://city.example.org/advisory"
+        pool = self._merge(
+            [_hit(url, "City homepage", "Welcome")],
+            [_hit(url, QUERY, "Revised advisory update")],
+            limit=24,
+            keep=False,
+        )
+        self.assertEqual([item["url"] for item in pool], [url])
+        self.assertEqual(pool[0]["title"], "City homepage")
+
+    def test_pool_never_exceeds_the_limit(self):
+        flood = [_hit("https://echo.example.org/x", "t", str(i)) for i in range(50)]
+        pool = self._merge([], flood, limit=7)
+        self.assertEqual(len(pool), 7)
+
+
 class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
     def _settings(self, **overrides) -> Settings:
         return Settings(
@@ -162,6 +327,120 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             searxng_url="http://searxng:8080",
             **overrides,
         )
+
+    async def test_v2_cross_backend_duplicate_retains_best_excerpt(self):
+        """Routing must give ranking both excerpts for the same canonical URL."""
+        query = "verify drinking water advisory update"
+        url = "https://city.example.org/advisory"
+        searx = AsyncMock(return_value=[
+            _hit(url, "City homepage", "Welcome"),
+            _hit("https://newspaper.example.net/analysis", query),
+        ])
+        ddgs = AsyncMock(return_value=[
+            _hit(url, query, "Revised drinking water advisory update"),
+        ])
+        with (
+            patch("app.search.searxng_backend.search_searxng", new=searx),
+            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
+        ):
+            results = await service.search(
+                query, self._settings(web_evidence_v2_enabled=True),
+            )
+        ddgs.assert_awaited_once()
+        self.assertEqual(len(results), 2)
+        self.assertEqual(next(item for item in results if item["url"] == url)["title"], query)
+
+    async def test_first_merge_call_site_keeps_duplicate_excerpts(self):
+        """M5 first call site: the SearXNG shortcut must also feed the pool.
+
+        When SearXNG alone passes the independence gate, ``route_auto`` returns
+        early — the merge that produced that pool is the first
+        ``keep_duplicate_excerpts`` call site. Dropping alternate excerpts
+        there would rank the weaker excerpt for a duplicated URL, so the
+        regression asserts the stronger excerpt wins the early-return path.
+        """
+        query = "solar capacity chart per country"
+        duplicated = "https://solar-watch.example.org/report"
+        weak = _hit(duplicated, "solar capacity", "solar capacity")
+        rich = _hit(
+            duplicated,
+            "solar capacity report",
+            "solar capacity chart per country",
+        )
+        diverse = _hit(
+            "https://grid-news.example.net/data",
+            query,
+            "solar capacity chart per country data",
+        )
+        searx = AsyncMock(return_value=[weak, rich, diverse])
+        ddgs = AsyncMock(return_value=[])  # must never be called in this path
+        with (
+            patch("app.search.searxng_backend.search_searxng", new=searx),
+            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
+        ):
+            results = await service.search(
+                query, self._settings(web_evidence_v2_enabled=True)
+            )
+
+        ddgs.assert_not_awaited()
+        self.assertEqual(len(results), 2)
+        kept = next(item for item in results if item["url"] == duplicated)
+        # The duplicate passages reached ranking, and the stronger one won.
+        self.assertIn("chart per country", str(kept["snippet"]))
+
+    async def test_v2_duplicate_flood_cannot_crowd_out_diverse_sources(self):
+        """A backend repeating one page must not starve the merged pool.
+
+        Keeping alternate excerpts is what lets ranking prefer the stronger
+        one, but a flood of one canonical URL must never consume the pool that
+        an unseen, relevant page from the second backend still needs. This is
+        the adversarial counterpart of the cross-backend duplicate case.
+        """
+        query = "solar capacity 2026"
+        flooded = "https://echo.example.org/solar"
+        flood = [_hit(flooded, "Danh mục chung", f"trang phụ {i}") for i in range(24)]
+        diverse = _hit("https://independent.example.net/report", query, query)
+        searx = AsyncMock(return_value=flood)
+        ddgs = AsyncMock(return_value=[diverse])
+        settings = self._settings(web_evidence_v2_enabled=True)
+        with (
+            patch("app.search.searxng_backend.search_searxng", new=searx),
+            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
+        ):
+            results = await service.search(query, settings)
+
+        urls = [item["url"] for item in results]
+        self.assertIn(diverse["url"], urls, "the diverse page was dropped by the pool")
+        self.assertEqual(urls.count(flooded), 1, "one result per canonical URL")
+        self.assertEqual(len(urls), 2)
+
+    async def test_fact_check_tops_up_old_independent_hits_with_recent_source(self):
+        """Extra discovery applies to arbitrary claims, independent of source TLD."""
+        query = "verify whether treatment protocol Q changed in 2025"
+        old = [
+            _hit("https://archive.example.com/2024", query),
+            _hit("https://history.example.net/2025", query),
+        ]
+        current_document = _hit(
+            "https://medical-society.org/revision",
+            "treatment protocol Q revision",
+            "new recommendations published",
+            published_at=datetime.now(timezone.utc).isoformat(),
+        )
+        searx = AsyncMock(return_value=old)
+        ddgs = AsyncMock(return_value=[current_document])
+        with (
+            patch("app.search.searxng_backend.search_searxng", new=searx),
+            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
+        ):
+            results = await service.search(
+                query,
+                self._settings(web_evidence_v2_enabled=True),
+                verification_context=True,
+            )
+        ddgs.assert_awaited_once()
+        self.assertIn(current_document["url"], {item["url"] for item in results})
+        self.assertEqual(len(results), 3)
 
     async def test_v2_top_ups_when_searxng_has_only_one_relevant_domain(self):
         searx = AsyncMock(

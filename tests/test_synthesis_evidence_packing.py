@@ -99,6 +99,125 @@ class SynthesisPackingTests(unittest.TestCase):
         self.assertIn("https://a.example.org/report", packed)
         self.assertIn("https://b.example.net/report", packed)
 
+    def test_oversized_source_label_does_not_hide_other_evidence(self):
+        """An unrenderable source must not terminate the entire evidence pool."""
+        oversized = "https://a.example.org/" + "very-long-path/" * 70
+        useful = "https://b.example.net/report"
+        packed = pack(
+            [
+                _web_output(
+                    oversized, [(1, "Treatment standard 2026", "Treatment standard 2026 update.")]
+                ),
+                _web_output(
+                    useful,
+                    [(1, "Treatment", "Treatment standard 2026 details from the other source.")],
+                ),
+            ],
+            query="treatment standard 2026",
+            cap=850,
+        )
+        self.assertIn(useful, packed)
+        self.assertLessEqual(len(_evidence_section(packed)), 850)
+
+    def test_multi_part_query_keeps_evidence_for_distinct_aspects(self):
+        """Strong duplicate hits must not crowd out a second requested fact."""
+        first = "https://a.example.org/report"
+        duplicate = "https://b.example.net/report"
+        other_aspect = "https://c.example.com/report"
+        packed = pack(
+            [
+                _web_output(
+                    first,
+                    [(1, "Recall medication batch 2026", "Recall medication batch 2026 notice.")],
+                ),
+                _web_output(
+                    duplicate,
+                    [
+                        (
+                            1,
+                            "Recall medication batch 2026",
+                            "Recall medication batch 2026 repeated notice.",
+                        )
+                    ],
+                ),
+                _web_output(
+                    other_aspect, [(1, "Warning label", "Warning label changes risk assessment.")]
+                ),
+            ],
+            query="recall medication batch 2026 warning label",
+            cap=650,
+        )
+        self.assertIn(first, packed)
+        self.assertIn(other_aspect, packed)
+        self.assertLessEqual(len(_evidence_section(packed)), 650)
+
+    def test_irrelevant_appendix_does_not_consume_unused_evidence_budget(self):
+        """Spare characters should not automatically promote unrelated prose."""
+        marker = "APPENDIX_ONLY_NEVER_NEEDED"
+        appendix = "administrative appendix filler " * 120
+        body = f"Solar capacity 2026 confirmed. {appendix}{marker}"
+        packed = pack(
+            [
+                _web_output(
+                    "https://a.example.org/report",
+                    [(1, "Solar capacity 2026", body)],
+                ),
+                _web_output(
+                    "https://b.example.net/report",
+                    [(1, "Solar capacity", "Solar capacity 2026 independently measured.")],
+                ),
+            ],
+            query="solar capacity 2026",
+            cap=5000,
+        )
+        self.assertIn("Solar capacity 2026", packed)
+        self.assertNotIn(marker, packed)
+
+    def test_short_excerpts_do_not_expand_unrelated_long_excerpts(self):
+        """Unused space from a short hit must not fund another hit's appendix."""
+        marker = "APPENDIX_UNRELATED_TAIL_MARKER"
+        long_excerpt = "Policy 2026 revision. " + "administrative filler " * 100 + marker
+        packed = pack(
+            [
+                _web_output(
+                    "https://a.example.org/a",
+                    [(1, "Policy revision status 2026", "Policy revision status 2026 overview.")],
+                ),
+                _web_output(
+                    "https://b.example.net/b",
+                    [(1, "Policy", long_excerpt)],
+                ),
+                _web_output("https://c.example.com/c", [(1, "Status", "Status 2026 confirmed.")]),
+            ],
+            query="policy revision status 2026",
+            cap=6000,
+        )
+        self.assertIn("https://b.example.net/b", packed)
+        self.assertNotIn(marker, packed)
+
+    def test_query_coverage_only_counts_text_visible_to_model(self):
+        """A buried keyword beyond clipping must not mask visible evidence."""
+        buried = "Regulation 2026 overview. " + "filler " * 450 + "safety"
+        packed = pack(
+            [
+                _web_output(
+                    "https://a.example.org/safety",
+                    [(1, "Regulation 2026", buried)],
+                ),
+                _web_output(
+                    "https://b.example.net/b",
+                    [(1, "Regulation 2026", "Regulation 2026 commentary and context.")],
+                ),
+                _web_output(
+                    "https://c.example.com/c",
+                    [(1, "Safety", "Safety 2026 requires protective inspection.")],
+                ),
+            ],
+            query="regulation 2026 safety",
+            cap=680,
+        )
+        self.assertIn("https://c.example.com/c", packed)
+
     def test_non_web_tool_outputs_survive_large_web_evidence(self):
         huge = "solar capacity " * 4000
         packed = pack(
@@ -158,6 +277,34 @@ class SynthesisPackingTests(unittest.TestCase):
         tail = packed.split(END, 1)[1]
         self.assertNotIn("IGNORE ALL PRIOR", tail)
         self.assertIn("bỏ qua", tail)
+
+    def test_v2_final_instruction_requires_grounding_but_v1_keeps_original_text(self):
+        base = [ChatMessage("user", (TextPart("Xác minh kế hoạch mới nhất"),))]
+        tool_output = ["Thông báo chính thức thay đổi kế hoạch vào năm 2026."]
+        v1 = _message_text(build_fresh_synthesis_messages(base, tool_output, mode="v1")[-1])
+        v2 = _message_text(build_fresh_synthesis_messages(base, tool_output, mode="v2")[-1])
+        self.assertNotIn("KIỂM CHỨNG:", v1)
+        self.assertIn("KIỂM CHỨNG:", v2.split(END, 1)[1])
+        self.assertIn("Bác bỏ tin sai không suy ra", v2.split(END, 1)[1])
+        self.assertEqual(_evidence_section(v1), _evidence_section(v2))
+
+    def test_v2_grounding_guidance_is_concise_and_keeps_verification_rules(self):
+        """A fixed instruction must not cost more than a useful evidence excerpt."""
+        base = [ChatMessage("user", (TextPart("Xác minh kế hoạch cập nhật"),))]
+        outputs = ["[WEB EVIDENCE]\nThông báo thay đổi kế hoạch từ nguồn độc lập."]
+        old = _message_text(build_fresh_synthesis_messages(base, outputs, mode="v1")[-1])
+        new = _message_text(build_fresh_synthesis_messages(base, outputs, mode="v2")[-1])
+        guidance = new.split(END, 1)[1]
+        self.assertLessEqual(len(new) - len(old), 300)
+        self.assertIn("nguồn chính thức", guidance)
+        self.assertIn("mâu thuẫn", guidance)
+        self.assertIn("không suy ra", guidance)
+        self.assertIn("chưa xác minh", guidance)
+        # A link the model never retrieved must not be presented as a source.
+        self.assertIn("không dẫn URL ngoài dữ liệu nghiên cứu", guidance)
+        self.assertNotIn("không dẫn URL", _message_text(
+            build_fresh_synthesis_messages(base, outputs, mode="v1")[-1]
+        ))
 
     def test_packing_does_not_mutate_tool_outputs(self):
         outputs = [_web_output("https://a.example.org/report", [(1, "H", "x" * 500)])]

@@ -13,7 +13,7 @@ from ..config import Settings
 from ..core.job_operations import OperationBudget
 from .resilience import BackendKey, FailureKind
 from .runtime import get_search_runtime
-from .source_ranking import has_independent_coverage, rank_web_results
+from .source_ranking import has_independent_coverage, rank_web_results, verification_intent
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +59,50 @@ def _merge_results(
     *,
     key_name: str,
     limit: int,
+    keep_duplicate_excerpts: bool = False,
 ) -> list[dict]:
+    """Merge one backend batch into the candidate pool.
+
+    ``keep_duplicate_excerpts`` is the V2 web path only: alternate excerpts of
+    an already-seen canonical URL are kept so ranking can prefer the more
+    informative one. V1 web and image search keep first-hit wins.
+
+    On the V2 path distinct URLs are always placed ahead of those alternate
+    excerpts. The pool is a fixed budget, so ordering matters: a backend that
+    repeats one page many times must not consume the room a still-unseen, more
+    relevant page from the second backend needs. Alternate excerpts only fill
+    whatever capacity the distinct URLs leave over.
+    """
+    if limit <= 0:
+        return []
     out = [dict(item) for item in current]
     seen = {_canonical_url(item.get(key_name)) for item in out}
-    for item in incoming:
+    if not keep_duplicate_excerpts:
+        for item in incoming:
+            marker = _canonical_url(item.get(key_name))
+            if not marker or marker in seen:
+                continue
+            seen.add(marker)
+            out.append(dict(item))
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
+    distinct: list[dict] = []
+    extras: list[dict] = []
+    seen = set()
+    for item in (*out, *incoming):
         marker = _canonical_url(item.get(key_name))
-        if not marker or marker in seen:
+        if not marker:
+            continue
+        if marker in seen:
+            if len(distinct) + len(extras) < limit:
+                extras.append(dict(item))
             continue
         seen.add(marker)
-        out.append(dict(item))
-        if len(out) >= limit:
-            break
-    return out[:limit]
+        if len(distinct) < limit:
+            distinct.append(dict(item))
+    return (distinct + extras)[:limit]
 
 
 def _meets_minimum(
@@ -79,6 +111,7 @@ def _meets_minimum(
     query: str,
     results: list[dict],
     min_results: int,
+    verification_context: bool = False,
 ) -> bool:
     """Decide whether an early backend result set is good enough to stop.
 
@@ -87,6 +120,11 @@ def _meets_minimum(
     flag-off V1 path keep the original count-based threshold.
     """
     if quality_gate:
+        # Independent keyword matches can agree on an obsolete or false claim.
+        # On verification queries, try DDGS as a second discovery route even
+        # when SearXNG returned two relevant domains.
+        if verification_context:
+            return False
         return has_independent_coverage(query, results)
     return len(results) >= min_results
 
@@ -186,13 +224,25 @@ async def route_auto(
     searx_call: Callable[[str, Settings, int], Awaitable[list[dict]]] | None,
     ddgs_call: Callable[[str, Settings, int], Awaitable[list[dict]]],
     operations=None,
+    verification_context: bool = False,
 ) -> list[dict]:
+    if kind == "web":
+        # Enforce the web cap even for direct router callers. Images have their
+        # own, independent limit policy.
+        from .service import effective_limit
+
+        limit = effective_limit(limit)
+        if limit == 0:
+            return []
     runtime = get_search_runtime(settings)
     normalized = _normalize_query(query)
     # Ranking and the independence gate change web ordering, so V1 and V2
     # answers for the same query must never share a cache entry.
     quality_gate = kind == "web" and settings.web_evidence_v2_enabled
+    verify = quality_gate and (verification_context or verification_intent(normalized))
     cache_key = f"{kind}:{limit}:{normalized}" + (":v2" if quality_gate else "")
+    if verify:
+        cache_key += ":verify"
 
     fresh = runtime.cache.get_fresh(cache_key)
     if fresh is not None:
@@ -247,16 +297,20 @@ async def route_auto(
                     results,
                     key_name=result_url_key,
                     limit=pool_limit,
+                    keep_duplicate_excerpts=quality_gate,
                 )
                 searxng_sufficient = _meets_minimum(
                     quality_gate=quality_gate,
                     query=normalized,
                     results=merged,
                     min_results=min_results,
+                    verification_context=verify,
                 )
                 if searxng_sufficient:
                     if quality_gate:
-                        merged = rank_web_results(normalized, merged, limit=limit)
+                        merged = rank_web_results(
+                            normalized, merged, limit=limit, verification_context=verify
+                        )
                     _cache_success(runtime, cache_key, merged, settings, kind)
                     return merged
             elif error is not None:
@@ -289,6 +343,7 @@ async def route_auto(
                     results,
                     key_name=result_url_key,
                     limit=pool_limit,
+                    keep_duplicate_excerpts=quality_gate,
                 )
             elif error is not None:
                 summary = _safe_failure_summary(error)
@@ -297,7 +352,9 @@ async def route_auto(
 
         if merged:
             if quality_gate:
-                merged = rank_web_results(normalized, merged, limit=limit)
+                merged = rank_web_results(
+                    normalized, merged, limit=limit, verification_context=verify
+                )
             _cache_success(runtime, cache_key, merged, settings, kind)
             return merged
         if had_successful_backend:

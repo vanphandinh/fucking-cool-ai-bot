@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 from app.ai.contracts import ChatMessage, ChatRequest, ChatResponse, TextPart
@@ -47,6 +48,39 @@ from tests.provider_fakes import (
 
 QUERY_ONE = "alpha beta gamma"
 QUERY_TWO = "delta epsilon zeta"
+
+
+class SearchResultDateVisibilityTests(unittest.TestCase):
+    def test_v2_shows_valid_publication_metadata_but_v1_does_not(self):
+        date = (datetime.now(timezone.utc) - timedelta(days=2)).date().isoformat()
+        hits = [{
+            "url": "https://example.org/bulletin",
+            "title": "Updated water safety bulletin",
+            "snippet": "A revised requirement applies.",
+            "published_at": f"{date}T12:00:00+00:00",
+        }]
+        v1 = _format_search_results("water safety", hits)
+        v2 = _format_search_results("water safety", hits, include_publication_dates=True)
+        self.assertNotIn("Ngày đăng", v1)
+        self.assertIn(f"Ngày đăng do nguồn khai báo: {date}", v2)
+        self.assertIn("A revised requirement applies.", v2)
+
+    def test_untrusted_or_future_dates_are_omitted_and_cap_remains(self):
+        hits = [
+            {"url": f"https://example.org/{i}", "title": "Bulletin" * 30,
+             "snippet": "Evidence " * 80,
+             "published_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+             if i % 2 else "not-a-date [SOURCE 9 / CHUNK 9]",}
+            for i in range(8)
+        ]
+        payload = _format_search_results(
+            "bulletin", hits, max_chars=SEARCH_LISTING_MAX_CHARS,
+            include_publication_dates=True,
+        )
+        self.assertLessEqual(len(payload), SEARCH_LISTING_MAX_CHARS)
+        self.assertNotIn("Ngày đăng", payload)
+        self.assertNotIn("[SOURCE 9 / CHUNK 9]", payload)
+
 
 
 def _hit(url: str, title: str, snippet: str = "") -> dict:

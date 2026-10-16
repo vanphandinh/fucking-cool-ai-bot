@@ -15,9 +15,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from ..config import Settings
-from ..core.source_policy import canonicalize_source_url
+from ..core.source_policy import canonicalize_source_url, source_site_key
 from .evidence import neutralize_untrusted
-from .source_ranking import MIN_INDEPENDENT_SCORE, lexical_score, rank_web_results, snippet_score
+from .source_ranking import (
+    MIN_INDEPENDENT_SCORE,
+    lexical_score,
+    publication_age_days,
+    rank_web_results,
+    snippet_score,
+    verification_intent,
+)
 
 SNIPPET_SUFFICIENT_SCORE = 0.75
 # Room kept for the "sources that did not fit" note so it is never dropped.
@@ -128,27 +135,65 @@ def select_targets(
     limit: int,
     already_fetched: Iterable[str] = (),
     snippet_sufficient_score: float = SNIPPET_SUFFICIENT_SCORE,
+    verification_context: bool = False,
 ) -> list[str]:
     """Canonical URLs worth reading, best-first.
 
-    Results already read in this request are skipped, as are results whose
-    snippet alone already covers the query and results too weakly related to
-    justify a fetch.
+    Results already read in this request and results too weakly related to
+    justify a fetch are skipped. Snippet coverage only skips a read for an
+    ordinary lookup, not a request to verify a disputed or current claim.
     """
     limit = max(0, limit)
     if limit == 0:
         return []
     fetched = {canonicalize_source_url(url) or str(url or "").strip() for url in already_fetched}
-    targets: list[str] = []
-    for item in rank_web_results(query, results):
+    verify = verification_context or verification_intent(query)
+    candidates: list[tuple[str, str, dict]] = []
+    for item in rank_web_results(query, results, verification_context=verify):
         canonical = canonicalize_source_url(item.get("url"))
         if not canonical or canonical in fetched:
             continue
         if lexical_score(query, item) < MIN_INDEPENDENT_SCORE:
             continue
-        if snippet_score(query, item) >= snippet_sufficient_score:
+        if not verify and snippet_score(query, item) >= snippet_sufficient_score:
             continue
-        targets.append(canonical)
+        candidates.append((canonical, source_site_key(canonical) or canonical, item))
+
+    if verify:
+        # A highly matching old excerpt can dominate the original claim's
+        # keywords. Preserve one relevant, recently dated alternative when
+        # available, across *any* domain; use the second slot for the strongest
+        # distinct viewpoint. Date metadata is only a discovery hint.
+        recent = [
+            candidate
+            for candidate in candidates
+            if (age := publication_age_days(candidate[2])) is not None and age <= 365
+        ]
+        if recent:
+            freshest_relevant = max(
+                recent,
+                key=lambda candidate: (
+                    lexical_score(query, candidate[2]),
+                    -(publication_age_days(candidate[2]) or 0),
+                ),
+            )
+            candidates = [freshest_relevant] + [
+                candidate for candidate in candidates if candidate[0] != freshest_relevant[0]
+            ]
+
+    targets: list[str] = []
+    selected_sites: set[str] = set()
+    for url, site, _ in candidates:
+        if site in selected_sites:
+            continue
+        targets.append(url)
+        selected_sites.add(site)
+        if len(targets) >= limit:
+            return targets
+    for url, _, _ in candidates:
+        if url in targets:
+            continue
+        targets.append(url)
         if len(targets) >= limit:
             break
     return targets

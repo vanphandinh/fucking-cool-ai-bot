@@ -1,24 +1,75 @@
-"""Lexical source ranking and independent-coverage gating for web search.
+"""Source ranking and independent-coverage gating for web search.
 
 Only ``kind="web"`` uses this policy. Image search and the X/Twitter resolver
 keep their existing semantics: nothing here rewrites or filters their results.
 
-Ranking reads the query, title and snippet only. Publication dates are never
-inspected, so a missing timestamp is never treated as evidence of freshness or
-staleness.
+For questions asking for recent information or verifying a disputed claim,
+publication timestamps can add a small recency signal. A timestamp is a
+discovery hint, never evidence that a claim is correct. No domain suffix is
+treated as authoritative for every topic.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, timezone
+import re
 
 from ..core.source_policy import canonicalize_source_url, source_site_key
-from .evidence import terms
+from .evidence import normalize, terms
 
 TITLE_WEIGHT = 2.0
 SNIPPET_WEIGHT = 1.0
 MIN_INDEPENDENT_SCORE = 0.20
 MIN_INDEPENDENT_DOMAINS = 2
+# Keep one moderately relevant dated alternative discoverable during fact
+# checks, without promoting a fresh but unrelated page into the top results.
+MIN_RECENT_VERIFICATION_SCORE = 0.30
+
+_VERIFICATION_INTENT = re.compile(
+    r"\b(xac minh|kiem chung|kiem tra tinh xac thuc|thuc hu|"
+    r"dung hay sai|dung sai|co dung khong|co that khong|"
+    r"fact.check|verify|verification|is it true|true or false|"
+    r"chinh thuc|latest|current|as of|moi nhat|cap nhat|hien tai|hien nay)\b"
+)
+
+
+def verification_intent(question: str) -> bool:
+    """Recognize requests where snippets alone should not settle a claim."""
+    return bool(_VERIFICATION_INTENT.search(normalize(question)))
+
+
+def publication_age_days(item: dict) -> float | None:
+    """Return non-future age of a parseable publication timestamp, if known."""
+    published_at = item.get("published_at")
+    if not isinstance(published_at, str) or len(published_at) > 40:
+        return None
+    try:
+        published = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - published).total_seconds() / 86400
+    return age if age >= 0 else None
+
+
+def _freshness_bonus(query: str, item: dict, *, verification_context: bool = False) -> float:
+    """A bounded recency hint for current/verification discovery."""
+    normalized = normalize(query)
+    if not verification_context and not re.search(
+        r"\b(latest|current|today|recent|updated|update|"
+        r"moi nhat|gan day|hien tai|hom nay|cap nhat)\b", normalized,
+    ):
+        return 0.0
+    age = publication_age_days(item)
+    if age is None:
+        return 0.0
+    if age <= 120:
+        return 0.15
+    if age <= 365:
+        return 0.06
+    return 0.0
 
 
 def _coverage(wanted: set[str], text: str) -> float:
@@ -47,27 +98,33 @@ def lexical_score(query: str, item: dict) -> float:
     return round(min(1.0, weighted / (TITLE_WEIGHT + SNIPPET_WEIGHT)), 6)
 
 
-def _records(query: str, results: Sequence[dict]) -> list[dict]:
+def _records(
+    query: str, results: Sequence[dict], *, verification_context: bool = False
+) -> list[dict]:
     """Score, canonical-dedupe and order results without touching the inputs."""
-    records: list[dict] = []
-    seen: set[str] = set()
+    best_by_url: dict[str, dict] = {}
     for index, item in enumerate(results):
         if not isinstance(item, dict):
             continue
         canonical = canonicalize_source_url(item.get("url"))
-        if not canonical or canonical in seen:
+        if not canonical:
             continue
-        seen.add(canonical)
         site = source_site_key(canonical) or canonical
-        records.append(
-            {
+        score = lexical_score(query, item) + _freshness_bonus(
+            query, item, verification_context=verification_context
+        )
+        previous = best_by_url.get(canonical)
+        # Search engines often supply different excerpts for the same page.
+        # Keep the stronger one; equal-score ties retain the earliest result.
+        if previous is None or score > previous["score"]:
+            best_by_url[canonical] = {
                 "index": index,
                 "item": item,
                 "url": canonical,
                 "site": site,
-                "score": lexical_score(query, item),
+                "score": score,
             }
-        )
+    records = list(best_by_url.values())
     records.sort(key=lambda record: (-record["score"], record["index"]))
     return records
 
@@ -77,7 +134,13 @@ def _as_results(records: Sequence[dict]) -> list[dict]:
     return [{**record["item"], "url": record["url"]} for record in records]
 
 
-def rank_web_results(query: str, results: Sequence[dict], *, limit: int = 8) -> list[dict]:
+def rank_web_results(
+    query: str,
+    results: Sequence[dict],
+    *,
+    limit: int = 8,
+    verification_context: bool = False,
+) -> list[dict]:
     """Rank web results by lexical relevance, then interleave domains.
 
     The breadth pass keeps at most one result per registrable domain so the
@@ -88,7 +151,11 @@ def rank_web_results(query: str, results: Sequence[dict], *, limit: int = 8) -> 
     """
     if limit <= 0:
         return []
-    records = _records(query, results)
+    verify = verification_context or verification_intent(query)
+    records = _records(
+        query, results,
+        verification_context=verify,
+    )
     if not records:
         return []
 
@@ -102,14 +169,37 @@ def rank_web_results(query: str, results: Sequence[dict], *, limit: int = 8) -> 
         chosen.append(record)
         chosen_indexes.add(record["index"])
         if len(chosen) >= limit:
-            return _as_results(chosen)
-
-    for record in records:
-        if record["index"] in chosen_indexes:
-            continue
-        chosen.append(record)
-        if len(chosen) >= limit:
             break
+
+    if len(chosen) < limit:
+        for record in records:
+            if record["index"] in chosen_indexes:
+                continue
+            chosen.append(record)
+            if len(chosen) >= limit:
+                break
+
+    # In a full pool of high-overlap historical results, a changed policy may
+    # use different terminology and be pushed past the display cap. During a
+    # verification query, reserve one slot for an independently relevant,
+    # recently dated alternative. Publication metadata is a discovery hint:
+    # it does not make the newer statement true or authoritative.
+    if verify and len(chosen) == limit:
+        recent = [
+            record for record in records
+            if lexical_score(query, record["item"]) >= MIN_RECENT_VERIFICATION_SCORE
+            and (age := publication_age_days(record["item"])) is not None
+            and age <= 365
+        ]
+        if recent and not any(record in chosen for record in recent):
+            selected_sites = {record["site"] for record in chosen}
+            # Prefer a novel domain; otherwise replace that domain's older hit.
+            fresh = next((r for r in recent if r["site"] not in selected_sites), recent[0])
+            replace = next(
+                (i for i, r in enumerate(chosen) if r["site"] == fresh["site"]),
+                len(chosen) - 1,
+            )
+            chosen[replace] = fresh
     return _as_results(chosen)
 
 

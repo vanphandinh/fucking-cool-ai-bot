@@ -56,7 +56,11 @@ async def search_searxng(query: str, settings: Settings, limit: int) -> list[dic
         title = str(item.get("title") or "")
         content = str(item.get("content") or item.get("snippet") or "")
         if url_item:
-            results.append({"title": title[:300], "url": url_item, "snippet": content[:400]})
+            record = {"title": title[:300], "url": url_item, "snippet": content[:400]}
+            published = item.get("publishedDate")
+            if isinstance(published, str) and len(published) <= 40:
+                record["published_at"] = published
+            results.append(record)
     return results
 
 

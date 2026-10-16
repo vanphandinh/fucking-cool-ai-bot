@@ -398,6 +398,74 @@ def _focus_jina_article(text: str) -> str:
     return text
 
 
+def _is_cached_jina_snapshot(text: str) -> bool:
+    """Detect Jina's cache warning in response metadata, before article text."""
+    metadata = text.split("Markdown Content:", 1)[0]
+    return bool(re.search(
+        r"(?im)^Warning:[ \t]*This is a cached snapshot\b", metadata,
+    ))
+
+
+def _requested_sections(query: str) -> list[str]:
+    return re.findall(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){2,5}(?![\d.])", query)
+
+
+def _requested_heading(text: str, query: str):
+    for number in _requested_sections(query):
+        heading = re.search(
+            rf"(?m)^#{{1,6}}[ \t]+(?:Section[ \t]+)?{re.escape(number)}"
+            rf"(?:[ \t.:—-]|$)", text, re.IGNORECASE,
+        )
+        if heading is not None:
+            return heading
+    return None
+
+
+def _focus_requested_section(text: str, query: str, limit: int) -> str:
+    """Keep a named numbered section even when it lies beyond the text prefix.
+
+    Jina often returns an entire long specification. A query naming section
+    15.5.5 should reach that section without increasing extraction budgets.
+    Only standalone Markdown headings qualify; TOC links are not headings.
+    """
+    if not _requested_sections(query) or len(text) <= limit:
+        return text[:limit]
+    heading = _requested_heading(text, query)
+    if heading is not None and heading.start() >= limit:
+        prefix = text[:min(1000, limit // 5)]
+        return prefix + "\n\n" + text[heading.start():heading.start() + limit - len(prefix) - 2]
+    return text[:limit]
+
+
+def _focus_html_section(body: bytes, encoding: str, query: str) -> tuple[bytes, str, bool]:
+    """Extract a bounded HTML window around an explicitly requested section id.
+
+    Runs only after the origin URL passes the existing SSRF/2 MiB read limits.
+    RFC HTML is long enough for late sections to exceed the text prefix cap.
+    """
+    if not _requested_sections(query):
+        return body, encoding, False
+    try:
+        markup = body.decode(encoding, errors="replace")
+    except LookupError:
+        markup = body.decode("utf-8", errors="replace")
+    for number in _requested_sections(query):
+        match = re.search(
+            rf"(?i)\bid\s*=\s*['\"](?:section-)?{re.escape(number)}['\"]",
+            markup,
+        )
+        if match is None:
+            continue
+        start = markup.rfind("<section", max(0, match.start() - 400), match.start())
+        if start < 0:
+            start = markup.rfind("<h", max(0, match.start() - 400), match.start())
+        if start < 0:
+            start = match.start()
+        window = markup[start:start + 180000]
+        return window.encode("utf-8"), "utf-8", True
+    return body, encoding, False
+
+
 async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
                      operations=None, budget=None, query: str = "",
                      max_extracted_chars: int | None = None) -> str:
@@ -417,23 +485,31 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
         return await operations.run(label, lambda: _fetch_limited(http, target),
                                     timeout_sec=timeout, budget=budget)
 
+    jina_section_missing = False
     try:
         # 1) Jina Reader — không cần key, trả text sạch (Jina tự tải hộ nên an toàn)
         try:
             result = await fetch(f"https://r.jina.ai/{url}", "Jina")
             text = result.body.decode("utf-8", errors="replace").strip()
-            if text:
+            if text and not _is_cached_jina_snapshot(text):
                 article = _focus_jina_article(text)
                 if max_extracted_chars is not None:
                     from .evidence import select_evidence
 
-                    return select_evidence(
-                        article[:max_extracted_chars], url, query,
-                        truncated=len(article) > max_extracted_chars,
-                    )
-                from .evidence import neutralize_untrusted
+                    if _requested_sections(query) and _requested_heading(article, query) is None:
+                        jina_section_missing = True
+                        logger.info("Jina missed a requested numbered section; trying origin")
+                    else:
+                        return select_evidence(
+                            _focus_requested_section(article, query, max_extracted_chars),
+                            url, query, truncated=len(article) > max_extracted_chars,
+                        )
+                else:
+                    from .evidence import neutralize_untrusted
 
-                return neutralize_untrusted(article[:MAX_CHARS])
+                    return neutralize_untrusted(article[:MAX_CHARS])
+            if text:
+                logger.info("Jina returned cached snapshot; trying origin URL")
         except (_FetchError, httpx.HTTPError, SSRFBlocked) as exc:
             logger.debug("Jina Reader lỗi (chuyển fallback): %s", type(exc).__name__)
         except Exception as exc:  # noqa: BLE001 — mọi lỗi Jina đều fallback HTML
@@ -456,8 +532,13 @@ async def _read_page(url: str, timeout: float, client: httpx.AsyncClient | None,
             if max_extracted_chars is not None:
                 from .evidence import extract_html, select_evidence
 
+                focused_body, focused_encoding, section_found = _focus_html_section(
+                    result.body, result.encoding, query,
+                )
+                if jina_section_missing and not section_found:
+                    return "Không xác minh được mục được hỏi trong nội dung nguồn đã tải."
                 article, truncated = await extract_html(
-                    result.body, result.encoding, max_extracted_chars,
+                    focused_body, focused_encoding, max_extracted_chars,
                 )
                 return select_evidence(article, url, query, truncated=truncated)
             from .evidence import neutralize_untrusted

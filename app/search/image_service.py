@@ -3,17 +3,49 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from ..config import Settings
 from ..core.job_operations import OperationBudget
 from .ddgs_backend import search_ddgs_images
 from .searxng_backend import search_searxng_images
+from .evidence import normalize, terms
 
 logger = logging.getLogger(__name__)
 
 
 class ImageSearchError(Exception):
     pass
+
+
+def _select_relevant_images(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Discard UI icons and unrelated hits when image metadata supports a match.
+
+    Image metadata is noisy. Only enforce topic matching when at least one
+    candidate matches meaningful query words; otherwise keep valid candidates.
+    """
+    query_words = terms(query) - {
+        "image", "images", "picture", "pictures", "photo", "photos", "show",
+        "please", "four", "anh", "hinh", "buc", "chup", "toi", "cho", "xem",
+    }
+    wants_vectors = any(word in normalize(query) for word in (
+        "icon", "logo", "vector", "svg", "bieu tuong",
+    ))
+    candidates: list[tuple[dict, int]] = []
+    for item in results:
+        url = str(item.get("image_url") or "")
+        path = urlsplit(url).path.casefold()
+        if not wants_vectors and (
+            path.endswith(".svg") or "/icons/" in path or "/icon/" in path
+        ):
+            continue
+        metadata = f"{item.get('title') or ''} {item.get('page_url') or ''}"
+        score = len(query_words & terms(metadata))
+        candidates.append((item, score))
+    if query_words and any(score for _, score in candidates):
+        candidates = [(item, score) for item, score in candidates if score]
+        candidates.sort(key=lambda entry: -entry[1])
+    return [item for item, _ in candidates[:limit]]
 
 
 async def search_images(
@@ -28,47 +60,53 @@ async def search_images(
         limit or settings.image_search_max_results,
         settings.image_search_max_results,
     )
+    candidate_limit = min(effective_limit * 3, 12)
     backend = settings.search_backend.strip().lower()
 
     if backend == "searxng":
         try:
             if operations is not None:
-                return await operations.run(
+                results = await operations.run(
                     "searxng image search",
-                    lambda: search_searxng_images(query, settings, effective_limit),
+                    lambda: search_searxng_images(query, settings, candidate_limit),
                     timeout_sec=settings.searxng_timeout_sec,
                     budget=OperationBudget(settings.search_total_timeout_sec),
                 )
-            return await search_searxng_images(query, settings, effective_limit)
+            else:
+                results = await search_searxng_images(query, settings, candidate_limit)
+            return _select_relevant_images(query, results, effective_limit)
         except Exception as exc:  # noqa: BLE001
             raise _image_search_error(backend, exc) from exc
 
     if backend == "ddgs":
         try:
             if operations is not None:
-                return await operations.run(
+                results = await operations.run(
                     "ddgs image search",
-                    lambda: search_ddgs_images(query, settings, effective_limit),
+                    lambda: search_ddgs_images(query, settings, candidate_limit),
                     timeout_sec=settings.ddgs_timeout_sec,
                     budget=OperationBudget(settings.search_total_timeout_sec),
                 )
-            return await search_ddgs_images(query, settings, effective_limit)
+            else:
+                results = await search_ddgs_images(query, settings, candidate_limit)
+            return _select_relevant_images(query, results, effective_limit)
         except Exception as exc:  # noqa: BLE001
             raise _image_search_error(backend, exc) from exc
 
     from .router import RoutedSearchError, route_auto
 
     try:
-        return await route_auto(
+        results = await route_auto(
             query,
             settings,
-            effective_limit,
+            candidate_limit,
             kind="image",
             result_url_key="image_url",
             searx_call=search_searxng_images,
             ddgs_call=search_ddgs_images,
             operations=operations,
         )
+        return _select_relevant_images(query, results, effective_limit)
     except RoutedSearchError as exc:
         raise ImageSearchError(
             "Không tìm kiếm được hình ảnh từ các backend miễn phí hiện tại."

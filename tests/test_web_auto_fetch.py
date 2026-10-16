@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app.ai.router import CompletionResult
@@ -138,6 +139,37 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
         covered = [_hit("https://news.example.com/report", QUERY, QUERY)]
         self.assertEqual(auto_fetch.select_targets(QUERY, covered, limit=2), [])
 
+    async def test_verification_reads_recent_and_relevant_pages_across_domains(self):
+        """Cover a temporal conflict without hardcoded domains, topics or answers."""
+        now = datetime.now(timezone.utc)
+        for query in (
+            "verify treatment protocol Q changed 2025",
+            "xác minh chuẩn giao thức ABC 2025",
+            "fact check software vulnerability Z 2025",
+        ):
+            with self.subTest(query=query):
+                old = _hit("https://archive.example.com/2024", query, query)
+                recent = _hit(
+                    "https://independent.org/update",
+                    f"Update: {query.split(' ', 1)[-1]}",
+                    "revision evidence 2025",
+                )
+                recent["published_at"] = (now - timedelta(days=2)).isoformat()
+                targets = auto_fetch.select_targets(
+                    query, [old, recent], limit=2, verification_context=True
+                )
+                self.assertEqual(targets, [recent["url"], old["url"]])
+
+    async def test_future_timestamp_does_not_displace_relevant_source(self):
+        query = "verify claims from protocol XYZ"
+        old = _hit("https://archive.example.com/2024", query, query)
+        future = _hit("https://independent.org/update", "protocol XYZ", "revision")
+        future["published_at"] = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat()
+        targets = auto_fetch.select_targets(
+            query, [old, future], limit=2, verification_context=True
+        )
+        self.assertEqual(targets, [old["url"], future["url"]])
+
     async def test_pack_evidence_respects_cap_and_reports_unread_sources(self):
         entries = [
             {"url": "https://a.example.com/1", "ok": True, "text": "x" * 400, "reason": ""},
@@ -195,9 +227,25 @@ class AutoFetchOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             reads.append(url)
             return UrlReadResult("body", url, "generic_reader", True)
 
-        with patch("app.core.orchestrator.url_service.read_url", new=fake_read):
-            await Orchestrator(Settings(_env_file=None), router).ask(QUERY)
+        # The search backend is pinned instead of left to the live providers:
+        # this test is about the flag gate, so it must never depend on whether
+        # DDGS/SearXNG happen to answer (or throttle) during a suite run.
+        # ``test_feature_flags_default_off`` owns the shipped-defaults claim.
+        settings = Settings(
+            _env_file=None,
+            web_evidence_v2_enabled=False,
+            web_auto_fetch_enabled=False,
+        )
+        with _patch_search() as search_mock, patch(
+            "app.core.orchestrator.url_service.read_url", new=fake_read
+        ):
+            answer = await Orchestrator(settings, router).ask(QUERY)
+
         self.assertEqual(reads, [])
+        self.assertEqual(search_mock.await_count, 1, "the search itself still ran")
+        self.assertTrue(answer.searched)
+        self.assertIn("https://bulletin.example.net/report", router.output)
+        self.assertNotIn("[WEB AUTO-FETCH", router.output)
 
     async def test_enabled_auto_fetch_reads_top_sources_and_labels_evidence(self):
         router = _SearchThenNothing()

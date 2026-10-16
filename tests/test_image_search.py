@@ -137,6 +137,24 @@ class DDGSImageSearchTests(unittest.TestCase):
 
 
 class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_image_search_removes_irrelevant_icons_and_off_topic_images(self):
+        from app.search import image_service
+
+        hits = [
+            {"title": "chart bar stacked", "image_url": "https://cdn.example.org/icons/chart.svg"},
+            {"title": "Eiffel Tower at dusk", "image_url": "https://img.example.org/eiffel.jpg"},
+            {"title": "Japanese woodblock print", "image_url": "https://img.example.org/print.jpg"},
+            {"title": "Eiffel Tower at sunrise", "image_url": "https://img.example.org/tower.jpg"},
+        ]
+        backend = AsyncMock(return_value=hits)
+        settings = Settings(_env_file=None, search_backend="searxng", image_search_max_results=4)
+        with patch.object(image_service, "search_searxng_images", new=backend):
+            results = await image_service.search_images("Show 4 photos of Eiffel Tower", settings)
+        self.assertEqual([item["title"] for item in results], [
+            "Eiffel Tower at dusk", "Eiffel Tower at sunrise",
+        ])
+        self.assertEqual(backend.await_args.args[2], 12)
+
     async def test_auto_backend_falls_back_from_searxng_to_ddgs(self) -> None:
         spec = importlib.util.find_spec("app.search.image_service")
         self.assertIsNotNone(spec, "app.search.image_service must exist")
