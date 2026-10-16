@@ -1,1 +1,3 @@
 markdown-it-py==4.2.0
+# Test-only: version/specifier checks in tests/test_requirements_lock.py.
+packaging==26.3

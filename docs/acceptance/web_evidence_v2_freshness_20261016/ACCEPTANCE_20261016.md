@@ -100,6 +100,22 @@ Tài liệu vận hành tương ứng đã được track ở dạng cập nhậ
 [runbook canary](../../WEB_EVIDENCE_V2_PILOT_CANARY_RUNBOOK.md) và
 [plan](../../WEB_EVIDENCE_V2_PILOT_EXECUTION_PLAN_20261016.md).
 
+## 6b. Phase 4.3 — pin dependency (A07)
+
+- `requirements.lock.txt`: **36 pin `==`** cho đúng closure runtime, sinh từ chính môi trường
+  đã chạy suite xanh (không phải từ bản resolve "mới nhất"), tên canonical, có sort.
+- Dockerfile cài từ lock (`--no-deps`); CI cài từ lock + `pip check`; matrix thêm **`3.13`**
+  (local đã xanh trên 3.13.3 nên đây là mức patch đã kiểm chứng).
+- `tests/test_requirements_lock.py` (6 test) chặn: pin không exact, thiếu dependency gốc,
+  version không thoả range trong `requirements.txt`, không sort, lẫn tool test-only, và
+  **closure thiếu** — chính lỗi này bắt được ở bản nháp đầu: `pydantic-core` bị bỏ sót vì
+  metadata ghi `pydantic_core`, khiến `pip check` fail dù cài "thành công".
+- Kiểm chứng end-to-end trong venv sạch: `pip install -r requirements.lock.txt --no-deps`
+  + `requirements-audit.txt` → `pip check` = `No broken requirements found` → **891 tests OK
+  (skipped=11)**, exit 0. Bằng chứng: `artifacts/lock_venv_verification_20261016.txt`.
+- Phát sinh: `packaging` là dependency **test-only** mới (dùng cho check version), được pin
+  trong `requirements-audit.txt` chứ không vào lock runtime.
+
 ## 7. Trạng thái Gate G2
 
 - Phần offline: **ĐẠT** (mục 2).
@@ -118,4 +134,10 @@ PYTHONPATH=. python scripts/web_evidence_benchmark.py --config v2 --fixture test
 PYTHONPATH=. python scripts/web_evidence_benchmark.py --config v2 --auto-fetch --fixture tests/fixtures/web_evidence_v2/cases_100.json
 python -m scripts.web_evidence_live_smoke --mode both      # cần provider thật
 python scripts/web_evidence_pilot_audit.py <artifact.json>
+
+# lock: venv sạch, cài từ lock, suite
+python -m venv .venv-lock
+./.venv-lock/Scripts/python -m pip install -r requirements.lock.txt --no-deps -r requirements-audit.txt
+./.venv-lock/Scripts/python -m pip check
+./.venv-lock/Scripts/python tests/run_tests.py
 ```

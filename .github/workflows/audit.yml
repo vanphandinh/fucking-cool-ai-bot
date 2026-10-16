@@ -19,7 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.11', '3.12']
+        # 3.13 is the newest patch line we run locally; keeping it in the matrix
+        # catches interpreter-level breakage before the bot image moves to it.
+        python: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,7 +33,11 @@ jobs:
       - name: Install dependencies and audit tools
         run: |
           python -m pip install --upgrade 'pip>=26.2' 'setuptools>=83.0.0'
-          python -m pip install -r requirements.txt -r requirements-audit.txt ruff==0.16.6 pip-audit==2.10.1
+          # Runtime deps come from the lock (exact pins); --no-deps keeps pip from
+          # drifting past it. requirements.txt stays the range declaration and is
+          # reconciled with the lock by tests/test_requirements_lock.py.
+          python -m pip install -r requirements.lock.txt --no-deps
+          python -m pip install -r requirements-audit.txt ruff==0.16.6 pip-audit==2.10.1
       - name: Prepare Compose environment for tests
         run: cp .env.example .env
       - name: Validate SearXNG YAML
