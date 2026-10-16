@@ -72,6 +72,12 @@ def _freshness_bonus(query: str, item: dict, *, verification_context: bool = Fal
     return 0.0
 
 
+def _age_days(record: dict) -> float:
+    """Non-future publication age in days, infinite when unknown."""
+    age = publication_age_days(record["item"])
+    return age if age is not None else float("inf")
+
+
 def _coverage(wanted: set[str], text: str) -> float:
     if not wanted:
         return 0.0
@@ -191,12 +197,18 @@ def rank_web_results(
             and (age := publication_age_days(record["item"])) is not None
             and age <= 365
         ]
-        if recent and not any(record in chosen for record in recent):
-            selected_sites = {record["site"] for record in chosen}
-            # Prefer a novel domain; otherwise replace that domain's older hit.
-            fresh = next((r for r in recent if r["site"] not in selected_sites), recent[0])
+        # Only a candidate the reader cannot see yet is worth a slot, and the
+        # newest one is the point of the reservation. Asking "is some recent
+        # page already displayed?" let an older mid-relevance page cancel the
+        # reservation while the freshest relevant release stayed outside the
+        # displayed results.
+        candidates = [record for record in recent if record not in chosen]
+        if candidates:
+            fresh = min(candidates, key=_age_days)
+            # Replace the same domain's displayed hit, else the weakest slot, so
+            # the strongest results keep their place.
             replace = next(
-                (i for i, r in enumerate(chosen) if r["site"] == fresh["site"]),
+                (i for i, record in enumerate(chosen) if record["site"] == fresh["site"]),
                 len(chosen) - 1,
             )
             chosen[replace] = fresh

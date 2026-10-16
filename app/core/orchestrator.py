@@ -41,6 +41,41 @@ _SEARCH_HINT = (
 _URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 
+# A verification question whose displayed sources carry no recent publication
+# date gets one extra, bounded discovery query. Publication metadata is often
+# missing entirely (the search engines that supply dates can be suspended), so
+# ranking alone cannot recover a fresh hit the original query never surfaced.
+RECENT_SOURCE_AGE_DAYS = 120
+
+
+def _has_recent_source(results) -> bool:
+    """True when a displayed result carries a date inside the recency window."""
+    for item in results or ():
+        if not isinstance(item, dict):
+            continue
+        age = publication_age_days(item)
+        if age is not None and age <= RECENT_SOURCE_AGE_DAYS:
+            return True
+    return False
+
+
+def _merge_search_results(primary, extra, limit: int) -> list[dict]:
+    """Append unseen URLs from ``extra`` to ``primary``, never past ``limit``."""
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for item in list(primary or ()) + list(extra or ()):
+        if not isinstance(item, dict):
+            continue
+        key = canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
 def _request_urls(request: UserRequest) -> tuple[str, ...]:
     """URLs the user pointed at explicitly (message body or quoted text)."""
     return tuple(_URL_RE.findall(f"{request.text or ''}\n{request.quoted_text or ''}"))
@@ -234,6 +269,7 @@ class Orchestrator:
         verification_context = (
             self.settings.web_evidence_v2_enabled and verification_intent(request.text)
         )
+        freshness_boost_used = False
 
         async def cached_read(key: tuple[str, str], factory) -> str:
             """Request-scoped canonical cache with singleflight on concurrent reads."""
@@ -348,7 +384,7 @@ class Orchestrator:
             return await auto_fetch_coordinator.reserve(candidates)
 
         async def tool_executor(name: str, args: dict) -> str:
-            nonlocal searched
+            nonlocal searched, freshness_boost_used
             if not isinstance(args, dict):
                 args = {}
             if name == "web_search":
@@ -361,6 +397,18 @@ class Orchestrator:
                     operations=operations,
                     **({"verification_context": True} if verification_context else {}),
                 )
+                if verification_context and not freshness_boost_used:
+                    freshness_boost_used = True
+                    if not _has_recent_source(results):
+                        extra = await search_service.search(
+                            f"{q} {datetime.now(_VN_TZ).year}",
+                            self.settings,
+                            operations=operations,
+                            verification_context=True,
+                        )
+                        results = _merge_search_results(
+                            results, extra, search_service.MAX_RESULTS
+                        )
                 sources.extend(results)
                 searched = True
                 # Reserve the evidence room before rendering so an over-long

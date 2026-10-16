@@ -118,6 +118,73 @@ class RankWebResultsTests(unittest.TestCase):
                 )
                 self.assertEqual([item["url"] for item in ranked], [item["url"] for item in older])
 
+    def test_newest_relevant_release_is_reserved_when_another_recent_page_is_shown(self):
+        """Regression for the Q6 freshness-recall failure.
+
+        The reservation used to be skipped as soon as *any* recent page was
+        already displayed, so a fresh, above-floor official release stayed out
+        of the top results while an older mid-relevance recent page held the
+        slot. The newest eligible candidate must be reserved instead: exactly
+        one slot changes hands, and it is the weakest displayed hit that makes
+        way even though it outscores the fresh candidate.
+        """
+        now = datetime.now(timezone.utc)
+        query = "theo trang chinh thuc cua NASA ve chuong trinh Artemis lan ha canh"
+        archived = [
+            _hit(
+                f"https://archive{i}.example{i}.org/history",
+                query,
+                query,
+                published_at=(now - timedelta(days=900 + i)).isoformat(),
+            )
+            for i in range(7)
+        ]
+        mid = _hit(
+            "https://www.space.com/artemis-overview",
+            query,
+            "",
+            published_at=(now - timedelta(days=300)).isoformat(),
+        )
+        release = _hit(
+            "https://www.nasa.gov/news-release/artemis-architecture",
+            "chinh thuc NASA Artemis chuong trinh lan ha canh su menh",
+            "",
+            published_at=(now - timedelta(days=30)).isoformat(),
+        )
+        ranked = source_ranking.rank_web_results(
+            query, archived + [mid, release], limit=8, verification_context=True
+        )
+        urls = [item["url"] for item in ranked]
+        self.assertEqual(len(ranked), 8)
+        self.assertIn(release["url"], urls)
+        self.assertNotIn(mid["url"], urls)
+        for item in archived:
+            self.assertIn(item["url"], urls)
+
+    def test_recent_but_unrelated_page_is_never_reserved(self):
+        """The reservation may not displace a relevant hit with a fresh filler."""
+        now = datetime.now(timezone.utc)
+        query = "theo trang chinh thuc cua NASA ve chuong trinh Artemis lan ha canh"
+        archived = [
+            _hit(
+                f"https://archive{i}.example{i}.org/history",
+                query,
+                query,
+                published_at=(now - timedelta(days=900 + i)).isoformat(),
+            )
+            for i in range(8)
+        ]
+        off_topic = _hit(
+            "https://weather.example.net/today",
+            "thoi tiet hom nay",
+            "du bao thoi tiet",
+            published_at=(now - timedelta(days=1)).isoformat(),
+        )
+        ranked = source_ranking.rank_web_results(
+            query, archived + [off_topic], limit=8, verification_context=True
+        )
+        self.assertNotIn(off_topic["url"], [item["url"] for item in ranked])
+
     def test_verification_does_not_trust_government_tld_over_relevance(self):
         """A domain suffix alone says nothing about which claim a page supports."""
         query = "medical treatment guideline evidence"
