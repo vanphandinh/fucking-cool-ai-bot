@@ -1,0 +1,47 @@
+# Linux + image verification (2026-10-16), commits d6bcacc và 07bffb3 (HEAD)
+
+Môi trường: Docker Desktop, image python:3.12-slim, git clone sạch từ working tree
+(loại .env) rồi cài từ requirements.lock.txt + requirements-audit.txt — đúng hình dạng
+job CI (checkout tracked files, cài từ lock, chạy suite). Không có network test nào
+được thực hiện trong suite.
+
+## 1. Production image (Dockerfile mới, cài từ lock)
+
+  docker build --tag fcai-liveness-check .            -> BUILD_EXIT=0
+  docker run --rm --entrypoint python fcai-liveness-check -c "import importlib.metadata as md; print(len(list(md.distributions())))"
+    -> 37 (36 runtime pin của lock + pip)
+  docker run --rm --entrypoint python fcai-liveness-check -c "from app.config import Settings; Settings(_env_file=None); print('Production image configuration OK')"
+    -> Production image configuration OK (exit 0)
+
+## 2. Healthcheck trong image (app/core/liveness.py)
+
+  docker run --rm --entrypoint python fcai-liveness-check -m app.core.liveness
+    -> "liveness: no heartbeat at /tmp/fcai-liveness", exit 1  (đúng: bot chưa chạy)
+  docker run --rm --entrypoint python fcai-liveness-check -c "from app.core.liveness import LivenessHeartbeat, main; LivenessHeartbeat('/tmp/fcai-liveness', max_age_sec=180).touch(); raise SystemExit(main())"
+    -> "liveness: heartbeat 0.4s old (max 180s)", exit 0
+
+  docker compose config --quiet                        -> exit 0 (healthcheck hợp lệ)
+
+## 3. Clean-clone Linux run (python:3.12-slim + git + lock)
+
+  pip check                                            -> No broken requirements found.
+  python scripts/check_markdown_links.py                -> Markdown relative-link scan passed.
+  python scripts/check_canonical_env_vocabulary.py       -> Canonical environment vocabulary scan passed.
+  python -V                                             -> Python 3.12.15
+  python tests/run_tests.py                              -> Ran 905 tests in 29.4s / OK (skipped=1) / exit 0
+
+## 3b. Lặp lại ở HEAD 07bffb3 (sau 4.5)
+
+  git clone ... && cd /tmp/repo && git log --oneline -1  -> 07bffb3 build: measure type findings and fail only on growth
+  pip check                                              -> No broken requirements found.
+  python scripts/check_markdown_links.py                  -> Markdown relative-link scan passed.
+  python scripts/check_canonical_env_vocabulary.py         -> Canonical environment vocabulary scan passed.
+  python tests/run_tests.py                               -> Ran 917 tests in 30.0s / OK (skipped=1) / exit 0
+
+## 4. Ghi chú
+
+- Lượt chạy suite trên bind-mount Windows (không phải clean clone) báo 5 fail + 4 error;
+  tất cả đều là artefact của mount: script shell bị CRLF, và git từ chối `ls-files` vì
+  "dubious ownership". Clean clone (như CI) xanh hoàn toàn.
+- 891 test ở lượt Windows local vs 905 ở Linux: khác biệt là các test được gate theo
+  platform chạy trên Linux (skipped=1 thay vì 11).

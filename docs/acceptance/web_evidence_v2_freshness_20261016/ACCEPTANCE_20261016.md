@@ -25,7 +25,7 @@ Flags vẫn **OFF**: `WEB_EVIDENCE_V2_ENABLED=false`, `WEB_AUTO_FETCH_ENABLED=fa
 | Canonical env | `python scripts/check_canonical_env_vocabulary.py` + test trong suite | sạch |
 | Benchmark offline V1/V2 | `PYTHONPATH=. python scripts/web_evidence_benchmark.py --config {v1,v2} --fixture tests/fixtures/web_evidence_v2/cases_100.json` | `network_requests=0`, fixture SHA `51e189382cad7efa…` khớp baseline |
 | Benchmark auto-fetch | `... --config v2 --auto-fetch ...` | `max_two_sources/max_two_concurrent_reads/output_within_cap = true` |
-| **Linux + image** (hình dạng CI: clean clone + lock) | `docker build` → `git clone` trong `python:3.12-slim` → `pip install -r requirements.lock.txt --no-deps` → `pip check` → suite | `pip check` sạch; **905 tests OK (skipped=1)** trên Python 3.12.15, exit 0; `check_markdown_links` + `check_canonical_env_vocabulary` pass; artifact `artifacts/linux_image_verification_20261016.txt` |
+| **Linux + image** (hình dạng CI: clean clone + lock) | `docker build` → `git clone` trong `python:3.12-slim` → `pip install -r requirements.lock.txt --no-deps` → `pip check` → suite | `pip check` sạch; **917 tests OK (skipped=1)** trên Python 3.12.15 tại HEAD `07bffb3`, exit 0 (lượt đầu ở `d6bcacc`: 905 OK); `check_markdown_links` + `check_canonical_env_vocabulary` pass; artifact `artifacts/linux_image_verification_20261016.txt` |
 | Healthcheck trong image | `docker run ... -m app.core.liveness` (chưa có heartbeat) và có heartbeat | exit 1 "no heartbeat" / exit 0 "heartbeat 0.4s old"; `docker compose config --quiet` exit 0 |
 
 Số đo (artifact trong `artifacts/benchmark_*_20261016.txt`):
