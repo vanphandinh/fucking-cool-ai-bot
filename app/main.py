@@ -55,10 +55,12 @@ async def _close_providers(provider_router) -> None:
 
 
 async def _shutdown_question_controls(manager, presenter) -> None:
-    if manager is not None:
-        await manager.shutdown()
-    if presenter is not None:
-        await presenter.close()
+    try:
+        if manager is not None:
+            await manager.shutdown()
+    finally:
+        if presenter is not None:
+            await presenter.close()
 
 
 async def _amain(settings: Settings) -> int:
@@ -205,19 +207,21 @@ async def _amain(settings: Settings) -> int:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-        await _shutdown_question_controls(job_manager, job_presenter)
         try:
-            if bot is not None:
-                await bot.session.close()
+            await _shutdown_question_controls(job_manager, job_presenter)
         finally:
             try:
-                await close_crawl4ai_client()
+                if bot is not None:
+                    await bot.session.close()
             finally:
                 try:
-                    await close_search_runtimes()
+                    await close_crawl4ai_client()
                 finally:
-                    if provider_router is not None:
-                        await _close_providers(provider_router)
+                    try:
+                        await close_search_runtimes()
+                    finally:
+                        if provider_router is not None:
+                            await _close_providers(provider_router)
 
 
 def main() -> None:

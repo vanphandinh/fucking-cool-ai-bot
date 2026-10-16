@@ -11,7 +11,11 @@ from . import crawl4ai_client, reader, x_reader
 from .evidence import neutralize_untrusted
 
 logger = logging.getLogger(__name__)
-_EMPTY_EVIDENCE = ("Không tìm được nội dung bài viết.", "Không thể đóng gói chứng cứ:")
+_EMPTY_EVIDENCE = (
+    "Không tìm được nội dung bài viết.",
+    "Không thể đóng gói chứng cứ:",
+    "Không xác minh được mục được hỏi",
+)
 
 
 @dataclass(frozen=True)

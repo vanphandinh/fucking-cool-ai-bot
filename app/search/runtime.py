@@ -58,8 +58,16 @@ def get_search_runtime(settings: Settings) -> SearchRuntime:
 async def close_search_runtimes() -> None:
     runtimes = tuple(_runtimes.values())
     _runtimes.clear()
+    errors: list[Exception] = []
     for runtime in runtimes:
-        await runtime.aclose()
+        try:
+            await runtime.aclose()
+        except Exception as exc:
+            errors.append(exc)
+    if len(errors) == 1:
+        raise errors[0]
+    if errors:
+        raise ExceptionGroup("Search runtime cleanup failed", errors)
 
 
 def reset_search_runtimes() -> None:

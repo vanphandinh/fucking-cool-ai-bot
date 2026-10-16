@@ -1,0 +1,49 @@
+{
+  "branch": "codex/web-evidence-v2",
+  "initial_head": "4c0629f4bdd7b497f3a4dc4fa76a2adb78c82067",
+  "audit_files": [
+    {
+      "path": "app/main.py",
+      "sha256": "f1e7527c26190e434fd27eaeb0e51301ea236199a0d50ad2243385d032df965c",
+      "ownership": "audit changes"
+    },
+    {
+      "path": "app/search/runtime.py",
+      "sha256": "55a55cd68d70a5d50361b7e188f39e9a4841018a29bb9c4f909f3823e62d916f",
+      "ownership": "audit changes"
+    },
+    {
+      "path": "app/search/url_service.py",
+      "sha256": "aca3a039401eb4dbe66bc4c69d157104c17499c815b42f79189c884e02246d4e",
+      "ownership": "audit changes"
+    },
+    {
+      "path": "app/search/evidence.py",
+      "sha256": "8f0c62eb7b4e76c781980c96d2a6cf65b4af7f589df973d0778c4aa126c7fafd",
+      "ownership": "audit changes"
+    },
+    {
+      "path": "app/search/reader.py",
+      "sha256": "fb22803283a9471d45a2f969a91515b8a29e1c16dde761b160a94205e4b418e1",
+      "ownership": "single buffer guard hunk only; other edits pre-existing"
+    },
+    {
+      "path": "tests/test_production_shutdown_cleanup.py",
+      "sha256": "bb289f5532b3a32edeef21c657b758e99a6f6609054b541a3cdd5b046eedc7e3",
+      "ownership": "audit changes"
+    },
+    {
+      "path": "tests/test_production_evidence_status.py",
+      "sha256": "c0875983c3a27d4819f93feb96ddfd423b7150dc9aae4aa2d37ec08eed42ce5a",
+      "ownership": "audit changes"
+    }
+  ],
+  "gitnexus": {
+    "scope": "all",
+    "changed_count": 133,
+    "affected_count": 52,
+    "changed_files": 21,
+    "risk": "critical",
+    "note": "Includes pre-existing changes; no commit requested."
+  }
+}

@@ -178,7 +178,8 @@ async def extract_html(body: bytes, encoding: str, max_chars: int) -> tuple[str,
     parser = _SectionParser(max_chars)
     for start in range(0, len(markup), 8192):
         parser.feed(markup[start : start + 8192])
-        if len(parser.rawdata) > 65536:
+        # Patched HTMLParser versions batch incomplete tokens outside rawdata.
+        if len(parser.rawdata) + getattr(parser, "_pending_len", 0) > 65536:
             raise _FetchError("HTML chứa thẻ/chú thích quá dài")
         await asyncio.sleep(0)  # allow cancellation during long-page parsing
         if parser.length >= max_chars:

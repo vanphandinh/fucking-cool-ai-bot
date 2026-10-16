@@ -530,7 +530,7 @@ async def _extract_html(body: bytes, encoding: str = "utf-8") -> str:
         parser.feed(markup[start : start + 8192])
         # HTMLParser retains incomplete tags/comments. Bound that buffer too,
         # preventing repeated rescans of an ever-growing malformed token.
-        if len(parser.rawdata) > 65536:
+        if len(parser.rawdata) + getattr(parser, "_pending_len", 0) > 65536:
             raise _FetchError("HTML chứa thẻ/chú thích quá dài")
         await asyncio.sleep(0)
         if parser.length >= MAX_CHARS:
