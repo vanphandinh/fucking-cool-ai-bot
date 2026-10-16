@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,8 @@ from ..search.evidence import neutralize_untrusted
 from ..search.source_ranking import publication_age_days
 from .request import UserRequest
 from .source_policy import canonicalize_source_url, select_diverse_sources
+
+logger = logging.getLogger(__name__)
 
 _VN_TZ = timezone(timedelta(hours=7))
 
@@ -466,6 +469,15 @@ class Orchestrator:
             allowed_urls.update(_request_urls(request))
             answer_text, citation_diagnostics = enforce_v2_citations(
                 answer_text, allowed_urls
+            )
+            logger.info(
+                "v2_citation_guard detected=%d allowed=%d removed=%d "
+                "reasons=%s error=%s",
+                citation_diagnostics.detected,
+                citation_diagnostics.allowed,
+                citation_diagnostics.removed,
+                dict(citation_diagnostics.reasons),
+                citation_diagnostics.error or "-",
             )
 
         return Answer(

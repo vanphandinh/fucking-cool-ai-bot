@@ -714,6 +714,19 @@ class PreservedInvariantTests(unittest.TestCase):
         self.assertEqual(settings.web_auto_fetch_budget_sec, 20.0)
         self.assertEqual(auto_fetch.MAX_AUTO_FETCH_CONCURRENCY, 2)
 
+    def test_auto_fetch_limits_reject_out_of_range_values(self):
+        """Cost bounds live in Settings validation: no config can widen them."""
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, web_auto_fetch_max_sources=0)
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, web_auto_fetch_max_sources=3)
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, web_auto_fetch_budget_sec=0.0)
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, web_auto_fetch_budget_sec=21.0)
+
     def test_tool_and_synthesis_caps_are_unchanged(self):
         from app.search import reader as reader_module
 

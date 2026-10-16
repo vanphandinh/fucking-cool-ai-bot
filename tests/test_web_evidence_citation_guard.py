@@ -471,6 +471,30 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(user_url, result.text)
         self.assertNotIn(UNVERIFIED_MARKER, result.text)
 
+    async def test_guard_run_is_logged_with_counts(self):
+        """Canary observability: every V2 guard run leaves one log line."""
+        answer = (
+            f"Tổng quan: <a href=\"{EVIDENCE_URL}\">NASA</a> "
+            f"và [chi tiết]({INVENTED_URL})."
+        )
+        settings = Settings(
+            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+        )
+        orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
+        with patch(
+            "app.core.orchestrator.search_service.search",
+            new=AsyncMock(return_value=[dict(EVIDENCE_HIT)]),
+        ):
+            with self.assertLogs("app.core.orchestrator", level="INFO") as captured:
+                result = await orchestrator.ask("Sứ mệnh Artemis hạ cánh có người?")
+        self.assertEqual(result.citation_diagnostics.detected, 2)
+        self.assertEqual(result.citation_diagnostics.removed, 1)
+        line = "\n".join(captured.output)
+        self.assertIn("v2_citation_guard", line)
+        self.assertIn("detected=2", line)
+        self.assertIn("allowed=1", line)
+        self.assertIn("removed=1", line)
+
 
 if __name__ == "__main__":
     unittest.main()
