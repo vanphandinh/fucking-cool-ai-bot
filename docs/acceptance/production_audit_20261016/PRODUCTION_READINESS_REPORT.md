@@ -67,29 +67,29 @@ Chỉ thêm một guard expression vào reader vốn đã sửa trước phiên;
 
 ## E. Verification results
 
-Các file `*.log` trong cùng thư mục là evidence chạy local, không đưa vào commit.
+Các file `*.log` trong cùng thư mục là evidence chạy local, không đưa vào commit: chúng được nêu bằng tên file, không phải hyperlink, để tracked tree không chứa link tới artifact chưa commit.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Baseline Windows Python 3.13.3 | PASS có skip: 828 tests / 163.351s, skipped=11 | [baseline](baseline_tests.log) |
-| Full suite sau shutdown fix, trước URL/parser fixes cuối | PASS có skip: 833 / 161.932s, skipped=11 | [intermediate full run](final_tests.log); không dùng thay cho final verification |
-| Shutdown reproduction | FAIL đúng kỳ vọng: 3 failures | [red](shutdown_red.log) |
-| Shutdown regressions | PASS: 5 tests | [green](shutdown_green.log) |
-| Evidence status reproduction | FAIL đúng kỳ vọng: True không phải False | [red](evidence_red.log) |
+| Baseline Windows Python 3.13.3 | PASS có skip: 828 tests / 163.351s, skipped=11 | `baseline_tests.log` |
+| Full suite sau shutdown fix, trước URL/parser fixes cuối | PASS có skip: 833 / 161.932s, skipped=11 | `final_tests.log`; không dùng thay cho final verification |
+| Shutdown reproduction | FAIL đúng kỳ vọng: 3 failures | `shutdown_red.log` |
+| Shutdown regressions | PASS: 5 tests | `shutdown_green.log` |
+| Evidence status reproduction | FAIL đúng kỳ vọng: True không phải False | `evidence_red.log` |
 | Final new regressions trong production image | PASS: 7 tests, network none, Python 3.12, actual built app | Terminal run `unittest discover -s /audit-tests -p test_production_*.py` |
 | Final Windows targeted V2 suite | PASS: 10 tests; new regression suite 7 PASS | Terminal, sau thay đổi cuối |
-| Linux thử đầu | FAIL: 6 failures + 3 errors | [initial Linux run](linux_tests.log); thiếu Git/CRLF fixtures và một regression parser thật; không bỏ qua |
-| Linux full suite, harness stage dư untracked docs | FAIL: 835 tests, 1 failure vocabulary / 1 skip | [harness run](linux_final_tests.log); không sửa scanner hoặc bỏ test |
-| Final Linux Python 3.12 full suite | PASS: 835 tests / 38.792s, skipped=1, exit=0 | [verified Linux](linux_verified_tests.log); Docker CLI absent trong test container, Compose riêng đã PASS |
+| Linux thử đầu | FAIL: 6 failures + 3 errors | `linux_tests.log`; thiếu Git/CRLF fixtures và một regression parser thật; không bỏ qua |
+| Linux full suite, harness stage dư untracked docs | FAIL: 835 tests, 1 failure vocabulary / 1 skip | `linux_final_tests.log`; không sửa scanner hoặc bỏ test |
+| Final Linux Python 3.12 full suite | PASS: 835 tests / 38.792s, skipped=1, exit=0 | `linux_verified_tests.log`; Docker CLI absent trong test container, Compose riêng đã PASS |
 | Ruff toàn repo | PASS sau sửa cuối | `python -m ruff check .` |
 | compileall | PASS sau sửa cuối | `python -m compileall -q app tests scripts` |
 | Type checking | NOT VERIFIED | Repo không cấu hình mypy/pyright; compileall không phải typecheck |
 | Canonical env vocabulary + Markdown links | PASS local | Scripts hiện hữu; scanners chủ yếu theo tracked files |
 | Compose validation + shell syntax | PASS | `docker compose config --quiet`, `bash -n` sáu security scripts |
-| Production build | PASS, BUILD_EXIT=0 | [build](docker_build.log) |
+| Production build | PASS, BUILD_EXIT=0 | `docker_build.log` |
 | Production image configuration/non-root | PASS, UID=10001 | `Settings(_env_file=None)`; không nạp credential |
 | Image dependency integrity | PASS | `docker run ... python -m pip check` |
-| Dependency vulnerability resolution audit | PASS: No known vulnerabilities found | [audit](dependency_audit.log); audit requirements resolution, không phải scan toàn bộ OS/image hay attest mọi installed wheel |
+| Dependency vulnerability resolution audit | PASS: No known vulnerabilities found | `dependency_audit.log`; audit requirements resolution, không phải scan toàn bộ OS/image hay attest mọi installed wheel |
 | Local machine dependency integrity | FAIL riêng môi trường | virtualenv/filelock conflict, không tự sửa system |
 | Telegram / real LLM / live search / privileged isolation | NOT VERIFIED | Không gửi tin, dùng credential, chạy container đặc quyền hay đổi firewall |
 
