@@ -17,7 +17,7 @@ from .bot.handlers import build_lifecycle_router, build_message_router
 from .bot.job_callbacks import build_job_callback_router
 from .bot.job_status import JobStatusPresenter
 from .bot.question_runner import QuestionProcessor
-from .config import Settings, get_settings
+from .config import Settings, get_settings, parse_csv_ints
 from .core.context import ChatMemory
 from .core.job_manager import JobManager
 from .core.orchestrator import Orchestrator
@@ -113,6 +113,19 @@ async def _amain(settings: Settings) -> int:
             )
         if settings.crawl4ai_enabled and not settings.crawl4ai_ready:
             logger.warning("Crawl4AI isolation configuration unavailable; generic reader")
+
+        # Rollout scope for the experimental pipeline, stated once at boot so a
+        # canary deployment cannot be confused with a global rollout.
+        canary_groups = parse_csv_ints(settings.web_evidence_v2_group_ids)
+        if settings.web_evidence_v2_enabled:
+            logger.info("web_evidence_v2 scope=global policy=v2")
+        elif canary_groups:
+            logger.info(
+                "web_evidence_v2 scope=canary groups=%d policy=v2-for-allowlist",
+                len(canary_groups),
+            )
+        else:
+            logger.info("web_evidence_v2 scope=off policy=v1")
 
         try:
             bot = Bot(token=settings.bot_token, default=DefaultBotProperties())

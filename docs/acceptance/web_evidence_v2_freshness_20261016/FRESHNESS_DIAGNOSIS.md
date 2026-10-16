@@ -1,6 +1,6 @@
 # Web Evidence V2 — FRESHNESS DIAGNOSIS (Gate G1, 2026-10-16)
 
-Bằng chứng cho Phase 1 của [plan](../../../WEB_EVIDENCE_V2_PILOT_EXECUTION_PLAN_20261016.md). **Không có file production nào bị sửa trong phase này.**
+Bằng chứng cho Phase 1 của [plan](../../WEB_EVIDENCE_V2_PILOT_EXECUTION_PLAN_20261016.md). **Không có file production nào bị sửa trong phase này.**
 
 ## 1. Phép đo
 

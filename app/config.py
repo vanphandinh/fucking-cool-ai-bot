@@ -105,6 +105,8 @@ class Settings(BaseSettings):
 
     # Experimental bounded web evidence pipeline; flags default off for rollback.
     web_evidence_v2_enabled: bool = False
+    # Canary allowlist: chat ids that get V2 while the global flag stays off.
+    web_evidence_v2_group_ids: str = ""
     web_evidence_max_extracted_chars: int = Field(default=120000, ge=8000, le=120000)
     web_auto_fetch_enabled: bool = False
     web_auto_fetch_max_sources: int = Field(default=2, ge=1, le=2)
@@ -265,6 +267,19 @@ class Settings(BaseSettings):
             and self.crawl4ai_egress_proxy_url.strip().rstrip("/")
             == "http://crawl4ai-proxy:3128"
         )
+
+    def for_chat(self, chat_id: int | None) -> "Settings":
+        """Return the settings a single chat must be served with.
+
+        The global flag remains the rollout switch. The canary allowlist only
+        promotes the named chats, so every other chat keeps the exact settings
+        object and therefore V1 behaviour byte-for-byte.
+        """
+        if chat_id is None or self.web_evidence_v2_enabled:
+            return self
+        if chat_id not in parse_csv_ints(self.web_evidence_v2_group_ids):
+            return self
+        return self.model_copy(update={"web_evidence_v2_enabled": True})
 
     @property
     def allowed_group_ids_list(self) -> list[int]:

@@ -162,7 +162,8 @@ class Orchestrator:
         name = (self.settings.bot_username or "").strip().lstrip("@")
         return f"@{name}" if name else "(trợ lý AI)"
 
-    def system_prompt(self) -> str:
+    def system_prompt(self, settings: Settings | None = None) -> str:
+        active = settings or self.settings
         today = datetime.now(_VN_TZ).date().isoformat()
         evidence_guidance = (
             "KHI KIỂM CHỨNG THÔNG TIN TỪ WEB:\n"
@@ -184,7 +185,7 @@ class Orchestrator:
             "hoặc fetch_url. Không tự tạo, không nhớ lại liên kết chưa truy "
             "xuất; nếu thiếu trang chính thức trong kết quả, nói rõ là chưa "
             "tìm thấy thay vì đưa một liên kết phỏng đoán.\n"
-        ) if self.settings.web_evidence_v2_enabled else ""
+        ) if active.web_evidence_v2_enabled else ""
         return (
             f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một "
             "group Telegram riêng tư.\n"
@@ -236,10 +237,20 @@ class Orchestrator:
         if request is None:
             request = UserRequest(text=question or "", quoted_text=quoted)
 
+        # Resolve the rollout scope once per request: the global flag serves
+        # every chat, the canary allowlist serves the named chats, and every
+        # other chat keeps self.settings untouched (V1 byte-for-byte).
+        settings = self.settings.for_chat(request.chat_id)
+        if settings is not self.settings:
+            logger.info(
+                "v2_canary chat_id=%s scope=allowlist policy=v2",
+                request.chat_id,
+            )
+
         messages: list[ChatMessage] = [
-            ChatMessage("system", (TextPart(self.system_prompt()),))
+            ChatMessage("system", (TextPart(self.system_prompt(settings)),))
         ]
-        for entry in (history or [])[-(self.settings.max_context_turns * 2) :]:
+        for entry in (history or [])[-(settings.max_context_turns * 2) :]:
             if not isinstance(entry, dict):
                 continue
             if entry.get("role") in ("user", "assistant") and entry.get("content"):
@@ -260,14 +271,14 @@ class Orchestrator:
         # One request-scoped coordinator per question: a monotonic deadline, an
         # atomic source reservation and a read semaphore shared by every burst.
         auto_fetch_coordinator = auto_fetch.AutoFetchCoordinator(
-            max_sources=self.settings.web_auto_fetch_max_sources,
-            budget_sec=self.settings.web_auto_fetch_budget_sec,
+            max_sources=settings.web_auto_fetch_max_sources,
+            budget_sec=settings.web_auto_fetch_budget_sec,
         )
         user_supplied_url = bool(_request_urls(request))
         from ..search.source_ranking import verification_intent
 
         verification_context = (
-            self.settings.web_evidence_v2_enabled and verification_intent(request.text)
+            settings.web_evidence_v2_enabled and verification_intent(request.text)
         )
         freshness_boost_used = False
 
@@ -291,7 +302,6 @@ class Orchestrator:
         async def auto_fetch_evidence(query: str, targets: list[str], payload: str) -> str:
             """Read reserved sources, bounded by the shared deadline and semaphore."""
             nonlocal searched
-            settings = self.settings
 
             async def read(target: str) -> dict:
                 async with auto_fetch_coordinator.slot():
@@ -370,7 +380,7 @@ class Orchestrator:
 
         async def reserve_auto_fetch_targets(query: str, results: list[dict]) -> list[str]:
             """Select and atomically reserve URLs for this burst, or nothing."""
-            if not auto_fetch.auto_fetch_active(self.settings):
+            if not auto_fetch.auto_fetch_active(settings):
                 return []
             if user_supplied_url or auto_fetch_coordinator.exhausted:
                 return []
@@ -393,7 +403,7 @@ class Orchestrator:
                     return "Thiếu tham số query."
                 results = await search_service.search(
                     q,
-                    self.settings,
+                    settings,
                     operations=operations,
                     **({"verification_context": True} if verification_context else {}),
                 )
@@ -402,7 +412,7 @@ class Orchestrator:
                     if not _has_recent_source(results):
                         extra = await search_service.search(
                             f"{q} {datetime.now(_VN_TZ).year}",
-                            self.settings,
+                            settings,
                             operations=operations,
                             verification_context=True,
                         )
@@ -419,7 +429,7 @@ class Orchestrator:
                     q,
                     results,
                     max_chars=SEARCH_LISTING_MAX_CHARS if targets else _TOOL_OUTPUT_CAP,
-                    include_publication_dates=self.settings.web_evidence_v2_enabled,
+                    include_publication_dates=settings.web_evidence_v2_enabled,
                 )
                 if not targets:
                     return payload
@@ -432,7 +442,7 @@ class Orchestrator:
                 try:
                     results = await image_service.search_images(
                         q,
-                        self.settings,
+                        settings,
                         operations=operations,
                     )
                 except image_service.ImageSearchError as exc:
@@ -458,12 +468,12 @@ class Orchestrator:
                     nonlocal searched
                     result = await url_service.read_url(
                         url,
-                        self.settings,
+                        settings,
                         mode,
                         operations=operations,
                         **(
                             {"query": request.text}
-                            if self.settings.web_evidence_v2_enabled else {}
+                            if settings.web_evidence_v2_enabled else {}
                         ),
                     )
                     url_results[cache_url] = result
@@ -485,7 +495,7 @@ class Orchestrator:
                     messages=tuple(messages),
                     tools=TOOLS,
                     synthesis_mode=(
-                        "v2" if self.settings.web_evidence_v2_enabled else "v1"
+                        "v2" if settings.web_evidence_v2_enabled else "v1"
                     ),
                 ),
                 tool_executor,
@@ -508,7 +518,7 @@ class Orchestrator:
         # invented link cannot legitimize itself.
         answer_text = result.content
         citation_diagnostics: CitationDiagnostics | None = None
-        if self.settings.web_evidence_v2_enabled:
+        if settings.web_evidence_v2_enabled:
             allowed_urls = {
                 str(item.get("url") or "")
                 for item in sources
@@ -534,7 +544,7 @@ class Orchestrator:
             fallbacks=result.fallbacks,
             searched=searched,
             sources=_dedupe_sources(sources),
-            images=_dedupe_images(image_results, self.settings.image_search_max_results),
+            images=_dedupe_images(image_results, settings.image_search_max_results),
             target_rotations=result.target_rotations,
             model_rotations=result.model_rotations,
             credential_failovers=result.credential_failovers,

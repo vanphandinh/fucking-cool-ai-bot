@@ -447,7 +447,9 @@ async def _handle_question(
                     await message.reply(_vision_limit_message(settings, orchestrator.router))
                     return
 
-                request = UserRequest(text=question, quoted_text=quoted, images=images)
+                request = UserRequest(
+                    text=question, quoted_text=quoted, images=images, chat_id=chat_id
+                )
                 typing_task = asyncio.create_task(
                     _typing_loop(bot, chat_id, message_thread_id=message_thread_id)
                 )
