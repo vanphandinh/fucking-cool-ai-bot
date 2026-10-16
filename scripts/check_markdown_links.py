@@ -106,15 +106,76 @@ def find_broken_links(root: Path = ROOT) -> tuple[str, ...]:
     return tuple(hits)
 
 
+def tracked_files(root: Path = ROOT) -> frozenset[str]:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    )
+    return frozenset(
+        name.decode("utf-8") for name in completed.stdout.split(b"\0") if name
+    )
+
+
+def find_untracked_link_targets(
+    root: Path = ROOT,
+    tracked: frozenset[str] | None = None,
+) -> tuple[str, ...]:
+    """Return links from tracked docs to targets a fresh checkout will not have.
+
+    CI checks out tracked files only, so a relative target that exists in a
+    working tree but was never committed resolves here and fails there. Report
+    those as ``source:line:target -> resolved``.
+    """
+    tracked = tracked if tracked is not None else tracked_files(root)
+    hits: list[str] = []
+
+    for relative_source in sorted(tracked):
+        if not relative_source.endswith(".md"):
+            continue
+        path = root / relative_source
+        markdown = path.read_text(encoding="utf-8")
+        for line_number, raw_target in _markdown_links(markdown):
+            local_path = _link_path(raw_target)
+            if local_path is None:
+                continue
+            resolved = (
+                root / local_path.lstrip("/")
+                if local_path.startswith("/")
+                else path.parent / local_path
+            ).resolve()
+            try:
+                relative_target = resolved.relative_to(root.resolve()).as_posix()
+            except ValueError:
+                hits.append(f"{relative_source}:{line_number}:{raw_target} -> (outside repo)")
+                continue
+            if relative_target in tracked:
+                continue
+            if any(
+                name.startswith(relative_target.rstrip("/") + "/") for name in tracked
+            ):
+                continue
+            hits.append(f"{relative_source}:{line_number}:{raw_target} -> {relative_target}")
+
+    return tuple(hits)
+
+
 def main() -> int:
-    hits = find_broken_links(ROOT)
-    if not hits:
+    broken = find_broken_links(ROOT)
+    untracked = find_untracked_link_targets(ROOT)
+    if not broken and not untracked:
         print("Markdown relative-link scan passed.")
         return 0
 
-    print("Broken Markdown relative links found:")
-    for hit in hits:
-        print(hit)
+    if broken:
+        print("Broken Markdown relative links found:")
+        for hit in broken:
+            print(hit)
+    if untracked:
+        print("Markdown links to untracked targets found:")
+        for hit in untracked:
+            print(hit)
     return 1
 
 

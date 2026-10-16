@@ -1,0 +1,42 @@
+{
+  "pipeline": "V2-conditional-auto-fetch",
+  "case_count": 100,
+  "category_counts": {
+    "fact": 30,
+    "buried": 20,
+    "multi_source": 20,
+    "fresh": 15,
+    "unknown_conflicting": 15
+  },
+  "fixture": "cases_100.json",
+  "fixture_sha256": "51e189382cad7efaeb245a75d9b11e9d1bb73e4077c1ac746b02f05012d9e399",
+  "auto_fetch_budget_sec": 20.0,
+  "evaluation_method": "offline mock router/reader driving Orchestrator.ask with both flags on",
+  "network_requests": 220,
+  "metrics": {
+    "cases_with_auto_fetch": 56,
+    "auto_fetch_targets_mean": 1.1,
+    "auto_fetch_targets_max": 2,
+    "peak_concurrency_max": 2,
+    "read_success_rate": 0.86,
+    "evidence_delivery_rate": 0.3697,
+    "output_within_cap_rate": 1.0,
+    "request_tokens_median_estimate": 436.0,
+    "elapsed_ms": {
+      "p50": 507.86,
+      "p95": 529.0
+    }
+  },
+  "invariants": {
+    "max_two_sources": true,
+    "max_two_concurrent_reads": true,
+    "output_within_cap": true
+  },
+  "not_measured": [
+    "real_model_answer_accuracy",
+    "human_checked_citation_precision",
+    "provider_request_tokens",
+    "production_network_latency",
+    "live_rollout_safety"
+  ]
+}

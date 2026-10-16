@@ -4,7 +4,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.check_markdown_links import find_broken_links, scan_markdown_file
+from scripts.check_markdown_links import (
+    find_broken_links,
+    find_untracked_link_targets,
+    scan_markdown_file,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -146,6 +150,44 @@ class MarkdownLinkCheckerTests(unittest.TestCase):
 
     def test_repository_has_no_broken_relative_markdown_links(self) -> None:
         self.assertEqual(find_broken_links(ROOT), ())
+
+    def test_link_from_a_tracked_doc_to_an_untracked_target_is_reported(self) -> None:
+        """CI checks out tracked files only, so a local-only target must fail."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "local-evidence.md").write_text("# local only\n", encoding="utf-8")
+            guide = docs / "guide.md"
+            guide.write_text("See [evidence](local-evidence.md).\n", encoding="utf-8")
+
+            self.assertEqual(
+                find_untracked_link_targets(root, frozenset({"docs/guide.md"})),
+                ("docs/guide.md:1:local-evidence.md -> docs/local-evidence.md",),
+            )
+
+    def test_link_to_a_tracked_target_or_tracked_directory_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            (docs / "nested").mkdir(parents=True)
+            (docs / "nested" / "child.md").write_text("# child\n", encoding="utf-8")
+            guide = docs / "guide.md"
+            guide.write_text(
+                "[file](nested/child.md) [dir](nested) [web](https://example.com)\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                find_untracked_link_targets(
+                    root,
+                    frozenset({"docs/guide.md", "docs/nested/child.md"}),
+                ),
+                (),
+            )
+
+    def test_repository_docs_never_link_untracked_targets(self) -> None:
+        self.assertEqual(find_untracked_link_targets(ROOT), ())
 
 
 if __name__ == "__main__":
