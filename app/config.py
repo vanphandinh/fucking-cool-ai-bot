@@ -136,6 +136,11 @@ class Settings(BaseSettings):
     ai_attempt_total_timeout_sec: float = Field(default=90, gt=0, allow_inf_nan=False)
     url_read_total_timeout_sec: float = Field(default=40, gt=0, allow_inf_nan=False)
     tool_call_total_timeout_sec: float = Field(default=45, gt=0, allow_inf_nan=False)
+    # Liveness: the bot touches a heartbeat after each successful Telegram API probe;
+    # the compose health check reads its age (see app/core/liveness.py).
+    liveness_heartbeat_file: str = "/tmp/fcai-liveness"
+    liveness_max_age_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    liveness_interval_sec: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     log_level: str = "INFO"
 
     @field_validator("ai_providers", mode="before")
@@ -228,6 +233,10 @@ class Settings(BaseSettings):
                 "PROVIDER_RETRY_MAX_CONSECUTIVE"
             )
 
+        if self.liveness_interval_sec > self.liveness_max_age_sec:
+            raise ValueError(
+                "LIVENESS_INTERVAL_SEC must not exceed LIVENESS_MAX_AGE_SEC"
+            )
         if self.question_progress_interval_sec >= self.question_renewal_interval_sec:
             raise ValueError("progress interval must be below renewal interval")
         if self.question_max_jobs_per_user > self.question_max_pending_jobs:

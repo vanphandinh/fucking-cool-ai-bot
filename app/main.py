@@ -20,6 +20,7 @@ from .bot.question_runner import QuestionProcessor
 from .config import Settings, get_settings, parse_csv_ints
 from .core.context import ChatMemory
 from .core.job_manager import JobManager
+from .core.liveness import build_probe
 from .core.orchestrator import Orchestrator
 from .core.rate_limiter import RateLimiter
 from .core.stats import Stats
@@ -75,6 +76,7 @@ async def _amain(settings: Settings) -> int:
     dp = None
     job_manager = None
     job_presenter = None
+    liveness = None
     try:
         try:
             provider_router = build_provider_router(settings)
@@ -207,11 +209,21 @@ async def _amain(settings: Settings) -> int:
         except TelegramAPIError as exc:
             logger.warning("Không xoá được webhook cũ: exc_type=%s", type(exc).__name__)
 
-        await dp.start_polling(
-            bot,
-            allowed_updates=POLLING_UPDATES,
-            close_bot_session=False,
+        # Liveness: the probe beats the heartbeat only while Telegram answers, so a
+        # wedged bot shows up as an unhealthy container instead of a silent one.
+        liveness = build_probe(settings, bot)
+        liveness_task = asyncio.create_task(
+            liveness.run(bot), name="liveness-probe"
         )
+        try:
+            await dp.start_polling(
+                bot,
+                allowed_updates=POLLING_UPDATES,
+                close_bot_session=False,
+            )
+        finally:
+            liveness_task.cancel()
+            await asyncio.gather(liveness_task, return_exceptions=True)
         return 0
     finally:
         if dp is not None:
@@ -223,6 +235,9 @@ async def _amain(settings: Settings) -> int:
         try:
             await _shutdown_question_controls(job_manager, job_presenter)
         finally:
+            if liveness is not None:
+                # A stopped process must not leave a fresh-looking heartbeat behind.
+                liveness.heartbeat.clear()
             try:
                 if bot is not None:
                     await bot.session.close()

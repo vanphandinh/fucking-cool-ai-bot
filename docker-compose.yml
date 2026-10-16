@@ -11,6 +11,16 @@ services:
     networks:
       - default
       - crawl4ai_api
+    # Liveness: the bot touches LIVENESS_HEARTBEAT_FILE only while Telegram still
+    # answers its probe (app/core/liveness.py), so a wedged process turns unhealthy
+    # instead of staying silently "Up". start_period covers the first probe plus
+    # bot startup; a container that is stopping is expected to go stale.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.core.liveness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
   # SearXNG — production, PRIVATE: chỉ phục vụ bot Telegram, KHÔNG public ra ngoài.
   # - Bật theo yêu cầu bằng profile:  docker compose --profile searxng up -d
