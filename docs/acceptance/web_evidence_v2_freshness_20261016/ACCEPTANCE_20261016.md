@@ -54,6 +54,7 @@ trên pool thật (H1).
 | `detect_changes` (canary) | `scope=all` | 20 symbol, 58 affected, risk `critical`, không `partial`/`truncated` | |
 | `detect_changes` (usage) | `scope=all` | 24 symbol, 38 affected, risk `critical`, không `partial`/`truncated` | |
 | `detect_changes` (audit/runbook) | `scope=staged` | 3 changed files, `changed_symbols=0` | **đọc đúng nghĩa**: file mới chưa có trong index ⇒ "0" là *chưa thấy*, không phải "không ảnh hưởng" |
+| `detect_changes` (toàn nhánh vs `main`) | `scope=compare --base-ref main` | **45 file, 146 symbol, 99 process, risk `critical`** | đây là con số "volume" của cả nhánh (không phải một symbol nguy hiểm cụ thể); output nguyên văn: `artifacts/detect_changes_compare_main_20261016.txt` |
 
 ## 4. NOT EXECUTED / NOT MEASURED (không được đọc là PASS)
 
