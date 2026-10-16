@@ -1,0 +1,120 @@
+{
+  "mode": "synthetic",
+  "results": [
+    {
+      "query": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "limit": 8,
+      "verification_context": true,
+      "verification_intent_matches": true,
+      "min_recent_verification_score": 0.3,
+      "top_urls": [
+        "https://www.nasa.gov/news-release/nasa-adds-mission-to-artemis-architecture",
+        "https://www.space.com/artemis-crew-landing-overview",
+        "https://example.com/weather-today",
+        "https://www.nasa.gov/artemis-archive-1",
+        "https://www.nasa.gov/artemis-archive-2",
+        "https://www.nasa.gov/artemis-archive-3",
+        "https://www.nasa.gov/artemis-archive-4",
+        "https://www.nasa.gov/artemis-archive-5"
+      ],
+      "code": "H4_or_clean",
+      "eligible_in_top": [
+        "https://www.space.com/artemis-crew-landing-overview",
+        "https://www.nasa.gov/news-release/nasa-adds-mission-to-artemis-architecture"
+      ],
+      "eligible_out_of_top": [],
+      "rows": [
+        {
+          "url": "https://www.nasa.gov/artemis-archive-0",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 900.0,
+          "in_top": false,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-1",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 901.0,
+          "in_top": true,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-2",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 902.0,
+          "in_top": true,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-3",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 903.0,
+          "in_top": true,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-4",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 904.0,
+          "in_top": true,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-5",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 905.0,
+          "in_top": true,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.nasa.gov/artemis-archive-6",
+          "lexical": 1.0,
+          "freshness_bonus": 0.0,
+          "score": 1.0,
+          "age_days": 906.0,
+          "in_top": false,
+          "eligible_recent": false
+        },
+        {
+          "url": "https://www.space.com/artemis-crew-landing-overview",
+          "lexical": 0.666667,
+          "freshness_bonus": 0.06,
+          "score": 0.726667,
+          "age_days": 300.0,
+          "in_top": true,
+          "eligible_recent": true
+        },
+        {
+          "url": "https://www.nasa.gov/news-release/nasa-adds-mission-to-artemis-architecture",
+          "lexical": 0.318841,
+          "freshness_bonus": 0.15,
+          "score": 0.468841,
+          "age_days": 30.0,
+          "in_top": true,
+          "eligible_recent": true
+        },
+        {
+          "url": "https://example.com/weather-today",
+          "lexical": 0.014493,
+          "freshness_bonus": 0.15,
+          "score": 0.164493,
+          "age_days": 10.0,
+          "in_top": true,
+          "eligible_recent": false
+        }
+      ]
+    }
+  ]
+}
