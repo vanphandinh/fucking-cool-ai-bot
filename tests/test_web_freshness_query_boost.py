@@ -79,6 +79,15 @@ class MergeHelpersTests(unittest.TestCase):
         self.assertIn(_BOOST_ONLY["url"], urls)
         self.assertNotIn(primary[-1]["url"], urls)
 
+    def test_reserved_slot_survives_extra_repeating_the_dropped_primary_url(self):
+        primary = [dict(_OLD, url=f"https://a.example.com/{i}") for i in range(8)]
+        extra = [dict(_OLD, url=primary[-1]["url"]), dict(_BOOST_ONLY)]
+        merged = _merge_search_results(primary, extra, limit=8, reserve_slot=True)
+        urls = [item["url"] for item in merged]
+        self.assertEqual(len(merged), 8)
+        self.assertIn(_BOOST_ONLY["url"], urls)
+        self.assertNotIn(primary[-1]["url"], urls)
+
     def test_reserved_slot_keeps_primary_when_extra_is_already_present(self):
         primary = [dict(_OLD, url=f"https://a.example.com/{i}") for i in range(8)]
         merged = _merge_search_results(

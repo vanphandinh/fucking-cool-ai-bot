@@ -78,11 +78,21 @@ def _merge_search_results(
             canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
             for item in primary_items
         }
+        unseen: list[dict] = []
+        rest: list[dict] = []
         for item in extra_items:
             key = canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
             if key and key not in known:
-                primary_items = primary_items[: limit - 1]
-                break
+                known.add(key)
+                unseen.append(item)
+            else:
+                rest.append(item)
+        if unseen:
+            # Put the new discovery result first: the extra query can repeat an
+            # old URL before the fresh one, and the reserved slot would then be
+            # consumed by that repeat before the new source is reached.
+            primary_items = primary_items[: limit - 1]
+            extra_items = unseen + rest
     merged: list[dict] = []
     seen: set[str] = set()
     for item in primary_items + extra_items:
