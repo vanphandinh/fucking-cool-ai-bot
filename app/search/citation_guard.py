@@ -59,8 +59,9 @@ _URL_PATTERN = re.compile(
     r"(?:\"(?P<html_url>[^\"'>]*)\"|'(?P<html_url_sq>[^'\">]*)'|(?P<html_url_uq>[^>\s]*))"
     r"[^>]*>(?P<html_text>.*?)</a>"
     r"|<(?P<autolink_url>https?://[^<>\s]+)>"
-    r"|\[(?P<md_text>[^\]]*)\]\((?P<md_url>https?://[^\s)]+)\)"
-    r"|(?P<bare_url>https?://[^\s<>\"'\)\]]+)",
+    # One balanced parenthesis pair is allowed inside a URL (Wikipedia-style
+    r"|\[(?P<md_text>[^\]]*)\]\((?P<md_url>https?://(?:[^\s()]|\([^\s()]*\))+)\)"
+    r"|(?P<bare_url>https?://(?:[^\s<>\"'()\[\]]|\([^\s<>\"'()\[\]]*\))+)",
     re.IGNORECASE | re.DOTALL,
 )
 

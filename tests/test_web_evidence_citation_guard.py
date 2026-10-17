@@ -31,6 +31,8 @@ EVIDENCE_HIT = {
     "snippet": "Crewed flight in low Earth orbit.",
 }
 INVENTED_URL = "https://www.nasa.gov/mission/artemis-iv"
+# Parentheses are legal URL characters (Wikipedia paths are the common case).
+PAREN_EVIDENCE_URL = "https://en.wikipedia.org/wiki/Python_(programming_language)"
 
 
 class CitationGuardUnitTests(unittest.TestCase):
@@ -44,6 +46,36 @@ class CitationGuardUnitTests(unittest.TestCase):
             (1, 1, 0),
         )
         self.assertEqual(dict(diagnostics.reasons), {})
+
+    def test_bare_wikipedia_url_with_parentheses_is_kept(self):
+        text = f"Xem {PAREN_EVIDENCE_URL} để biết."
+        guarded, diagnostics = enforce_v2_citations(text, {PAREN_EVIDENCE_URL})
+        self.assertEqual(guarded, text)
+        self.assertEqual(
+            (diagnostics.detected, diagnostics.allowed, diagnostics.removed),
+            (1, 1, 0),
+        )
+
+    def test_markdown_wikipedia_url_with_parentheses_is_kept(self):
+        text = f"Xem [Python]({PAREN_EVIDENCE_URL}) để biết."
+        guarded, diagnostics = enforce_v2_citations(text, {PAREN_EVIDENCE_URL})
+        self.assertEqual(guarded, text)
+        self.assertEqual(
+            (diagnostics.detected, diagnostics.allowed, diagnostics.removed),
+            (1, 1, 0),
+        )
+
+    def test_unverified_parenthesised_url_keeps_the_sentence_parenthesis(self):
+        invented = "https://invented.example.org/wiki/Thing_(x)"
+        guarded, diagnostics = enforce_v2_citations(f"Xem ({invented}) để biết.", set())
+        self.assertEqual(guarded, f"Xem ({UNVERIFIED_MARKER}) để biết.")
+        self.assertEqual(diagnostics.removed, 1)
+
+    def test_markdown_parenthesised_url_is_unlinked_without_a_stray_paren(self):
+        invented = "https://invented.example.org/wiki/Thing_(x)"
+        guarded, diagnostics = enforce_v2_citations(f"Xem [Python]({invented}) để biết.", set())
+        self.assertEqual(guarded, f"Xem Python {UNVERIFIED_MARKER} để biết.")
+        self.assertEqual(diagnostics.removed, 1)
 
     def test_citation_that_ends_a_sentence_keeps_its_evidence_link(self):
         text = f"Chi tiết ở {EVIDENCE_URL}."
