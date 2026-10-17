@@ -1,19 +1,27 @@
 """Static type check in report mode, ratcheted against a recorded baseline.
 
-The repository has real type findings (mostly ``reportArgumentType`` and
-``reportPossiblyUnboundVariable``) that predate any type checking. Demanding zero
-today would mean either a large speculative refactor or a checker nobody runs, so
-this script measures first: it runs pyright, compares the error count with
+The repository has real type findings (``reportArgumentType`` and
+``reportOptionalMemberAccess`` dominate) that predate any type checking. Demanding
+zero today would mean either a large speculative refactor or a checker nobody runs,
+so this script measures first: it runs pyright, compares the error count with
 ``pyright_baseline.json`` and fails only when the count grows. New findings fail;
 existing ones stay visible in the printed breakdown until someone pays them down.
 
     python scripts/check_types.py                 # compare against the baseline
     python scripts/check_types.py --write-baseline  # record a deliberate new level
 
+``--write-baseline`` also records the checker version it measured with, and every
+later run is pinned to that version, so a newer pyright has to be adopted on purpose
+instead of changing the verdict of an untouched commit.
+
 Exit codes: 0 = at or below baseline, 1 = regression (or worse: the tool failed),
-2 = type check NOT EXECUTED (pyright/npx unavailable), which CI must not read as a
-pass. Bumping the recorded pyright version is a deliberate act: a newer checker can
-report more, and the baseline has to be re-measured, not silently relaxed.
+2 = type check NOT EXECUTED or NOT COMPARABLE (pyright/npx unavailable, or a
+different pyright version measured than the baseline recorded), which CI must not
+read as a pass. Bumping the recorded pyright version is a deliberate act: a newer
+checker can report more, and the baseline has to be re-measured, not silently
+relaxed. The script therefore runs the version the baseline recorded (an ``npx``
+invocation otherwise resolves whatever is newest that day) and refuses to call the
+comparison valid when the version that actually ran is a different one.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from collections import Counter
@@ -30,6 +39,8 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 DEFAULT_BASELINE = ROOT / "pyright_baseline.json"
 DEFAULT_COMMAND = ("npx", "--yes", "pyright", "--outputjson")
+PACKAGE = "pyright"
+_VERSION_RE = re.compile(r"\d+(?:\.\d+)+(?:[-+][\w.]+)?")
 
 
 def load_baseline(path: Path) -> dict:
@@ -96,8 +107,35 @@ def run_pyright(command: tuple[str, ...], cwd: Path) -> dict | None:
     return json.loads(stdout)
 
 
+def version_token(raw: object) -> str | None:
+    """Bare version out of ``pyright 1.1.414``, ``1.1.414`` or ``None``."""
+    if not isinstance(raw, str):
+        return None
+    match = _VERSION_RE.search(raw)
+    return match.group(0) if match else None
+
+
 def tool_version(report: dict) -> str | None:
-    return ((report.get("summary") or {}).get("version")) or None
+    """pyright reports its version as a top-level ``version`` field."""
+    raw = report.get("version") or (report.get("summary") or {}).get("version")
+    return version_token(raw)
+
+
+def pin_command(command: tuple[str, ...], *, pin: str | None) -> tuple[str, ...]:
+    """Pin the checker invocation to the version the baseline recorded.
+
+    ``npx --yes pyright`` installs whatever is newest at run time, so the same
+    commit can measure differently on two days and a release with stricter rules
+    would look like a code regression. An invocation that already names a version
+    keeps it: pinning is the default, not a straitjacket.
+    """
+    if not pin:
+        return command
+    for index, part in enumerate(command):
+        if "@" in part or part.lower() not in {PACKAGE, f"{PACKAGE}.cmd"}:
+            continue
+        return (*command[:index], f"{part}@{pin}", *command[index + 1 :])
+    return command
 
 
 def ask_tool_version(command: tuple[str, ...], cwd: Path) -> str | None:
@@ -113,7 +151,7 @@ def ask_tool_version(command: tuple[str, ...], cwd: Path) -> str | None:
     except OSError:
         return None
     first = (completed.stdout or completed.stderr or "").strip().splitlines()
-    return first[0].strip() if first else None
+    return version_token(first[0]) if first else None
 
 
 def print_breakdown(measured: dict, *, limit: int = 8) -> None:
@@ -142,18 +180,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    baseline = load_baseline(args.baseline)
+    recorded = baseline.get("errors")
+    recorded_version = version_token(baseline.get("tool_version"))
+    command = tuple(args.command.split())
+
     if args.report is not None:
         report = json.loads(args.report.read_text(encoding="utf-8"))
     else:
-        report = run_pyright(tuple(args.command.split()), ROOT)
+        command = pin_command(command, pin=recorded_version)
+        print(f"pyright command: {' '.join(command)}")
+        report = run_pyright(command, ROOT)
     if report is None:
         return 2
 
     measured = parse_pyright_report(report)
-    baseline = load_baseline(args.baseline)
-    recorded = baseline.get("errors")
     version = tool_version(report) or (
-        ask_tool_version(tuple(args.command.split()), ROOT) if args.report is None else None
+        ask_tool_version(command, ROOT) if args.report is None else None
     )
 
     if args.write_baseline:
@@ -176,6 +219,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(f"pyright version: {version or 'unknown'}")
+    if recorded_version and version and recorded_version != version:
+        # The count came from a different checker than the baseline, so growth
+        # cannot be attributed to the code. Not a pass, and not a regression.
+        print(
+            f"tool version changed: baseline={recorded_version} measured={version}; "
+            "re-measure with --write-baseline before trusting this comparison"
+        )
+        return 2
+
     print_breakdown(measured)
     verdict = compare(recorded, measured["errors"])
     print(f"measured={measured['errors']} baseline={recorded} verdict={verdict}")
