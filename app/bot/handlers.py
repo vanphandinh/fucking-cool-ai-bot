@@ -455,14 +455,7 @@ async def _handle_question(
                 )
                 try:
                     history = memory.history_for(conversation_key, settings.max_context_turns)
-                    if images:
-                        answer = await orchestrator.ask(request=request, history=history)
-                    else:
-                        answer = await orchestrator.ask(
-                            question=question,
-                            history=history,
-                            quoted=quoted,
-                        )
+                    answer = await orchestrator.ask(request=request, history=history)
                 except NoCapableProvider as exc:
                     stats.record_error(type(exc).__name__)
                     await message.reply(_NO_CAPABLE_PROVIDER_TEXT)

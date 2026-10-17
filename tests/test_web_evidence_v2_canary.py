@@ -15,10 +15,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.ai.router import CompletionResult
+from app.bot.handlers import _ChatLocks, _handle_question
 from app.bot.question_runner import QuestionProcessor, submit_controlled_question
 from app.config import Settings
-from app.core.orchestrator import Orchestrator
+from app.core.context import ChatMemory
+from app.core.orchestrator import Answer, Orchestrator
+from app.core.rate_limiter import RateLimiter
 from app.core.request import UserRequest
+from app.core.stats import Stats
 from app.search.citation_guard import UNVERIFIED_MARKER
 
 QUERY = "Hãy xác minh: sứ mệnh Artemis III hạ cánh có người?"
@@ -248,6 +252,49 @@ class CanaryWiringTests(unittest.IsolatedAsyncioTestCase):
         submission = manager.submissions[0]
         request = await submission.prepare_request(operations)
         self.assertEqual(request.chat_id, CANARY_CHAT_ID)
+
+    async def test_text_only_handler_passes_the_chat_id_to_the_orchestrator(self):
+        """The ordinary text path must carry the chat id, not only the job/image paths."""
+        settings = Settings(
+            _env_file=None,
+            bot_username="t",
+            web_evidence_v2_group_ids=str(CANARY_CHAT_ID),
+        )
+        ask = AsyncMock(return_value=Answer("ok", "fake"))
+        orchestrator = SimpleNamespace(
+            router=SimpleNamespace(max_supported_images=lambda: 4),
+            ask=ask,
+        )
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=7),
+            chat=SimpleNamespace(id=CANARY_CHAT_ID),
+            message_thread_id=None,
+            message_id=11,
+            bot=SimpleNamespace(
+                send_chat_action=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+            reply=AsyncMock(return_value=SimpleNamespace(message_id=12)),
+        )
+
+        await _handle_question(
+            message,
+            "hello",
+            None,
+            settings,
+            orchestrator,
+            ChatMemory(),
+            RateLimiter(),
+            Stats(),
+            _ChatLocks(),
+            media_loader=SimpleNamespace(load=AsyncMock(return_value=())),
+        )
+
+        kwargs = ask.await_args.kwargs
+        self.assertIn("request", kwargs)
+        self.assertEqual(kwargs["request"].chat_id, CANARY_CHAT_ID)
+        self.assertEqual(kwargs["request"].text, "hello")
+        self.assertEqual(kwargs["history"], [])
 
     async def test_job_fallback_request_carries_the_submission_chat_id(self):
         orchestrator = _StubOrchestrator()

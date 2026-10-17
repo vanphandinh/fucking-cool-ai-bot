@@ -75,7 +75,8 @@ class ForumTopicIsolationTests(unittest.IsolatedAsyncioTestCase):
         release_first = asyncio.Event()
 
         async def answer(**kwargs):
-            question = kwargs.get("question")
+            request = kwargs.get("request")
+            question = kwargs.get("question") if request is None else request.text
             if question == "first":
                 first_started.set()
                 await release_first.wait()
