@@ -1,13 +1,13 @@
 # Web Evidence V2 — FRESHNESS DIAGNOSIS (Gate G1, 2026-10-16)
 
-Bằng chứng cho Phase 1 của [plan](../../WEB_EVIDENCE_V2_PILOT_EXECUTION_PLAN_20261016.md). **Không có file production nào bị sửa trong phase này.**
+Bằng chứng cho Phase 1 của plan pilot (tài liệu plan và các probe/artifact tái lập đã được dọn khỏi working tree; bản đã commit lấy lại bằng `git show <sha>:<path>`). **Không có file production nào bị sửa trong phase này.**
 
 ## 1. Phép đo
 
 | Phép đo | Lệnh | Artifact |
 | --- | --- | --- |
-| Tất định (offline) | `PYTHONIOENCODING=utf-8 PYTHONPATH=. python docs/acceptance/web_evidence_v2_freshness_20261016/probes/freshness_slot_probe.py --mode synthetic` | [freshness_synthetic.json](artifacts/freshness_synthetic.json) |
-| Pool thật (SearXNG nội bộ qua mạng compose) | `docker run --rm --network fucking-cool-ai-bot_default --env-file .env -v "$PWD":/app:ro … --mode live` | [freshness_live.json](artifacts/freshness_live.json) |
+| Tất định (offline) | `probes/freshness_slot_probe.py --mode synthetic` (probe đã dọn) | `freshness_synthetic.json` (đã dọn) |
+| Pool thật (SearXNG nội bộ qua mạng compose) | `docker run --rm --network fucking-cool-ai-bot_default --env-file .env -v "$PWD":/app:ro … --mode live` (artifact đã dọn) | `freshness_live.json` (đã dọn) |
 
 Câu hỏi live: Q6 (Artemis, nhóm B), Q13 (Python mới nhất, nhóm D), Q16 (giá iPhone, nhóm E) — lấy từ `docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`.
 

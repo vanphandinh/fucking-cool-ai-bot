@@ -16,6 +16,8 @@ Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docke
 - [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md)
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md)
 - [SearXNG production trên VPS](DEPLOY_SEARXNG_VPS.md)
+- [Chạy lại gate và bật cờ trên VPS](docs/VPS_REDEPLOY_AND_FEATURE_FLAGS.md)
+- [Bộ câu live smoke V1/V2](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md)
 
 `README.md`, `.env.example`, runtime source, Docker/CI và các active operator guide là source of truth cho current deployment contract.
 
@@ -188,7 +190,7 @@ python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/we
 python -m scripts.web_evidence_benchmark --auto-fetch
 ```
 
-Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Báo cáo kết quả triển khai và nghiệm thu ở [`docs/WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md`](docs/WEB_EVIDENCE_V2_RESULTS_AND_ACCEPTANCE_REPORT.md); prompt để model khác kiểm chứng độc lập ở [`docs/WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md`](docs/WEB_EVIDENCE_V2_INDEPENDENT_VERIFICATION_PROMPT.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production.
+Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Quyết định phát hành và phần chấm chất lượng model thật nằm ở [`RELEASE_DECISION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) và [`QUALITY_EVALUATION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md); bộ câu live và cách chấm ở [`docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production. V2 chưa đạt điều kiện pilot — lý do ở mục 2 của RELEASE_DECISION.
 
 ## Cài đặt nhanh
 

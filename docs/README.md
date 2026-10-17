@@ -1,6 +1,6 @@
 # Documentation index
 
-Tài liệu trong repo chỉ mô tả **trạng thái vận hành hiện tại**. Audit, incident, migration record, implementation plan và design cũ được lưu trong Git history thay vì giữ trong working tree.
+Tài liệu trong repo chỉ mô tả **trạng thái vận hành hiện tại**. Audit, incident, migration record, implementation plan và design cũ được lưu trong Git history thay vì giữ trong working tree. Các tài liệu quy trình/session của Web Evidence V2 (2026-10-14 → 2026-10-16) đã được dọn khỏi working tree theo đúng nguyên tắc này.
 
 Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source code + tests hiện tại đứng cao nhất.
 
@@ -17,6 +17,17 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 - [`CRAWL4AI_INTEGRATION.md`](CRAWL4AI_INTEGRATION.md) — optional Crawl4AI URL rendering backend, gated production activation and rollback runbook.
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — strict `.env` synchronization, canonical provider contract và secret-file permissions.
+- [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — chạy lại toàn bộ gate trên VPS, deploy/rollback và bật từng feature flag.
+- [`WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md) — bộ 21 câu live smoke và cách chấm V1/V2 (`scripts/web_evidence_live_smoke.py` đọc trực tiếp file này).
+- [`benchmarks/README.md`](benchmarks/README.md) — offline replay, fixture và giới hạn của các proxy metric.
+
+## Acceptance record
+
+Chỉ giữ lại bản ghi quyết định; số liệu chi tiết và artifact tái lập nằm trong Git history.
+
+- [`acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md`](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) — 15 tiêu chí, verdict và điều kiện bật pilot.
+- [`acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md`](acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md) — chấm 74 lượt model thật (V1 36/37, V2 35/37, Q6 sai 3/3).
+- [`acceptance/web_evidence_v2_freshness_20261016/FRESHNESS_DIAGNOSIS.md`](acceptance/web_evidence_v2_freshness_20261016/FRESHNESS_DIAGNOSIS.md) — nguyên nhân retrieval của lỗi Q6 (H3/H5).
 
 ## Source-of-truth order
 

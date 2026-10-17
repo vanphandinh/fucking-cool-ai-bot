@@ -146,7 +146,7 @@ unchanged 12000-character synthesis cap.
 All accuracy/citation numbers remain **extractive proxy** measurements. They do
 not establish model answer quality, human-verified citation precision,
 conditional auto-fetch behaviour, provider tokens or production latency; those
-remain `NOT MEASURED` in [`../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md`](../WEB_EVIDENCE_V2_ACCEPTANCE_REPORT.md).
+remain `NOT MEASURED` in [`../acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md`](../acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md).
 
 ## Conditional auto-fetch offline replay (2026-10-14 hardening)
 

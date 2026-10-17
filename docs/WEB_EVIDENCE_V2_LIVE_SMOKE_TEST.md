@@ -1,8 +1,9 @@
 # Web Evidence V2 — bộ 21 câu hỏi smoke test với model thật
 
-Kết quả chạy thử local với model thật ngày 2026-10-14:
-[WEB_EVIDENCE_V2_LIVE_SMOKE_RUN_20261014.md](WEB_EVIDENCE_V2_LIVE_SMOKE_RUN_20261014.md).
-V2 hiện **NO-GO** do một timeout và lỗi kết nối search backend trong môi trường host.
+Kết quả chạy model thật (2026-10-16) và verdict phát hành nằm ở
+[RELEASE_DECISION.md](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md)
+và [QUALITY_EVALUATION.md](acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md).
+V2 hiện **chưa đạt điều kiện pilot** (Q6 sai 3/3 lượt, Q15 claim phụ sai).
 
 **Mục đích:** so sánh V1 và V2 trên câu hỏi thực tế, có provider và mạng. Tài liệu này
 là **bộ test + hướng dẫn**, không phải kết quả. Phiên tạo tài liệu (2026-10-14) chạy
