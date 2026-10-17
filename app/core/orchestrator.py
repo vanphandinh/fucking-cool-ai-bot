@@ -60,13 +60,32 @@ def _has_recent_source(results) -> bool:
     return False
 
 
-def _merge_search_results(primary, extra, limit: int) -> list[dict]:
-    """Append unseen URLs from ``extra`` to ``primary``, never past ``limit``."""
+def _merge_search_results(
+    primary, extra, limit: int, *, reserve_slot: bool = False
+) -> list[dict]:
+    """Append unseen URLs from ``extra`` to ``primary``, never past ``limit``.
+
+    ``reserve_slot`` makes room for a discovery result even when ``primary``
+    already fills the cap: the last (lowest-ranked) primary item is dropped, but
+    only when ``extra`` actually carries a URL that is not already present.
+    """
+    if limit <= 0:
+        return []
+    primary_items = [item for item in (primary or ()) if isinstance(item, dict)]
+    extra_items = [item for item in (extra or ()) if isinstance(item, dict)]
+    if reserve_slot and len(primary_items) >= limit:
+        known = {
+            canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
+            for item in primary_items
+        }
+        for item in extra_items:
+            key = canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
+            if key and key not in known:
+                primary_items = primary_items[: limit - 1]
+                break
     merged: list[dict] = []
     seen: set[str] = set()
-    for item in list(primary or ()) + list(extra or ()):
-        if not isinstance(item, dict):
-            continue
+    for item in primary_items + extra_items:
         key = canonicalize_source_url(item.get("url")) or str(item.get("url") or "")
         if not key or key in seen:
             continue
@@ -421,7 +440,10 @@ class Orchestrator:
                             verification_context=True,
                         )
                         results = _merge_search_results(
-                            results, extra, search_service.MAX_RESULTS
+                            results,
+                            extra,
+                            search_service.MAX_RESULTS,
+                            reserve_slot=True,
                         )
                 sources.extend(results)
                 searched = True

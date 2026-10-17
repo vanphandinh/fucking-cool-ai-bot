@@ -69,6 +69,28 @@ class MergeHelpersTests(unittest.TestCase):
         self.assertEqual(len(merged), 7)
         self.assertIn(_BOOST_ONLY["url"], [item["url"] for item in merged])
 
+    def test_reserved_slot_admits_a_discovery_result_when_primary_is_full(self):
+        primary = [dict(_OLD, url=f"https://a.example.com/{i}") for i in range(8)]
+        merged = _merge_search_results(
+            primary, [dict(_BOOST_ONLY)], limit=8, reserve_slot=True
+        )
+        urls = [item["url"] for item in merged]
+        self.assertEqual(len(merged), 8)
+        self.assertIn(_BOOST_ONLY["url"], urls)
+        self.assertNotIn(primary[-1]["url"], urls)
+
+    def test_reserved_slot_keeps_primary_when_extra_is_already_present(self):
+        primary = [dict(_OLD, url=f"https://a.example.com/{i}") for i in range(8)]
+        merged = _merge_search_results(
+            primary, [dict(_OLD, url=primary[0]["url"])], limit=8, reserve_slot=True
+        )
+        self.assertEqual(
+            [item["url"] for item in merged], [item["url"] for item in primary]
+        )
+
+    def test_zero_limit_returns_no_results(self):
+        self.assertEqual(_merge_search_results([_OLD], [_BOOST_ONLY], limit=0), [])
+
 
 class FreshnessBoostWiringTests(unittest.IsolatedAsyncioTestCase):
     def _settings(self) -> Settings:
@@ -121,6 +143,8 @@ class FreshnessBoostWiringTests(unittest.IsolatedAsyncioTestCase):
         urls = set(re.findall(r"https?://[^\s<>\"]+", harness.outputs[0]))
         self.assertLessEqual(len(urls), 8)
         self.assertIn(eight[0]["url"], harness.outputs[0])
+        self.assertIn(_BOOST_ONLY["url"], urls)
+        self.assertNotIn(eight[-1]["url"], urls)
 
 
 if __name__ == "__main__":
