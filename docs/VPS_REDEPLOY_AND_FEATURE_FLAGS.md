@@ -92,7 +92,8 @@ deactivate
 
 ```bash
 cd /srv/fucking-cool-ai-bot
-cp .env ".env.bak.$(date +%Y%m%d%H%M)"
+umask 077
+cp .env "$HOME/fcai-env-backup-$(date +%Y%m%d%H%M)"   # ngoài repo; khôi phục: cp <file> .env
 python scripts/sync_env.py            # giữ value cũ, thêm key mới, siết mode 0600
 docker compose --profile searxng config --quiet
 
@@ -100,6 +101,9 @@ docker compose --profile searxng up -d --build --force-recreate bot searxng
 docker compose ps
 docker compose logs --tail=80 bot
 ```
+
+> `restart: unless-stopped` **không** restart container `unhealthy`; healthcheck chỉ
+> hiển thị trạng thái. Muốn tự phục hồi khi bot treo, cần watcher/autoheal bên ngoài.
 
 `sync_env.py` thoát `2` nếu `.env` có key không nằm trong `.env.example` — gỡ key đó ra (hoặc bổ sung vào example trong repo) rồi chạy lại; đừng bỏ qua lỗi này, vì nó chính là cái giữ `.env` khớp vocabulary.
 

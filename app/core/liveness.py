@@ -8,7 +8,9 @@ file's age, which makes a stuck process visible to ``docker compose ps`` instead
 silently healthy.
 
 Failure states are deliberately not self-healing or self-reporting beyond the log
-line: a stale heartbeat means "inspect the bot", and the restart policy decides.
+line: a stale heartbeat means "inspect the bot". Compose does not restart an
+unhealthy container, so pair the health check with an external watcher when
+self-healing is required.
 
 CLI (used by the compose health check):
     python -m app.core.liveness            # exit 0 when fresh, 1 when stale/missing
