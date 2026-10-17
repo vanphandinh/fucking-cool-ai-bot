@@ -39,6 +39,7 @@ from app.core.orchestrator import (
     _format_search_results,
 )
 from app.search import auto_fetch, evidence, service
+from app.search.runtime import reset_search_runtimes
 from app.search.url_service import UrlReadResult
 from tests.provider_fakes import (
     ScriptedProvider,
@@ -611,6 +612,12 @@ class SynthesisModeWiringTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SourceRankingDdgsTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # Search runtimes are process-wide and keyed by configuration, so a new
+        # Settings instance no longer implies a cold cache.
+        reset_search_runtimes()
+
     async def test_strong_ddgs_candidates_survive_a_weak_searxng_pool(self):
         searx = AsyncMock(return_value=[dict(item) for item in WEAK_SEARXNG])
         ddgs = AsyncMock(return_value=[dict(item) for item in STRONG_DDGS])

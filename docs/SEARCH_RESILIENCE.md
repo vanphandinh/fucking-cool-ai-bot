@@ -197,7 +197,7 @@ Nếu production đã có `searxng/settings.yml`, phải merge thay đổi từ 
 
 ## Connection lifecycle
 
-SearXNG dùng shared `httpx.AsyncClient` theo `Settings` để reuse keep-alive/connection pool. `app.main` gọi `close_search_runtimes()` khi shutdown để đóng client deterministic.
+SearXNG dùng shared `httpx.AsyncClient` theo cấu hình search (`searxng_url`, timeout, circuit breaker, cache size) để reuse keep-alive/connection pool. Runtime được cache theo các giá trị đó, không theo `id(Settings)`, nên các bản `Settings` copy cho canary chat dùng chung breaker/cache/single-flight thay vì tạo runtime mới mỗi câu hỏi. `app.main` gọi `close_search_runtimes()` khi shutdown để đóng client deterministic.
 
 Crawl4AI cũng dùng một shared `httpx.AsyncClient` process-local với `trust_env=False`; `app.main` gọi `close_crawl4ai_client()` khi shutdown.
 

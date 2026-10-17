@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 
 import httpx
 
 from ..config import Settings
 from .resilience import CircuitBreaker, SearchCache, SingleFlight
+
+# Settings fields the runtime's collaborators are built from. Two Settings
+# objects with equal values describe the same runtime, even when one of them is
+# a per-chat copy produced by ``Settings.for_chat`` for the V2 canary.
+_RUNTIME_SETTING_FIELDS = (
+    "searxng_url",
+    "searxng_timeout_sec",
+    "search_circuit_failure_threshold",
+    "search_circuit_cooldown_sec",
+    "search_rate_limit_cooldown_sec",
+    "search_cache_max_entries",
+    "web_evidence_v2_enabled",
+)
+
+RuntimeKey = tuple[object, ...]
 
 
 @dataclass
@@ -16,6 +32,9 @@ class SearchRuntime:
     breaker: CircuitBreaker
     cache: SearchCache
     singleflight: SingleFlight
+    # Stable breaker namespace: replaces ``id(settings)`` so breaker entries do
+    # not accumulate once one runtime serves many per-chat Settings copies.
+    namespace: int
     http_client: httpx.AsyncClient | None = None
 
     def get_http_client(self) -> httpx.AsyncClient:
@@ -32,13 +51,26 @@ class SearchRuntime:
                 await close()
 
 
-_runtimes: dict[int, SearchRuntime] = {}
+_runtimes: dict[RuntimeKey, SearchRuntime] = {}
+_next_namespace = itertools.count(1)
+
+
+def _runtime_key(settings: Settings) -> RuntimeKey:
+    return tuple(getattr(settings, field) for field in _RUNTIME_SETTING_FIELDS)
 
 
 def get_search_runtime(settings: Settings) -> SearchRuntime:
-    key = id(settings)
+    """Return the process-local runtime for this search configuration.
+
+    Canary chats receive a fresh ``Settings.model_copy`` for every question, so
+    keying by ``id(settings)`` created one runtime per question and never
+    released it. Keying by the values that shape the runtime keeps breaker,
+    cache and single-flight state shared across those copies; ``runtime.settings``
+    retains only the first Settings object seen for a configuration.
+    """
+    key = _runtime_key(settings)
     current = _runtimes.get(key)
-    if current is not None and current.settings is settings:
+    if current is not None:
         return current
 
     runtime = SearchRuntime(
@@ -50,6 +82,7 @@ def get_search_runtime(settings: Settings) -> SearchRuntime:
         ),
         cache=SearchCache(max_entries=settings.search_cache_max_entries),
         singleflight=SingleFlight(),
+        namespace=next(_next_namespace),
     )
     _runtimes[key] = runtime
     return runtime

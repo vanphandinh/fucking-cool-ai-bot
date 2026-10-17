@@ -171,7 +171,7 @@ async def _attempt(
     attempted.add(name)
 
     runtime = get_search_runtime(settings)
-    key = BackendKey(namespace=id(settings), backend=name, kind=kind)
+    key = BackendKey(namespace=runtime.namespace, backend=name, kind=kind)
     if not runtime.breaker.allow_request(key):
         return False, [], None
 

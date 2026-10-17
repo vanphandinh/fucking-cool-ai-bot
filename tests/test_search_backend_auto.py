@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
 from app.search import image_service, service
+from app.search.runtime import reset_search_runtimes
 
 
 class UnifiedSearchConfigTests(unittest.TestCase):
@@ -28,6 +29,12 @@ class UnifiedSearchConfigTests(unittest.TestCase):
 
 
 class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # Search runtimes are process-wide and keyed by configuration, so a new
+        # Settings instance no longer implies a cold cache.
+        reset_search_runtimes()
+
     async def test_auto_uses_searxng_alone_when_results_are_enough(self) -> None:
         searx = AsyncMock(
             return_value=[
@@ -49,6 +56,9 @@ class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_auto_falls_back_to_ddgs_when_searxng_errors_or_is_empty(self) -> None:
         for searx_result in (RuntimeError("down"), []):
             with self.subTest(searx_result=repr(searx_result)):
+                # Each subtest is an independent scenario: the shared cache must
+                # not answer the second query with the first scenario's result.
+                reset_search_runtimes()
                 searx = (
                     AsyncMock(side_effect=searx_result)
                     if isinstance(searx_result, Exception)

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
 from app.search import image_service, router, service, source_ranking
-from app.search.runtime import get_search_runtime
+from app.search.runtime import get_search_runtime, reset_search_runtimes
 
 
 def _hit(url: str, title: str, snippet: str = "", **extra) -> dict:
@@ -387,6 +387,12 @@ class MergePoolTests(unittest.TestCase):
 
 
 class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # Search runtimes are process-wide and keyed by configuration, so a new
+        # Settings instance no longer implies a cold cache.
+        reset_search_runtimes()
+
     def _settings(self, **overrides) -> Settings:
         return Settings(
             _env_file=None,

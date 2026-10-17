@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
 from app.search import router
+from app.search import runtime as search_runtime
 from app.search.resilience import BackendKey, FailureKind, SingleFlight
 from app.search.runtime import (
     close_search_runtimes,
@@ -74,7 +75,7 @@ class CircuitBreakerCancellationTests(unittest.IsolatedAsyncioTestCase):
             search_circuit_failure_threshold=1,
         )
         runtime = get_search_runtime(settings)
-        key = BackendKey(namespace=id(settings), backend="searxng", kind="web")
+        key = BackendKey(namespace=runtime.namespace, backend="searxng", kind="web")
         runtime.breaker.record_failure(key, FailureKind.TIMEOUT, "seed open circuit")
         runtime.breaker._entries[key].cooldown_until = 0.0
 
@@ -119,6 +120,56 @@ class SearchRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
             ctor.assert_called_once_with(timeout=6)
             await close_search_runtimes()
         client.aclose.assert_awaited_once()
+
+    async def test_per_chat_settings_copies_reuse_one_runtime(self) -> None:
+        base = Settings(_env_file=None, web_evidence_v2_group_ids="777")
+
+        canary = [get_search_runtime(base.for_chat(777)) for _ in range(5)]
+        self.assertEqual(len(search_runtime._runtimes), 1)
+        self.assertTrue(all(item is canary[0] for item in canary))
+
+        v1 = get_search_runtime(base.for_chat(42))
+        self.assertIs(v1, get_search_runtime(base))
+        self.assertIsNot(v1, canary[0])
+        self.assertEqual(len(search_runtime._runtimes), 2)
+
+        other = get_search_runtime(
+            base.model_copy(update={"search_cache_max_entries": 8})
+        )
+        self.assertEqual(len(search_runtime._runtimes), 3)
+        self.assertEqual(
+            len({canary[0].namespace, v1.namespace, other.namespace}),
+            3,
+            "each runtime needs its own breaker namespace",
+        )
+
+    async def test_breaker_entries_do_not_grow_with_per_chat_copies(self) -> None:
+        base = Settings(
+            _env_file=None,
+            searxng_url="http://searxng:8080",
+            web_evidence_v2_group_ids="777",
+        )
+        searx = AsyncMock(side_effect=RuntimeError("searx down"))
+        ddgs = AsyncMock(return_value=[])
+
+        for index in range(5):
+            await router.route_auto(
+                f"canary-{index}",
+                base.for_chat(777),
+                8,
+                kind="web",
+                result_url_key="url",
+                searx_call=searx,
+                ddgs_call=ddgs,
+            )
+
+        runtime = get_search_runtime(base.for_chat(777))
+        self.assertEqual(
+            {key.namespace for key in runtime.breaker._entries},
+            {runtime.namespace},
+            "breaker keys must not embed a per-request Settings identity",
+        )
+        self.assertLessEqual(len(runtime.breaker._entries), 2)
 
 
 if __name__ == "__main__":

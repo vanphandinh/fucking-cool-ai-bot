@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 from app.config import Settings
 from app.core import orchestrator
 from app.search import ddgs_backend, searxng_backend
+from app.search.runtime import reset_search_runtimes
 
 
 class SearXNGImageSearchTests(unittest.IsolatedAsyncioTestCase):
@@ -137,6 +138,12 @@ class DDGSImageSearchTests(unittest.TestCase):
 
 
 class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # Search runtimes are process-wide and keyed by configuration, so a new
+        # Settings instance no longer implies a cold cache.
+        reset_search_runtimes()
+
     async def test_image_search_removes_irrelevant_icons_and_off_topic_images(self):
         from app.search import image_service
 
