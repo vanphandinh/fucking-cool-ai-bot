@@ -11,8 +11,7 @@ from ..config import Settings
 from .resilience import CircuitBreaker, SearchCache, SingleFlight
 
 # Settings fields the runtime's collaborators are built from. Two Settings
-# objects with equal values describe the same runtime, even when one of them is
-# a per-chat copy produced by ``Settings.for_chat`` for the V2 canary.
+# objects with equal values describe the same runtime.
 _RUNTIME_SETTING_FIELDS = (
     "searxng_url",
     "searxng_timeout_sec",
@@ -20,7 +19,6 @@ _RUNTIME_SETTING_FIELDS = (
     "search_circuit_cooldown_sec",
     "search_rate_limit_cooldown_sec",
     "search_cache_max_entries",
-    "web_evidence_v2_enabled",
 )
 
 RuntimeKey = tuple[object, ...]
@@ -62,11 +60,11 @@ def _runtime_key(settings: Settings) -> RuntimeKey:
 def get_search_runtime(settings: Settings) -> SearchRuntime:
     """Return the process-local runtime for this search configuration.
 
-    Canary chats receive a fresh ``Settings.model_copy`` for every question, so
-    keying by ``id(settings)`` created one runtime per question and never
-    released it. Keying by the values that shape the runtime keeps breaker,
-    cache and single-flight state shared across those copies; ``runtime.settings``
-    retains only the first Settings object seen for a configuration.
+    Settings instances are value objects: two of them with the same search
+    configuration describe the same runtime. Keying by the values that shape the
+    runtime keeps breaker, cache and single-flight state shared instead of
+    creating a new runtime per instance; ``runtime.settings`` retains only the
+    first Settings object seen for a configuration.
     """
     key = _runtime_key(settings)
     current = _runtimes.get(key)

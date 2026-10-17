@@ -11,19 +11,18 @@ Run from the repository root:
 
 ```sh
 python -m unittest tests.test_web_evidence_benchmark -v
-# 40-case PR1-PR3 replay set (frozen; kept for the historical reports)
-python -m scripts.web_evidence_benchmark --config v1 --output docs/benchmarks/web_evidence_v1_baseline.json
+# 40-case replay set
 python -m scripts.web_evidence_benchmark --config v2 --output docs/benchmarks/web_evidence_v2_pr3.json
-# 100-case PR4 comparison set, three arms on the same data
-python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v1.json
-python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_chars.json
+# 100-case replay set
 python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v2.json
-# conditional auto-fetch replay through Orchestrator.ask (mock router + reader)
+# Auto-fetch path
 python -m scripts.web_evidence_benchmark --auto-fetch --output docs/benchmarks/web_evidence_auto_fetch.json
-# PR1/PR2 harness shape (three outputs) for the historical V1 token baseline
-python -m scripts.web_evidence_benchmark --config v1 --legacy-harness --output docs/benchmarks/web_evidence_v1_legacy_harness.json
 python -m scripts.generate_web_evidence_fixtures
 ```
+
+The V1, chars-only and three-arm results below are **historical records** from
+before the V2-only cutover. Their commands no longer exist; the JSON files are
+kept for audit, not as a runnable baseline.
 
 Two synthetic fixtures are checked in, both produced by
 `scripts/generate_web_evidence_fixtures.py`:
@@ -92,10 +91,10 @@ character caps.
 The ranking pass adds ~1.4 ms p50 to `search_ms` (0.372 → 1.735 ms), which is
 negligible next to fetch time. The accuracy/citation numbers remain
 **extractive proxy** results, not model answers; PR3 also cannot measure
-conditional auto-fetch, because the replay never enables it (it needs both
-`WEB_EVIDENCE_V2_ENABLED` and `WEB_AUTO_FETCH_ENABLED`).
+conditional auto-fetch, because the fixed replay never enables it; the separate
+`--auto-fetch` replay measures that path.
 
-## PR4 three-way comparison on the 100-case fixture (2026-10-14)
+## PR4 three-way comparison on the 100-case fixture (2026-10-14, historical pre-cutover)
 
 All three arms run on the same 100 snapshots (`fixture_sha256`
 `51e18938…d9e399`), the same fixed first-two-source fetch policy and the same
@@ -103,7 +102,7 @@ installed code. Only the documented knobs differ:
 
 - **A. `--config v1`** — production V1: 8000-character reader output, 12000-character synthesis cap, no ranking.
 - **B. `--config chars`** — V1 with only the character limits raised, simulated by patching `reader.MAX_CHARS=32000` and the synthesis cap to 32000. This is a comparison arm, **not** a shipped configuration.
-- **C. `--config v2`** — `WEB_EVIDENCE_V2_ENABLED=1`, unchanged 8000-character reader path replaced by bounded excerpt selection, source ranking, and relevance/diversity synthesis packing under the still-12000-character cap.
+- **C. `--config v2`** — bounded excerpt selection, source ranking, and relevance/diversity synthesis packing under the still-12000-character cap.
 
 | Measurement | A. V1 | B. chars-only | C. V2 | C − A | C − B |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -193,18 +192,17 @@ harness artifact, not a production regression**:
    (`NON_WEB_TOOL_OUTPUT`) so that non-web preservation could be measured. The
    V1 equal-split packer divides the body budget by the number of outputs, so a
    fourth output changes each share and the total packed length.
-3. The production V1 packer itself is unchanged: `synthesis_mode="v1"` calls
-   `_compact_tool_outputs_v1`, a byte-for-byte copy of the pre-PR4 algorithm
-   (asserted in `tests/test_web_evidence_v2_hardening.py`).
+3. The V1 packer was deleted at the V2-only cutover; this section is kept only
+   as a historical record of the old harness comparison.
 
-Reproduced deterministically by `--legacy-harness`, which restores the
-three-output shape. `docs/benchmarks/web_evidence_v1_legacy_harness.json`
-reproduces every shared metric of the committed baseline exactly:
-`request_tokens_median_estimate` 728.0, `evidence_recall` 0.4894,
+Before the cutover, `--legacy-harness` reproduced the three-output shape
+deterministically. The flag and the V1 arm were removed with the cutover, so
+`docs/benchmarks/web_evidence_v1_legacy_harness.json` remains the audit record
+of that run: `request_tokens_median_estimate` 728.0, `evidence_recall` 0.4894,
 `answer_accuracy_extractive_proxy` 0.475, `source_recall_at_8` 0.8627,
 `citation_precision_extractive_proxy` 1.0,
-`unsupported_claim_rate_extractive_proxy` 0.0. `tests/test_web_evidence_benchmark.py`
-asserts both medians (728.0 legacy, 743.0 current) so the delta stays explained.
+`unsupported_claim_rate_extractive_proxy` 0.0. Current tests only assert the V2
+pipeline, so these historical medians are no longer part of the live gate.
 
 ## PR2 offline comparison (2026-10-14)
 

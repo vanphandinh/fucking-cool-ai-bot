@@ -1,17 +1,13 @@
-"""Reproducible offline replay of the web evidence pipeline.
+"""Reproducible offline replay of the only web evidence pipeline.
 
 Search and HTTP are replaced with original synthetic snapshots, while actual
-search routing, URL orchestration, generic reader and synthesis packing code
-execute. Three arms are compared on the same fixture and fetch policy:
+search routing, URL orchestration, generic reader and V2 synthesis packing code
+execute. The adaptive evidence selection and source ranking are always active.
 
-``v1``    current production V1 behaviour (8000-char reader, 12000-char synthesis);
-``chars`` V1 with only the character limits raised (simulated configuration);
-``v2``    adaptive evidence selection + source ranking under the V2 flag.
-
-``--auto-fetch`` instead drives ``Orchestrator.ask`` with both V2 flags on and an
-intercepted reader, recording network reads, source count, concurrency and
-evidence delivery. The extractive answer/citation judge is a *proxy*, not an
-evaluation of an LLM.
+``--auto-fetch`` instead drives ``Orchestrator.ask`` with the real auto-fetch
+policy and an intercepted reader, recording network reads, source count,
+concurrency and evidence delivery. The extractive answer/citation judge is a
+*proxy*, not an evaluation of an LLM.
 """
 
 from __future__ import annotations
@@ -38,11 +34,8 @@ from app.search import reader, service, url_service
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = ROOT / "tests/fixtures/web_evidence_v2/cases.json"
-DEFAULT_REPORT = ROOT / "docs/benchmarks/web_evidence_v1_baseline.json"
-CONFIGS = ("v1", "chars", "v2")
-# Simulated "only raise the character limits" arm; not a shipped configuration.
-CHARS_ONLY_READER_LIMIT = 32000
-CHARS_ONLY_SYNTHESIS_LIMIT = 32000
+DEFAULT_REPORT = ROOT / "docs/benchmarks/web_evidence_v2_current.json"
+CONFIGS = ("v2",)
 # Kept out of the web-evidence framing so non-web outputs can be checked for
 # survival independently of page content.
 NON_WEB_TOOL_OUTPUT = "[TOOL_RESULT] Máy tính nội bộ: 7 × 3 = 21"
@@ -116,8 +109,6 @@ async def replay_auto_fetch(
         _env_file=None,
         search_backend="auto",
         searxng_url="https://searx.example.org",
-        web_evidence_v2_enabled=True,
-        web_auto_fetch_enabled=True,
         web_auto_fetch_budget_sec=budget_sec,
     )
     pages = {item["url"]: item for item in case["sources"]}
@@ -248,27 +239,21 @@ def _percentile(samples: list[float], percentile: float) -> float:
 async def replay(
     case: dict,
     *,
-    config: str = "v1",
+    config: str = "v2",
     fixture: Path = FIXTURE,
     include_non_web: bool = True,
 ) -> dict:
-    """Replay fixed policy: search eight, read first two, pack evidence.
+    """Replay fixed policy: search eight, read first two, pack V2 evidence.
 
     The real app lets the LLM choose which URLs to fetch. This deterministic
-    fixed policy isolates retrieval, extraction and packing quality. Conditional
-    auto-fetch is never enabled here, so it stays unmeasured offline.
-
-    ``include_non_web=False`` reproduces the PR1/PR2 harness, which packed only
-    the search listing and the two page reads (three outputs). PR4 added a
-    fourth, non-web tool output to measure non-web preservation, which changes
-    the equal-split V1 share and therefore the estimated median token count.
+    fixed policy isolates retrieval, extraction and packing quality. Auto-fetch
+    is measured separately by ``replay_auto_fetch``.
     """
-    assert config in CONFIGS
+    assert config == "v2"
     settings = Settings(
         _env_file=None,
         search_backend="auto",
         searxng_url="https://searx.example.org",
-        web_evidence_v2_enabled=(config == "v2"),
     )
     pages = {item["url"]: item for item in case["sources"]}
     durations: dict[str, float] = {}
@@ -289,13 +274,10 @@ async def replay(
             raise reader._FetchError("too large")
         return reader._FetchResult(data, "utf-8")
 
-    # The character-limit arm must cover reading too, not only search.
     with ExitStack() as stack:
         stack.enter_context(patch("app.search.searxng_backend.search_searxng", new=searx))
         stack.enter_context(patch("app.search.ddgs_backend.search_ddgs", new=ddgs))
         stack.enter_context(patch("app.search.reader._fetch_limited", new=fake_fetch))
-        if config == "chars":
-            stack.enter_context(patch("app.search.reader.MAX_CHARS", CHARS_ONLY_READER_LIMIT))
 
         start = time.perf_counter()
         results = await service.search(case["query"], settings)
@@ -310,7 +292,7 @@ async def replay(
             read = await url_service.read_url(
                 hit["url"],
                 settings,
-                **({"query": case["query"]} if config == "v2" else {}),
+                query=case["query"],
             )
             if not read.ok:
                 continue
@@ -323,18 +305,11 @@ async def replay(
 
     if include_non_web:
         outputs.append(NON_WEB_TOOL_OUTPUT)
-    synthesis_cap = (
-        CHARS_ONLY_SYNTHESIS_LIMIT if config == "chars" else MAX_SYNTHESIS_EVIDENCE_CHARS
-    )
-    # Arm C uses the adaptive V2 packer; arms A and B keep the historical V1
-    # equal-split packer so the V1 baseline stays comparable across PRs.
-    synthesis_mode = "v2" if config == "v2" else "v1"
     start = time.perf_counter()
     packed = build_fresh_synthesis_messages(
         [ChatMessage("user", (TextPart(case["query"]),))],
         outputs,
-        max_evidence_chars=synthesis_cap,
-        mode=synthesis_mode,
+        max_evidence_chars=MAX_SYNTHESIS_EVIDENCE_CHARS,
     )
     synthesis_text = packed[-1].parts[0].text if packed else ""
     durations["synthesis_ms"] = (time.perf_counter() - start) * 1000
@@ -393,7 +368,7 @@ async def replay(
 async def evaluate(
     cases: list[dict] | None = None,
     *,
-    config: str = "v1",
+    config: str = "v2",
     fixture: Path = FIXTURE,
     include_non_web: bool = True,
 ) -> dict:
@@ -421,11 +396,7 @@ async def evaluate(
     evidence_total = totals("evidence_total")
     return {
         "config": config,
-        "pipeline": {
-            "v1": "V1",
-            "chars": "V1-expanded-character-limits",
-            "v2": "V2-adaptive-evidence",
-        }[config],
+        "pipeline": "V2-adaptive-evidence",
         "case_count": len(rows),
         "category_counts": dict(Counter(row["category"] for row in rows)),
         "fixture": fixture.name,
@@ -434,10 +405,8 @@ async def evaluate(
         "evaluation_method": (
             "offline intercepted search/HTTP; fixed top-two fetch; extractive proxy"
         ),
-        "reader_char_limit": CHARS_ONLY_READER_LIMIT if config == "chars" else reader.MAX_CHARS,
-        "synthesis_char_limit": (
-            CHARS_ONLY_SYNTHESIS_LIMIT if config == "chars" else MAX_SYNTHESIS_EVIDENCE_CHARS
-        ),
+        "reader_char_limit": reader.MAX_CHARS,
+        "synthesis_char_limit": MAX_SYNTHESIS_EVIDENCE_CHARS,
         "network_requests": 0,
         "metrics": {
             "source_recall_at_8": round(totals("source_hits") / totals("source_total"), 4),
@@ -497,10 +466,9 @@ def main() -> None:
     parser.add_argument(
         "--config",
         choices=CONFIGS,
-        default="v1",
-        help="v1 baseline, v1 with raised character limits, or adaptive V2",
+        default="v2",
+        help="V2 adaptive evidence benchmark",
     )
-    parser.add_argument("--v2", action="store_true", help="Alias for --config v2")
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
     parser.add_argument(
         "--auto-fetch",
@@ -510,13 +478,8 @@ def main() -> None:
     parser.add_argument(
         "--auto-fetch-budget-sec", type=float, default=20.0
     )
-    parser.add_argument(
-        "--legacy-harness",
-        action="store_true",
-        help="pack only three outputs, reproducing the PR1/PR2 token baseline",
-    )
     args = parser.parse_args()
-    config = "v2" if args.v2 else args.config
+    config = args.config
     fixture = args.fixture
     if args.auto_fetch:
         report = asyncio.run(
@@ -529,7 +492,6 @@ def main() -> None:
             evaluate(
                 config=config,
                 fixture=fixture,
-                include_non_web=not args.legacy_harness,
             )
         )
     if args.output is not None:

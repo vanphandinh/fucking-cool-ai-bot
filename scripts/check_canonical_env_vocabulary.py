@@ -103,6 +103,10 @@ def scan_repository(root: Path = ROOT) -> tuple[str, ...]:
     hits: list[str] = []
 
     for path in tracked_files(root):
+        # A tracked-but-deleted file is not vocabulary: the deletion is the
+        # intended state until it is staged, so do not fail the scan on it.
+        if not path.is_file():
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:

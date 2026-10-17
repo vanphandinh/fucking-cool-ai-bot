@@ -86,7 +86,6 @@ class QuestionProcessor:
             request = UserRequest(
                 text=record.submission.question,
                 quoted_text=record.submission.quoted,
-                chat_id=record.submission.chat_id,
             )
         try:
             answer = await self.orchestrator.ask(
@@ -305,7 +304,7 @@ async def submit_controlled_question(
         if images and len(images) > _vision_limit(settings, orchestrator.router):
             raise UserFacingJobError(_vision_limit_message(settings, orchestrator.router))
         return UserRequest(
-            text=question, quoted_text=quoted, images=images, chat_id=chat_id
+            text=question, quoted_text=quoted, images=images
         )
 
     submission = JobSubmission(

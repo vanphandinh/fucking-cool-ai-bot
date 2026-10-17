@@ -48,7 +48,6 @@ def pack(outputs: list[str], *, query: str = QUERY, cap: int = MAX_SYNTHESIS_EVI
         [ChatMessage("user", (TextPart(query),))],
         outputs,
         max_evidence_chars=cap,
-        mode="v2",
     )
     return _message_text(messages[-1])
 
@@ -278,33 +277,27 @@ class SynthesisPackingTests(unittest.TestCase):
         self.assertNotIn("IGNORE ALL PRIOR", tail)
         self.assertIn("bỏ qua", tail)
 
-    def test_v2_final_instruction_requires_grounding_but_v1_keeps_original_text(self):
+    def test_final_instruction_requires_grounding(self):
         base = [ChatMessage("user", (TextPart("Xác minh kế hoạch mới nhất"),))]
         tool_output = ["Thông báo chính thức thay đổi kế hoạch vào năm 2026."]
-        v1 = _message_text(build_fresh_synthesis_messages(base, tool_output, mode="v1")[-1])
-        v2 = _message_text(build_fresh_synthesis_messages(base, tool_output, mode="v2")[-1])
-        self.assertNotIn("KIỂM CHỨNG:", v1)
-        self.assertIn("KIỂM CHỨNG:", v2.split(END, 1)[1])
-        self.assertIn("Bác bỏ tin sai không suy ra", v2.split(END, 1)[1])
-        self.assertEqual(_evidence_section(v1), _evidence_section(v2))
+        packed = _message_text(build_fresh_synthesis_messages(base, tool_output)[-1])
+        tail = packed.split(END, 1)[1]
+        self.assertIn("KIỂM CHỨNG:", tail)
+        self.assertIn("Bác bỏ tin sai không suy ra", tail)
 
-    def test_v2_grounding_guidance_is_concise_and_keeps_verification_rules(self):
+    def test_grounding_guidance_is_concise_and_keeps_verification_rules(self):
         """A fixed instruction must not cost more than a useful evidence excerpt."""
         base = [ChatMessage("user", (TextPart("Xác minh kế hoạch cập nhật"),))]
         outputs = ["[WEB EVIDENCE]\nThông báo thay đổi kế hoạch từ nguồn độc lập."]
-        old = _message_text(build_fresh_synthesis_messages(base, outputs, mode="v1")[-1])
-        new = _message_text(build_fresh_synthesis_messages(base, outputs, mode="v2")[-1])
-        guidance = new.split(END, 1)[1]
-        self.assertLessEqual(len(new) - len(old), 300)
+        packed = _message_text(build_fresh_synthesis_messages(base, outputs)[-1])
+        guidance = packed.split(END, 1)[1]
+        self.assertLessEqual(len(guidance), 600)
         self.assertIn("nguồn chính thức", guidance)
         self.assertIn("mâu thuẫn", guidance)
         self.assertIn("không suy ra", guidance)
         self.assertIn("chưa xác minh", guidance)
         # A link the model never retrieved must not be presented as a source.
         self.assertIn("không dẫn URL ngoài dữ liệu nghiên cứu", guidance)
-        self.assertNotIn("không dẫn URL", _message_text(
-            build_fresh_synthesis_messages(base, outputs, mode="v1")[-1]
-        ))
 
     def test_packing_does_not_mutate_tool_outputs(self):
         outputs = [_web_output("https://a.example.org/report", [(1, "H", "x" * 500)])]

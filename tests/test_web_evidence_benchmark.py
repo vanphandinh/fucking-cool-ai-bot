@@ -1,8 +1,8 @@
 """Offline benchmark contract and deterministic replay coverage.
 
-The 40-case fixture stays frozen for the PR1–PR3 reports; the 100-case fixture
-drives the three-arm comparison (V1, V1 with raised character limits, adaptive
-V2). Both files are generated from the same entry lists.
+The 40-case fixture stays frozen for reproducible reports; the 100-case fixture
+drives the V2 coverage checks. Both files are generated from the same entry
+lists.
 """
 
 from __future__ import annotations
@@ -18,9 +18,6 @@ from scripts.generate_web_evidence_fixtures import (
     main as generate_fixtures,
 )
 from scripts.web_evidence_benchmark import (
-    CHARS_ONLY_READER_LIMIT,
-    CHARS_ONLY_SYNTHESIS_LIMIT,
-    CONFIGS,
     FIXTURE_CATEGORIES,
     evaluate,
     evaluate_auto_fetch,
@@ -90,20 +87,11 @@ class WebEvidenceFixturesTests(unittest.TestCase):
 
 
 class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
-    async def test_v2_reaches_buried_conclusion_using_same_fixture(self) -> None:
-        case = next(case for case in load_cases() if case["id"] == "buried-01")
-        baseline = await replay(case)
-        enhanced = await replay(case, config="v2")
-        self.assertEqual(baseline["evidence_hits"], 0)
-        self.assertEqual(enhanced["evidence_hits"], 1)
-        self.assertTrue(enhanced["answer_correct_proxy"])
-
-    async def test_buried_gold_is_not_reached_by_v1_reader(self) -> None:
+    async def test_pipeline_reaches_buried_conclusion(self) -> None:
         case = next(case for case in load_cases() if case["id"] == "buried-01")
         result = await replay(case)
-        self.assertEqual(result["evidence_hits"], 0)
-        self.assertFalse(result["answer_correct_proxy"])
-        self.assertEqual(result["fetch_count"], 2)
+        self.assertEqual(result["evidence_hits"], 1)
+        self.assertTrue(result["answer_correct_proxy"])
 
     async def test_known_answer_is_extracted_from_a_fetched_source(self) -> None:
         case = next(case for case in load_cases() if case["id"] == "fact-01")
@@ -112,24 +100,6 @@ class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["answer_correct_proxy"])
         self.assertEqual(result["unsupported_claims_proxy"], 0)
 
-    async def test_three_arms_differ_on_buried_delivery(self) -> None:
-        case = next(case for case in load_cases(FIXTURE_100) if case["id"] == "buried-01")
-        rows = {
-            config: await replay(case, config=config, fixture=FIXTURE_100)
-            for config in CONFIGS
-        }
-        # V1 never sees the deep section, the raised-limit arm fetches it but its
-        # even split drops it again, and only V2 both fetches and delivers it.
-        self.assertEqual(rows["v1"]["evidence_hits"], 0)
-        self.assertEqual(rows["chars"]["evidence_hits"], 1)
-        self.assertEqual(rows["chars"]["packed_evidence_hits"], 0)
-        self.assertEqual(rows["v2"]["packed_evidence_hits"], 1)
-        self.assertGreater(rows["v2"]["packed_label_count"], 0)
-        self.assertLess(
-            rows["v2"]["estimated_request_tokens"],
-            rows["chars"]["estimated_request_tokens"],
-        )
-
     async def test_report_metrics_are_bounded_and_replayable(self) -> None:
         cases = load_cases()
         first = await evaluate(cases)
@@ -137,7 +107,8 @@ class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["fixture_sha256"], second["fixture_sha256"])
         self.assertEqual(first["case_count"], 40)
         self.assertEqual(first["network_requests"], 0)
-        self.assertEqual(first["config"], "v1")
+        self.assertEqual(first["config"], "v2")
+        self.assertEqual(first["pipeline"], "V2-adaptive-evidence")
         self.assertEqual(first["category_counts"], dict(CATEGORIES))
         self.assertEqual(
             [
@@ -161,31 +132,6 @@ class WebEvidenceReplayTests(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(first["metrics"][name], 1)
         self.assertEqual(first["metrics"]["synthesis_non_web_preservation_rate"], 1.0)
         self.assertIn("real_model_answer_accuracy", first["not_measured"])
-        self.assertIn("conditional_auto_fetch", first["not_measured"])
-
-
-class HarnessTokenBaselineTests(unittest.IsolatedAsyncioTestCase):
-    async def test_v1_token_delta_is_a_harness_artifact(self) -> None:
-        """The 728 -> 743 median shift comes from the added non-web output.
-
-        The production V1 packer is byte-for-byte the pre-PR4 one; only the
-        benchmark context grew a fourth (non-web) tool output so non-web
-        preservation could be measured, which changes the equal-split share.
-        """
-        cases = load_cases()
-        legacy = await evaluate(cases, config="v1", include_non_web=False)
-        current = await evaluate(cases, config="v1", include_non_web=True)
-        self.assertEqual(legacy["harness"], "pr1")
-        self.assertEqual(current["harness"], "pr4")
-        self.assertEqual(
-            legacy["metrics"]["request_tokens_median_estimate"], 728.0
-        )
-        self.assertEqual(
-            current["metrics"]["request_tokens_median_estimate"], 743.0
-        )
-        self.assertEqual(
-            legacy["metrics"]["evidence_recall"], current["metrics"]["evidence_recall"]
-        )
 
 
 class AutoFetchReplayTests(unittest.IsolatedAsyncioTestCase):
@@ -212,35 +158,6 @@ class AutoFetchReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(row["auto_fetch_targets"], 2)
         self.assertLessEqual(row["peak_concurrency"], 2)
         self.assertTrue(row["output_within_cap"])
-
-
-class ThreeArmReplayTests(unittest.IsolatedAsyncioTestCase):
-    async def test_config_arms_only_change_the_documented_knobs(self) -> None:
-        cases = load_cases(FIXTURE_100)[:6]
-        digest = hashlib.sha256(FIXTURE_100.read_bytes()).hexdigest()
-        reports = {
-            config: await evaluate(cases, config=config, fixture=FIXTURE_100)
-            for config in CONFIGS
-        }
-        for config, report in reports.items():
-            self.assertEqual(report["config"], config)
-            self.assertEqual(report["fixture_sha256"], digest)
-            self.assertEqual(report["fixture"], "cases_100.json")
-            self.assertEqual(report["network_requests"], 0)
-            self.assertEqual(report["metrics"]["fetch_count_mean"], 2.0)
-        self.assertEqual(
-            (
-                reports["chars"]["reader_char_limit"],
-                reports["chars"]["synthesis_char_limit"],
-            ),
-            (CHARS_ONLY_READER_LIMIT, CHARS_ONLY_SYNTHESIS_LIMIT),
-        )
-        for config in ("v1", "v2"):
-            self.assertEqual(reports[config]["reader_char_limit"], 8000)
-            self.assertEqual(reports[config]["synthesis_char_limit"], 12000)
-        self.assertTrue(
-            set(reports["v1"]["metrics"]) == set(reports["v2"]["metrics"])
-        )
 
 
 if __name__ == "__main__":

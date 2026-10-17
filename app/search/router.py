@@ -115,9 +115,9 @@ def _meets_minimum(
 ) -> bool:
     """Decide whether an early backend result set is good enough to stop.
 
-    The V2 web policy accepts a backend only when at least two independent
-    domains carry a lexically relevant result (>= 0.20). Image routing and the
-    flag-off V1 path keep the original count-based threshold.
+    The web policy accepts a backend only when at least two independent domains
+    carry a lexically relevant result (>= 0.20). Image routing keeps the original
+    count-based threshold.
     """
     if quality_gate:
         # Independent keyword matches can agree on an obsolete or false claim.
@@ -236,9 +236,9 @@ async def route_auto(
             return []
     runtime = get_search_runtime(settings)
     normalized = _normalize_query(query)
-    # Ranking and the independence gate change web ordering, so V1 and V2
-    # answers for the same query must never share a cache entry.
-    quality_gate = kind == "web" and settings.web_evidence_v2_enabled
+    # Web ranking and the independence gate are the only policy now. The cache
+    # namespace stays explicit so image results never share a web entry.
+    quality_gate = kind == "web"
     verify = quality_gate and (verification_context or verification_intent(normalized))
     cache_key = f"{kind}:{limit}:{normalized}" + (":v2" if quality_gate else "")
     if verify:
@@ -262,8 +262,8 @@ async def route_auto(
         operation_budget = (
             OperationBudget(settings.search_total_timeout_sec) if operations is not None else None
         )
-        # The V2 web path ranks the merged pool and then truncates to ``limit``;
-        # V1 and image keep their original merge cap.
+        # The web path ranks the merged pool and then truncates to ``limit``;
+        # image search keeps its original merge cap.
         pool_limit = limit if not quality_gate else max(limit, limit * _MERGE_POOL_FACTOR)
         attempted: set[str] = set()
         merged: list[dict] = []

@@ -15,7 +15,7 @@ class EvidenceStatusTests(unittest.IsolatedAsyncioTestCase):
             return_value=failure
         )):
             result = await read_url(
-                "https://example.org/spec", Settings(_env_file=None, web_evidence_v2_enabled=True),
+                "https://example.org/spec", Settings(_env_file=None),
                 query="section 15.5.5",
             )
         self.assertFalse(result.ok)

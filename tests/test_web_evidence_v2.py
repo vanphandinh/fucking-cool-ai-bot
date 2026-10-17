@@ -97,29 +97,26 @@ class EvidenceIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.search.reader._fetch_limited", new=fake_fetch):
             result = await read_url(
-                URL, Settings(_env_file=None, web_evidence_v2_enabled=True), query="article"
+                URL, Settings(_env_file=None), query="article"
             )
         self.assertFalse(result.ok)
         self.assertEqual(result.text, "Không tìm được nội dung bài viết.")
 
-    async def test_html_fallback_v2_extracts_buried_and_flag_off_stays_v1(self):
+    async def test_html_fallback_extracts_buried_evidence(self):
         async def fake_fetch(_client, url, max_bytes=reader.MAX_BYTES):
             if url.startswith("https://r.jina.ai/"):
                 raise reader._FetchError("offline")
             return reader._FetchResult(long_html(), "utf-8")
 
         with patch("app.search.reader._fetch_limited", new=fake_fetch):
-            old = await read_url(URL, Settings(_env_file=None), query="Solar capacity megawatts")
-            new = await read_url(
+            result = await read_url(
                 URL,
-                Settings(_env_file=None, web_evidence_v2_enabled=True),
+                Settings(_env_file=None),
                 query="Solar capacity megawatts",
             )
-        self.assertTrue(old.ok)
-        self.assertNotIn("731 megawatts", old.text)
-        self.assertTrue(new.ok)
-        self.assertIn("731 megawatts", new.text)
-        self.assertLessEqual(len(new.text), 5400)
+        self.assertTrue(result.ok)
+        self.assertIn("731 megawatts", result.text)
+        self.assertLessEqual(len(result.text), 5400)
 
     async def test_jina_and_crawl4ai_use_same_evidence_labels(self):
         async def fake_fetch(_client, url, max_bytes=reader.MAX_BYTES):
@@ -132,14 +129,13 @@ class EvidenceIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "utf-8",
             )
 
-        settings = Settings(_env_file=None, web_evidence_v2_enabled=True)
+        settings = Settings(_env_file=None)
         with patch("app.search.reader._fetch_limited", new=fake_fetch):
             jina = await read_url(URL, settings, query="Solar capacity megawatts")
         self.assertIn("731 megawatts", jina.text)
         self.assertIn("[SOURCE 1 / CHUNK", jina.text)
         crawl_settings = Settings(
             _env_file=None,
-            web_evidence_v2_enabled=True,
             crawl4ai_enabled=True,
             crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
             crawl4ai_api_token="secret",
@@ -153,7 +149,7 @@ class EvidenceIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[SOURCE 1 / CHUNK", result.text)
 
     async def test_x_specialized_and_ssrf_guard_are_unchanged(self):
-        settings = Settings(_env_file=None, web_evidence_v2_enabled=True)
+        settings = Settings(_env_file=None)
         blocked = await read_url("http://127.0.0.1/private", settings)
         self.assertFalse(blocked.ok)
         with patch(

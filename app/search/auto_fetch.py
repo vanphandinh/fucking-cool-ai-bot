@@ -1,10 +1,10 @@
-"""Conditional auto-fetch of top-ranked search sources under one budget.
+"""Auto-fetch of top-ranked search sources under one shared budget.
 
-The policy is deliberately narrow: both feature flags must be on, the user must
-not have supplied a URL, at most ``web_auto_fetch_max_sources`` sources are read
-in parallel, and every burst shares one question-scoped wall clock. A source
-that could not be read is reported as missing evidence; nothing here claims a
-page was read when it was not.
+The policy is deliberately narrow: the user must not have supplied a URL, at
+most ``web_auto_fetch_max_sources`` sources are read in parallel, and every
+burst shares one question-scoped wall clock. A source that could not be read is
+reported as missing evidence; nothing here claims a page was read when it was
+not.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from collections.abc import Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from ..config import Settings
 from ..core.source_policy import canonicalize_source_url, source_site_key
 from .evidence import neutralize_untrusted
 from .source_ranking import (
@@ -121,11 +120,6 @@ class AutoFetchCoordinator:
         """Bound concurrent auto-fetch reads for the whole question."""
         async with self._slots:
             yield
-
-
-def auto_fetch_active(settings: Settings) -> bool:
-    """Both flags are required; turning either one off is the rollback path."""
-    return bool(settings.web_evidence_v2_enabled and settings.web_auto_fetch_enabled)
 
 
 def select_targets(

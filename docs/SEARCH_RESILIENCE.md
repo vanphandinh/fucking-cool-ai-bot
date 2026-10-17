@@ -94,15 +94,14 @@ Rate limit/429 mở circuit ngay với cooldown dài hơn. Riêng 429 của mộ
 
 ## Partial top-up
 
-- Web (V1, `WEB_EVIDENCE_V2_ENABLED=false`): SearXNG trả 2+ usable results thì return ngay. Nếu chỉ có 1 result, giữ result đó và gọi DDGS để top-up.
-- Web (V2): SearXNG chỉ được chấp nhận sớm khi có ít nhất 2 result từ 2 domain độc lập đạt lexical score >= 0,20; nếu không thì DDGS top-up trong cùng timeout budget. Chi tiết ở mục dưới.
+- Web: SearXNG chỉ được chấp nhận sớm khi có ít nhất 2 result từ 2 domain độc lập đạt lexical score >= 0,20; nếu không thì DDGS top-up trong cùng timeout budget. Chi tiết ở mục dưới.
 - Image: 1 usable SearXNG result là đủ; không top-up để giảm upstream traffic.
 - Merge ưu tiên result SearXNG trước và dedupe theo canonical URL.
 
-## Web Evidence V2 policy (flag-gated)
+## Web Evidence V2 policy
 
-Chỉ áp dụng cho web search và chỉ khi `WEB_EVIDENCE_V2_ENABLED=1`; image search và
-X/Twitter resolver không đi qua policy này.
+Áp dụng cho web search; image search và X/Twitter resolver không đi qua policy này.
+Không còn cờ bật/tắt hay nhánh V1.
 
 - **Source ranking:** query, title và snippet được chuẩn hóa Unicode/casefold có gấp
   dấu tiếng Việt, bỏ stopwords; score = (2 × title coverage + 1 × snippet coverage)/3.
@@ -115,10 +114,9 @@ X/Twitter resolver không đi qua policy này.
 - **Quality gate:** ở `SEARCH_BACKEND=auto`, SearXNG chỉ được chấp nhận sớm khi có
   >= 2 result từ 2 domain độc lập (eTLD+1) đạt score >= 0,20. Nếu không, DDGS top-up
   một lần trong cùng budget, rồi merge/rank lại.
-- **Cache key tách V1/V2:** entry V2 dùng key `kind:limit:query:v2` nên bật/tắt flag
-  không trả lại ordering hoặc quyết định gate của chế độ kia.
-- **Conditional auto-fetch:** chỉ khi cả `WEB_EVIDENCE_V2_ENABLED` và
-  `WEB_AUTO_FETCH_ENABLED` bật. Sau một lần `web_search`, hệ thống tự đọc tối đa
+- **Cache namespace:** entry web dùng key `kind:limit:query:v2` để không trộn với
+  image cache; không còn entry V1.
+- **Auto-fetch luôn bật:** sau một lần `web_search`, hệ thống tự đọc tối đa
   `WEB_AUTO_FETCH_MAX_SOURCES` (<= 2) nguồn xếp hạng cao nhất mà snippet chưa đủ và
   chưa được đọc trong request.
 - **Request-scoped coordinator:** mọi burst `web_search` trong cùng một câu hỏi chia
@@ -139,17 +137,14 @@ X/Twitter resolver không đi qua policy này.
   tự (title/snippet bị cắt, URL và nhãn nguồn giữ nguyên) để dành tối thiểu 2.400 ký tự
   cho bằng chứng auto-fetch; không có auto-fetch thì listing được dùng tối đa ngân sách
   còn lại. Tổng vẫn <= 6.000 ký tự/tool; không nâng cap.
-- **Rollback:** đặt một trong hai flag về `0` là quay lại hành vi V1 (routing, ranking,
-  ordering và cache key V1).
+- **Không rollback bằng flag:** không còn nhánh V1; rollback duy nhất là redeploy
+  image/commit trước.
 
 ## Synthesis evidence packing
 
 Fresh Synthesis (khi tool budget đóng) gửi bằng chứng trong khung dữ liệu không đáng
-tin, giới hạn **12.000 ký tự** tổng. `ChatRequest.synthesis_mode` là request-scoped và
-**mặc định `v1`**: `v1` dùng đúng thuật toán chia đều trước PR4
-(`_compact_tool_outputs_v1`) — đây là đường rollback khi tắt feature flag; `v2` dùng
-packing theo relevance/đa dạng nguồn mô tả dưới đây. Không có global flag dùng chung
-giữa các request. Cách đóng gói của `v2`:
+tin, giới hạn **12.000 ký tự** tổng. Packer V2 theo relevance/đa dạng nguồn là duy nhất;
+không còn `synthesis_mode` hay packer equal-split V1. Cách đóng gói:
 
 - Output của reader (`[SOURCE n / CHUNK m]`, `[AUTO SOURCE]`) được cắt thành từng block
   theo label, mỗi block giữ nguyên dòng label + URL, `Heading` và trạng thái đọc.
@@ -197,7 +192,7 @@ Nếu production đã có `searxng/settings.yml`, phải merge thay đổi từ 
 
 ## Connection lifecycle
 
-SearXNG dùng shared `httpx.AsyncClient` theo cấu hình search (`searxng_url`, timeout, circuit breaker, cache size) để reuse keep-alive/connection pool. Runtime được cache theo các giá trị đó, không theo `id(Settings)`, nên các bản `Settings` copy cho canary chat dùng chung breaker/cache/single-flight thay vì tạo runtime mới mỗi câu hỏi. `app.main` gọi `close_search_runtimes()` khi shutdown để đóng client deterministic.
+SearXNG dùng shared `httpx.AsyncClient` theo cấu hình search (`searxng_url`, timeout, circuit breaker, cache size) để reuse keep-alive/connection pool. Runtime được cache theo các giá trị đó, không theo `id(Settings)`, nên các instance `Settings` tương đương dùng chung breaker/cache/single-flight thay vì tạo runtime mới cho mỗi instance. `app.main` gọi `close_search_runtimes()` khi shutdown để đóng client deterministic.
 
 Crawl4AI cũng dùng một shared `httpx.AsyncClient` process-local với `trust_env=False`; `app.main` gọi `close_crawl4ai_client()` khi shutdown.
 

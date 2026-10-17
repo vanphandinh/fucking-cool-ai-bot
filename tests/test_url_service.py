@@ -51,7 +51,8 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         generic.assert_not_awaited()
         self.assertTrue(result.ok)
         self.assertEqual(result.backend, "crawl4ai")
-        self.assertEqual(result.text, "rendered markdown")
+        self.assertTrue(result.text.startswith("[WEB EVIDENCE"))
+        self.assertIn("rendered markdown", result.text)
 
     async def test_crawl4ai_failure_falls_back_generic_exactly_once(self):
         settings = Settings(_env_file=None, crawl4ai_enabled=True,
@@ -81,7 +82,10 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
                     result = await read_url("https://example.org", settings)
                 crawl.assert_awaited_once()
                 generic.assert_awaited_once_with(
-                    "https://example.org", timeout=settings.request_timeout_sec
+                    "https://example.org",
+                    timeout=settings.request_timeout_sec,
+                    query="",
+                    max_extracted_chars=settings.web_evidence_max_extracted_chars,
                 )
                 self.assertTrue(result.ok)
                 self.assertEqual(result.backend, "generic_reader")
@@ -99,7 +103,10 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await read_url("https://example.org", settings)
         crawl.assert_awaited_once_with("https://example.org", settings)
         generic.assert_awaited_once_with(
-            "https://example.org", timeout=settings.request_timeout_sec
+            "https://example.org",
+            timeout=settings.request_timeout_sec,
+            query="",
+            max_extracted_chars=settings.web_evidence_max_extracted_chars,
         )
         self.assertTrue(result.ok)
         self.assertEqual(result.backend, "generic_reader")

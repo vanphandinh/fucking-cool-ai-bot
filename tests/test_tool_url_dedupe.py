@@ -66,7 +66,7 @@ class ToolUrlDedupeTests(unittest.IsolatedAsyncioTestCase):
         release = asyncio.Event()
         calls = 0
 
-        async def read_url(url, settings, mode, *, operations=None):
+        async def read_url(url, settings, mode, *, operations=None, query=""):
             nonlocal calls
             calls += 1
             started.set()

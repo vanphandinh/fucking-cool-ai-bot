@@ -17,8 +17,8 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 - [`CRAWL4AI_INTEGRATION.md`](CRAWL4AI_INTEGRATION.md) — optional Crawl4AI URL rendering backend, gated production activation and rollback runbook.
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — strict `.env` synchronization, canonical provider contract và secret-file permissions.
-- [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — chạy lại toàn bộ gate trên VPS, deploy/rollback và bật từng feature flag.
-- [`WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md) — bộ 21 câu live smoke và cách chấm V1/V2 (`scripts/web_evidence_live_smoke.py` đọc trực tiếp file này).
+- [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — chạy lại toàn bộ gate trên VPS, redeploy và các điểm kiểm tra sau cutover.
+- [`WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md) — bộ 21 câu live smoke V2 và cách chấm (`scripts/web_evidence_live_smoke.py` đọc trực tiếp file này).
 - [`benchmarks/README.md`](benchmarks/README.md) — offline replay, fixture và giới hạn của các proxy metric.
 
 ## Acceptance record
@@ -48,12 +48,12 @@ Active documentation không được dạy superseded environment/provider contr
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
 - Controlled multipart delivery có terminal `PARTIALLY_DELIVERED` khi Telegram xác nhận một số phần, nhưng chưa đủ; lưu prefix có đánh dấu và chỉ đếm partial metric. Không có auto-replay.
 - Conversation memory là in-memory, tối đa `MAX_CONTEXT_CONVERSATIONS=2048` keys (LRU), TTL từ truy cập cuối `CONTEXT_TTL_SEC=86400`; rate-limit records được dọn dần theo thời gian bằng monotonic clock.
-- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy. Khi `WEB_EVIDENCE_V2_ENABLED=1`, web result được dedupe canonical, xếp hạng lexical (title×2/snippet×1), đa dạng domain, và SearXNG chỉ được chấp nhận sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20; cache key tách V1/V2 (`:v2`).
-- `WEB_AUTO_FETCH_ENABLED=1` chỉ có hiệu lực khi V2 bật: tự đọc tối đa 2 nguồn xếp hạng cao nhất, song song <= 2, budget `WEB_AUTO_FETCH_BUDGET_SEC` (<= 20s) dùng chung cả câu hỏi và bị chặn bởi budget question/job; bỏ qua khi user đã đưa URL; nguồn lỗi được báo đúng trạng thái. Cả hai flag mặc định `false` là đường rollback.
-- Fresh Synthesis đóng gói chứng cứ web theo relevance + đa dạng nguồn, giữ URL/chunk label; output của tool không thuộc web giữ thứ tự và ngân sách riêng. `ChatRequest.synthesis_mode` là request-scoped, **mặc định `v1`** (thuật toán chia đều trước PR4, đường rollback khi tắt flag); `v2` mới dùng packing thích ứng. Cap không đổi: 6.000 ký tự/tool và 12.000 ký tự/synthesis.
+- `SEARCH_BACKEND=auto` ưu tiên SearXNG rồi fallback DDGS theo bounded resilience policy. Web result luôn được dedupe canonical, xếp hạng lexical (title×2/snippet×1), đa dạng domain, và SearXNG chỉ được chấp nhận sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20; cache web dùng namespace `:v2`.
+- Auto-fetch luôn bật: tự đọc tối đa 2 nguồn xếp hạng cao nhất, song song <= 2, budget `WEB_AUTO_FETCH_BUDGET_SEC` (<= 20s) dùng chung cả câu hỏi và bị chặn bởi budget question/job; bỏ qua khi user đã đưa URL; nguồn lỗi được báo đúng trạng thái.
+- Fresh Synthesis luôn đóng gói chứng cứ web theo relevance + đa dạng nguồn, giữ URL/chunk label; output của tool không thuộc web giữ thứ tự và ngân sách riêng. Packer V2 và instruction grounding là duy nhất; không còn `synthesis_mode` hay packer equal-split V1. Cap không đổi: 6.000 ký tự/tool và 12.000 ký tự/synthesis.
 - Auto-fetch dùng một coordinator request-scoped cho cả câu hỏi: deadline monotonic, reservation canonical URL bằng lock (tổng <= 2 nguồn dù có nhiều `web_search` đồng thời) và semaphore 2 lượt đọc song song. Delimiter hệ thống trong nội dung không đáng tin bị vô hiệu hóa (chống prompt injection/đóng khung giả).
 - Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
-- `.env.example` là complete supported key schema. `scripts/sync_env.py` không migrate/infer/rename/copy key values; unknown `.env` assignments làm sync exit `2` trước rewrite.
+- `.env.example` là complete supported key schema. `scripts/sync_env.py` không migrate/infer/rename/copy key values; unknown `.env` assignments làm sync exit `2` trước rewrite. Ba key đã retire — `WEB_EVIDENCE_V2_ENABLED`, `WEB_EVIDENCE_V2_GROUP_IDS`, `WEB_AUTO_FETCH_ENABLED` — phải bị xóa khỏi `.env` trước khi sync.
 - Operational provider rollback là Chainnode-only bằng `TEXT_PROVIDER_ORDER=chainnode` và `VISION_PROVIDER_ORDER=chainnode`.
 
 ## Documentation sync checklist

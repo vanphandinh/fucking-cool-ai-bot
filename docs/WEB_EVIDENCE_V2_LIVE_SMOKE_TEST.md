@@ -5,10 +5,10 @@ Kết quả chạy model thật (2026-10-16) và verdict phát hành nằm ở
 và [QUALITY_EVALUATION.md](acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md).
 V2 hiện **chưa đạt điều kiện pilot** (Q6 sai 3/3 lượt, Q15 claim phụ sai).
 
-**Mục đích:** so sánh V1 và V2 trên câu hỏi thực tế, có provider và mạng. Tài liệu này
-là **bộ test + hướng dẫn**, không phải kết quả. Phiên tạo tài liệu (2026-10-14) chạy
-**offline, không có provider** nên chất lượng model thật vẫn là **NOT MEASURED** — các
-con số benchmark trong repo là proxy offline, không thay thế được bước này.
+**Mục đích:** chạy bộ 21 câu trên pipeline V2 duy nhất, có provider và mạng thật. Tài liệu
+này là **bộ test + hướng dẫn**, không phải kết quả. Các lần chạy cũ (2026-10-14/16) là hồ
+sơ lịch sử; chất lượng model thật sau cutover vẫn là **NOT MEASURED** — các con số benchmark
+trong repo là proxy offline, không thay thế được bước này.
 
 > Không giả lập kết quả. Nếu chưa có provider/mạng, cứ để nguyên trạng thái
 > `PENDING LIVE TEST` và chạy khi môi trường sẵn sàng.
@@ -16,20 +16,16 @@ con số benchmark trong repo là proxy offline, không thay thế được bư�
 ## 1. Chuẩn bị
 
 1. Cấu hình provider trong `.env` (không commit secret).
-2. Chạy **V1** trước: để mặc định an toàn, khởi động lại bot theo cách triển khai hiện tại.
+2. Xóa ba key đã retire khỏi `.env`, chạy `python scripts/sync_env.py`, rồi redeploy bot.
    ```env
-   WEB_EVIDENCE_V2_ENABLED=false
-   WEB_AUTO_FETCH_ENABLED=false
+   WEB_EVIDENCE_MAX_EXTRACTED_CHARS=120000
+   WEB_AUTO_FETCH_MAX_SOURCES=2
+   WEB_AUTO_FETCH_BUDGET_SEC=20
    ```
-3. Chạy **V2** sau: bật cả hai flag rồi khởi động lại bot (giữ nguyên model, nhiệt độ,
-   `SEARCH_BACKEND`, timeout giữa hai lượt để so sánh tương đương).
-   ```env
-   WEB_EVIDENCE_V2_ENABLED=true
-   WEB_AUTO_FETCH_ENABLED=true
-   ```
+3. Giữ nguyên model, nhiệt độ, `SEARCH_BACKEND` và timeout trong suốt lượt chạy.
 
-Chạy cùng 21 câu cho cả hai cấu hình, ghi lại: câu trả lời, nguồn/dẫn chứng, thời gian
-phản hồi, lỗi timeout/runtime. Đổi thứ tự V1/V2 giữa các câu nếu muốn giảm thiên lệch.
+Chạy 21 câu một lần trên V2, ghi lại: câu trả lời, nguồn/dẫn chứng, thời gian phản hồi,
+lỗi timeout/runtime. Không còn lượt V1 để so sánh.
 
 ## 2. Bộ 21 câu hỏi
 
@@ -78,9 +74,9 @@ Nhóm F — URL trực tiếp, image search và X resolver (3):
 19. Đọc trực tiếp URL https://example.com và cho biết trang nói gì (kiểm tra đường
     `fetch_url` trực tiếp; URL cố định để tái lập).
 20. Dùng image search cho truy vấn “Eiffel Tower” và mô tả 1–2 kết quả (kiểm tra đường
-    image search giữ nguyên hành vi V1).
+    image search không đổi).
 21. Đọc một URL X/Twitter status cụ thể bằng `mode=x_thread` và tóm tắt nội dung
-    (kiểm tra X resolver giữ nguyên hành vi V1).
+    (kiểm tra X resolver không đổi).
 
 ## 3. Cách chấm
 
@@ -93,28 +89,24 @@ Mỗi câu chấm 4 tiêu chí, thang 0–1, kèm ghi chú ngắn:
 | Không bịa | Không có số liệu/khẳng định không xuất hiện trong nguồn |
 | Xử lý thiếu bằng chứng | Nhóm E: nói rõ không đủ dữ liệu thay vì bịa |
 
-Ghi riêng: timeout, lỗi runtime, thời gian phản hồi (giây) mỗi câu cho V1 và V2.
+Ghi riêng: timeout, lỗi runtime, thời gian phản hồi (giây) mỗi câu.
 
 ## 4. Ngưỡng GO đề xuất (dự án cá nhân)
 
 - Ít nhất **18/21** câu V2 đạt yêu cầu.
-- Số câu đúng của V2 **không thấp hơn** V1.
 - **Không** có lỗi bảo mật hoặc prompt injection nghiêm trọng (đặc biệt nhóm B/E).
 - **Không** có lỗi hồi quy quan trọng (timeout/runtime tăng bất thường).
 - Toàn bộ test tự động vẫn pass.
 
 Đây là ngưỡng vận hành thực dụng, không phải kết luận thống kê về chất lượng model.
 
-## 5. Bật/tắt và rollback
+## 5. Vận hành và rollback
 
-Bật V2: đặt cả hai flag `true` rồi khởi động lại bot; quan sát 48–72 giờ (độ chính xác,
-trích dẫn sai, timeout, lỗi đọc trang, mức dùng tài nguyên).
-
-Rollback: đặt cả hai flag `false` rồi khởi động lại bot. Cache V1/V2 tách namespace
-(`:v2`) nên không lẫn kết quả.
+Sau cutover, quan sát 48–72 giờ (độ chính xác, trích dẫn sai, timeout, lỗi đọc trang, mức
+dùng tài nguyên). Không có cờ để tắt V2; rollback duy nhất là redeploy image/commit trước.
 
 ## 6. Điều kiện hoàn thành
 
-Chỉ đánh dấu “sẵn sàng dùng V2” khi bộ 21 câu đạt ngưỡng GO ở mục 4 **và** test tự động
-pass. Nếu thiếu provider/mạng, giữ trạng thái **hoàn thiện offline, chờ kiểm tra thực tế**
-(`PENDING LIVE TEST`) và không tuyên bố chất lượng production.
+Chỉ đánh dấu “V2 ổn định sau cutover” khi bộ 21 câu đạt ngưỡng GO ở mục 4 **và** test tự
+động pass. Nếu thiếu provider/mạng, giữ trạng thái **hoàn thiện offline, chờ kiểm tra thực
+tế** (`PENDING LIVE TEST`) và không tuyên bố chất lượng production.

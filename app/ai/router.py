@@ -134,11 +134,10 @@ def _accumulate_usage(state: _RequestState, usage: Mapping[str, int] | None) -> 
 
 
 def _synthesis_messages(state: _RequestState) -> list[ChatMessage]:
-    """Build the no-tool synthesis context using the request's own mode."""
+    """Build the no-tool synthesis context with the V2 packer."""
     return build_fresh_synthesis_messages(
         state.base_request.messages,
         state.tool_outputs,
-        mode=state.base_request.synthesis_mode,
     )
 
 
@@ -437,7 +436,6 @@ class AIProviderRouter:
         portable_base_request = ChatRequest(
             messages=portable_base_messages,
             tools=request.tools,
-            synthesis_mode=request.synthesis_mode,
         )
         state = _RequestState(
             base_request=portable_base_request,

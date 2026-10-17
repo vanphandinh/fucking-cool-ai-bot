@@ -140,11 +140,14 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             text="evidence",
         )
 
-        async def controlled_read(url, current_settings, mode="auto", *, operations=None):
+        async def controlled_read(
+            url, current_settings, mode="auto", *, operations=None, query=""
+        ):
             self.assertEqual(url, "https://example.com")
             self.assertIs(current_settings, settings)
             self.assertEqual(mode, "auto")
             self.assertIsNotNone(operations)
+            self.assertEqual(query, "q")
 
             async def leaf():
                 operations.control.remaining = 0
@@ -229,10 +232,13 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         second_boundary = asyncio.Event()
         final_answers = []
 
-        async def controlled_read(url, current_settings, mode="auto", *, operations=None):
+        async def controlled_read(
+            url, current_settings, mode="auto", *, operations=None, query=""
+        ):
             self.assertIs(current_settings, settings)
             self.assertEqual(mode, "auto")
             self.assertIsNotNone(operations)
+            self.assertEqual(query, "research")
             fetch_counts[url] += 1
 
             async def leaf():
@@ -346,11 +352,14 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         fetch_count = 0
         final_answers = []
 
-        async def controlled_read(url, current_settings, mode="auto", *, operations=None):
+        async def controlled_read(
+            url, current_settings, mode="auto", *, operations=None, query=""
+        ):
             nonlocal fetch_count
             self.assertIs(current_settings, settings)
             self.assertEqual(mode, "auto")
             self.assertIsNotNone(operations)
+            self.assertEqual(query, "research")
             fetch_count += 1
             call_number = fetch_count
 

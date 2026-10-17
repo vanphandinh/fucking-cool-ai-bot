@@ -1,7 +1,7 @@
-"""Run the documented V1/V2 questions against configured real model providers.
+"""Run the documented V2 questions against configured real model providers.
 
 This intentionally bypasses Telegram polling and records unscored answers for
-independent source/citation review. It never edits .env or feature flags on disk.
+independent source/citation review. It never edits .env on disk.
 """
 
 from __future__ import annotations
@@ -166,13 +166,13 @@ def _cited_urls(answer_text: str) -> list[str]:
 
 
 async def run(args: argparse.Namespace, records: list[dict]) -> int:
-    modes = ("v1", "v2") if args.mode == "both" else (args.mode,)
+    modes = ("v2",)
     report: dict = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
         "question_ids": [record["id"] for record in records],
         "x_status_url": args.x_url,
-        "v2_auto_fetch_enabled": not args.no_auto_fetch,
+        "auto_fetch": True,
         "quality_verdict": "NOT MEASURED",
         "token_usage_note": _TOKEN_NOTE,
         "results": [],
@@ -180,11 +180,7 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
     exit_code = 0
     for mode in modes:
         await close_search_runtimes()
-        enabled = mode == "v2"
-        settings = Settings(
-            web_evidence_v2_enabled=enabled,
-            web_auto_fetch_enabled=enabled and not args.no_auto_fetch,
-        )
+        settings = Settings()
         router = build_provider_router(settings)
         if not router.configured_provider_names(False):
             raise RuntimeError("No usable text model: check provider keys and model in .env")
@@ -215,8 +211,8 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                     "mode": mode,
                     "category": record["category"],
                     "question": question,
-                    "web_evidence_v2_enabled": enabled,
-                    "web_auto_fetch_enabled": mode == "v2" and not args.no_auto_fetch,
+                    "pipeline": "v2",
+                    "auto_fetch": True,
                     "provider_models_configured": configured_models,
                 }
                 try:
@@ -227,8 +223,7 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                             orchestrator.ask(question), args.timeout
                         )
                     diagnostics = answer.citation_diagnostics
-                    # V1 never invokes the guard: an absent key stays None.
-                    row["guard_allowed_urls"] = guard_spies.get(spy_key)  # None for V1
+                    row["guard_allowed_urls"] = guard_spies.get(spy_key)
                     row.update({
                         "status": "completed",
                         "provider": answer.provider,
@@ -245,9 +240,7 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                         "images_count": len(answer.images),
                         "fallbacks": answer.fallbacks,
                         "citation_diagnostics": (
-                            diagnostics.as_dict()
-                            if diagnostics is not None
-                            else None  # V1 path never rewrites the answer
+                            diagnostics.as_dict() if diagnostics is not None else None
                         ),
                         "provider_token_usage": (
                             dict(answer.usage) if answer.usage else _TOKEN_NOTE
@@ -302,16 +295,10 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("v1", "v2", "both"), default="both")
     parser.add_argument("--x-url", default=DEFAULT_X_URL)
     parser.add_argument(
         "--questions-file", type=Path, default=None,
         help="optional JSON array of custom questions (id, question, category, rubric)",
-    )
-    parser.add_argument(
-        "--no-auto-fetch",
-        action="store_true",
-        help="compare V2 evidence/synthesis with automatic source reads disabled",
     )
     parser.add_argument(
         "--ids",

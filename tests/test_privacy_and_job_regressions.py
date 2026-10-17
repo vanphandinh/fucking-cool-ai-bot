@@ -301,7 +301,6 @@ class QuestionProcessorPrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
                 question="safe question",
                 quoted=None,
                 history=[],
-                chat_id=-100,
             ),
         )
 

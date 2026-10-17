@@ -105,31 +105,28 @@ class WebSearchLimitEnforcementTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(result), service.MAX_RESULTS)
 
     async def test_route_auto_direct_web_calls_respect_cap_and_zero(self):
-        for enabled in (False, True):
-            with self.subTest(web_evidence_v2_enabled=enabled):
-                settings = Settings(
-                    _env_file=None,
-                    search_backend="auto",
-                    web_evidence_v2_enabled=enabled,
-                )
-                seen = []
+        settings = Settings(
+            _env_file=None,
+            search_backend="auto",
+        )
+        seen = []
 
-                async def overreturn(query, cfg, limit):
-                    seen.append(limit)
-                    return _hits(100)
+        async def overreturn(query, cfg, limit):
+            seen.append(limit)
+            return _hits(100)
 
-                options = dict(
-                    kind="web",
-                    result_url_key="url",
-                    searx_call=None,
-                    ddgs_call=overreturn,
-                )
-                result = await route_auto("direct web cap", settings, 100, **options)
-                self.assertEqual(seen, [service.MAX_RESULTS])
-                self.assertEqual(len(result), service.MAX_RESULTS)
-                empty = await route_auto("direct web zero", settings, 0, **options)
-                self.assertEqual(empty, [])
-                self.assertEqual(seen, [service.MAX_RESULTS])
+        options = dict(
+            kind="web",
+            result_url_key="url",
+            searx_call=None,
+            ddgs_call=overreturn,
+        )
+        result = await route_auto("direct web cap", settings, 100, **options)
+        self.assertEqual(seen, [service.MAX_RESULTS])
+        self.assertEqual(len(result), service.MAX_RESULTS)
+        empty = await route_auto("direct web zero", settings, 0, **options)
+        self.assertEqual(empty, [])
+        self.assertEqual(seen, [service.MAX_RESULTS])
 
     async def test_searxng_branch_is_clamped_at_the_same_boundary(self):
         settings = Settings(
@@ -154,7 +151,6 @@ class WebSearchLimitEnforcementTests(unittest.IsolatedAsyncioTestCase):
             _env_file=None,
             search_backend="auto",
             searxng_url="https://searx.example.org",
-            web_evidence_v2_enabled=True,
         )
         flood = [
             {

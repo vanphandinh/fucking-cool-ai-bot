@@ -2,8 +2,7 @@
 
 The V2 web policy must rank by relevance, dedupe canonical URLs, interleave
 domains, and only accept a backend early when two independent domains carry a
-relevant result. Image search, the X resolver and the flag-off V1 path keep
-their previous behaviour.
+relevant result. Image search and the X resolver keep their previous behaviour.
 """
 
 from __future__ import annotations
@@ -338,7 +337,7 @@ class IndependenceGateTests(unittest.TestCase):
 
 
 class MergePoolTests(unittest.TestCase):
-    """The V2 candidate pool must keep distinct pages ahead of extra excerpts."""
+    """The web candidate pool must keep distinct pages ahead of extra excerpts."""
 
     def _merge(self, current, incoming, *, limit, keep=True):
         return router._merge_results(
@@ -369,7 +368,7 @@ class MergePoolTests(unittest.TestCase):
         self.assertEqual([item["url"] for item in pool], [url, url])
         self.assertEqual(pool[1]["title"], QUERY)
 
-    def test_flag_off_keeps_first_hit_wins_without_extra_excerpts(self):
+    def test_image_merge_keeps_first_hit_without_extra_excerpts(self):
         url = "https://city.example.org/advisory"
         pool = self._merge(
             [_hit(url, "City homepage", "Welcome")],
@@ -417,7 +416,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
             results = await service.search(
-                query, self._settings(web_evidence_v2_enabled=True),
+                query, self._settings(),
             )
         ddgs.assert_awaited_once()
         self.assertEqual(len(results), 2)
@@ -452,7 +451,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
             results = await service.search(
-                query, self._settings(web_evidence_v2_enabled=True)
+                query, self._settings()
             )
 
         ddgs.assert_not_awaited()
@@ -475,7 +474,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         diverse = _hit("https://independent.example.net/report", query, query)
         searx = AsyncMock(return_value=flood)
         ddgs = AsyncMock(return_value=[diverse])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -508,7 +507,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         ):
             results = await service.search(
                 query,
-                self._settings(web_evidence_v2_enabled=True),
+                self._settings(),
                 verification_context=True,
             )
         ddgs.assert_awaited_once()
@@ -523,7 +522,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         ddgs = AsyncMock(return_value=[_hit("https://other.example.net/1", "", QUERY)])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -547,7 +546,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         ddgs = AsyncMock(return_value=[])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -564,7 +563,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         ddgs = AsyncMock(return_value=[_hit("https://other.example.net/1", QUERY)])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -573,11 +572,12 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         ddgs.assert_awaited_once()
         self.assertEqual([item["url"] for item in results][0], "https://other.example.net/1")
 
-    async def test_flag_off_keeps_v1_count_threshold_and_order(self):
+    async def test_reranks_backend_order_by_relevance(self):
         searx = AsyncMock(
             return_value=[
-                _hit("https://only.example.com/irrelevant", "Danh mục chung"),
-                _hit("https://only.example.com/relevant", QUERY),
+                _hit("https://catalog.example.com/intro", "Danh mục chung"),
+                _hit("https://bulletin.example.net/report", QUERY),
+                _hit("https://news.example.com/report", QUERY),
             ]
         )
         ddgs = AsyncMock(return_value=[])
@@ -587,32 +587,11 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
             results = await service.search(QUERY, settings)
-        ddgs.assert_not_awaited()
-        self.assertEqual(
-            [item["url"] for item in results],
-            ["https://only.example.com/irrelevant", "https://only.example.com/relevant"],
-        )
-
-    async def test_v2_reranks_backend_order_by_relevance(self):
-        searx = AsyncMock(
-            return_value=[
-                _hit("https://catalog.example.com/intro", "Danh mục chung"),
-                _hit("https://bulletin.example.net/report", QUERY),
-                _hit("https://news.example.com/report", QUERY),
-            ]
-        )
-        ddgs = AsyncMock(return_value=[])
-        settings = self._settings(web_evidence_v2_enabled=True)
-        with (
-            patch("app.search.searxng_backend.search_searxng", new=searx),
-            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
-        ):
-            results = await service.search(QUERY, settings)
         self.assertEqual(results[0]["url"], "https://bulletin.example.net/report")
         self.assertEqual(results[1]["url"], "https://news.example.com/report")
         self.assertEqual(results[2]["url"], "https://catalog.example.com/intro")
 
-    async def test_image_routing_ignores_the_v2_web_gate(self):
+    async def test_image_routing_ignores_the_web_quality_gate(self):
         searx = AsyncMock(
             return_value=[
                 {"title": "one", "image_url": "https://images.example.com/1"},
@@ -620,7 +599,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         ddgs = AsyncMock(return_value=[])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch.object(image_service, "search_searxng_images", new=searx),
             patch.object(image_service, "search_ddgs_images", new=ddgs),
@@ -629,7 +608,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         ddgs.assert_not_awaited()
         self.assertEqual(len(results), 2)
 
-    async def test_v1_and_v2_cache_entries_never_mix(self):
+    async def test_web_results_use_the_v2_cache_namespace(self):
         searx = AsyncMock(
             return_value=[
                 _hit("https://only.example.com/1", QUERY),
@@ -637,7 +616,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         ddgs = AsyncMock(return_value=[])
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -649,20 +628,6 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ddgs.await_count, 1)
         self.assertIn(f"web:8:{QUERY}:v2", get_search_runtime(settings).cache._entries)
 
-        settings.web_evidence_v2_enabled = False
-        with (
-            patch("app.search.searxng_backend.search_searxng", new=searx),
-            patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
-        ):
-            rollback = await service.search(QUERY, settings)
-        # Rollback must not reuse the V2 ordering or the V2 gate decision.
-        self.assertEqual(searx.await_count, 2)
-        self.assertEqual(ddgs.await_count, 1)
-        self.assertEqual(
-            [item["url"] for item in rollback],
-            ["https://only.example.com/1", "https://only.example.com/2"],
-        )
-
     async def test_v2_falls_back_to_ddgs_when_searxng_errors(self):
         searx = AsyncMock(side_effect=RuntimeError("searx down"))
         ddgs = AsyncMock(
@@ -671,7 +636,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
                 _hit("https://bulletin.example.net/1", QUERY),
             ]
         )
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with (
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
@@ -688,7 +653,6 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
         searx = AsyncMock(return_value=cached)
         ddgs = AsyncMock(return_value=[])
         settings = self._settings(
-            web_evidence_v2_enabled=True,
             search_web_cache_ttl_sec=0,
             search_stale_cache_ttl_sec=60,
         )
@@ -715,7 +679,7 @@ class RoutedSourceRankingTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             await asyncio.Event().wait()
 
-        settings = self._settings(web_evidence_v2_enabled=True)
+        settings = self._settings()
         with patch("app.search.searxng_backend.search_searxng", new=stalled):
             task = asyncio.create_task(service.search("cancel-me-unique", settings))
             await started.wait()

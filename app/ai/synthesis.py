@@ -11,11 +11,9 @@ from __future__ import annotations
 import re
 
 from ..search.evidence import defuse_frame_markers, relevance, terms
-from .contracts import SYNTHESIS_MODES, ChatMessage, TextPart
+from .contracts import ChatMessage, TextPart
 
 MAX_SYNTHESIS_EVIDENCE_CHARS = 12000
-SYNTHESIS_MODE_V1 = "v1"
-SYNTHESIS_MODE_V2 = "v2"
 # Share of the evidence budget web excerpts may claim; the rest is reserved so
 # non-web tool outputs are never dropped just because a page was long.
 WEB_EVIDENCE_BUDGET_SHARE = 0.7
@@ -50,28 +48,21 @@ def build_fresh_synthesis_messages(
     tool_outputs: list[str],
     *,
     max_evidence_chars: int = MAX_SYNTHESIS_EVIDENCE_CHARS,
-    mode: str = SYNTHESIS_MODE_V1,
 ) -> list[ChatMessage]:
-    """Pack tools outputs for a no-tool synthesis turn.
+    """Pack tool outputs for a no-tool synthesis turn.
 
-    ``mode="v1"`` (the default and the rollback path) is the pre-PR4 equal-split
-    packer; ``mode="v2"`` uses the relevance/diversity excerpt packer. The mode
-    is request-scoped, so two concurrent requests never share state.
+    The relevance/diversity excerpt packer is the only synthesis policy. Page
+    content is evidence, never an instruction, and the package is bounded by
+    ``max_evidence_chars``.
     """
-    mode = str(mode or SYNTHESIS_MODE_V1).strip().lower()
-    if mode not in SYNTHESIS_MODES:
-        raise ValueError(f"synthesis mode must be one of {SYNTHESIS_MODES}")
     messages = list(base_messages)
     section_overhead = len(_EVIDENCE_START) + len(_EVIDENCE_END) + 2
     body_limit = max(0, max_evidence_chars - section_overhead)
-    if mode == SYNTHESIS_MODE_V2:
-        evidence = _compact_tool_outputs(
-            tool_outputs,
-            body_limit,
-            query=_query_from_messages(messages),
-        )
-    else:
-        evidence = _compact_tool_outputs_v1(tool_outputs, body_limit)
+    evidence = _compact_tool_outputs(
+        tool_outputs,
+        body_limit,
+        query=_query_from_messages(messages),
+    )
     if not evidence:
         return messages
     # Only the renderer may open or close the frame: defuse any reserved frame
@@ -87,7 +78,7 @@ def build_fresh_synthesis_messages(
                     f"{evidence}\n"
                     f"{_EVIDENCE_END}\n\n"
                     f"{_SYNTHESIS_INSTRUCTION}"
-                    f"{_V2_GROUNDING_INSTRUCTION if mode == SYNTHESIS_MODE_V2 else ''}"
+                    f"{_V2_GROUNDING_INSTRUCTION}"
                 ),
             ),
         )
@@ -265,27 +256,6 @@ def _pack_ranked(blocks: list[dict], budget: int, *, query: str = "") -> tuple[l
         if len(selected) >= target:
             break
     return selected, used
-
-
-def _compact_tool_outputs_v1(tool_outputs: list[str], max_chars: int) -> str:
-    """Pre-PR4 equal-split packing, preserved byte-for-byte for rollback."""
-    cleaned = [str(output).strip() for output in tool_outputs if str(output).strip()]
-    if not cleaned or max_chars <= 0:
-        return ""
-
-    labels = [f"[TOOL_RESULT {i}]\n" for i in range(1, len(cleaned) + 1)]
-    separators = max(0, len(cleaned) - 1) * 2
-    fixed = sum(len(label) for label in labels) + separators
-    body_budget = max(0, max_chars - fixed)
-    if body_budget < len(cleaned):
-        return ""
-    per_output = body_budget // len(cleaned)
-
-    parts = [
-        f"{label}{text[:per_output]}"
-        for label, text in zip(labels, cleaned, strict=True)
-    ]
-    return "\n\n".join(parts)[:max_chars]
 
 
 def _compact_tool_outputs(tool_outputs: list[str], max_chars: int, *, query: str = "") -> str:

@@ -121,41 +121,38 @@ class SearchRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await close_search_runtimes()
         client.aclose.assert_awaited_once()
 
-    async def test_per_chat_settings_copies_reuse_one_runtime(self) -> None:
-        base = Settings(_env_file=None, web_evidence_v2_group_ids="777")
-
-        canary = [get_search_runtime(base.for_chat(777)) for _ in range(5)]
+    async def test_equal_settings_share_one_search_runtime(self) -> None:
+        values = dict(
+            _env_file=None,
+            searxng_url="http://searxng:8080",
+        )
+        copies = [get_search_runtime(Settings(**values)) for _ in range(5)]
         self.assertEqual(len(search_runtime._runtimes), 1)
-        self.assertTrue(all(item is canary[0] for item in canary))
-
-        v1 = get_search_runtime(base.for_chat(42))
-        self.assertIs(v1, get_search_runtime(base))
-        self.assertIsNot(v1, canary[0])
-        self.assertEqual(len(search_runtime._runtimes), 2)
+        self.assertTrue(all(item is copies[0] for item in copies))
 
         other = get_search_runtime(
-            base.model_copy(update={"search_cache_max_entries": 8})
+            Settings(**values, search_cache_max_entries=8)
         )
-        self.assertEqual(len(search_runtime._runtimes), 3)
+        self.assertIsNot(other, copies[0])
+        self.assertEqual(len(search_runtime._runtimes), 2)
         self.assertEqual(
-            len({canary[0].namespace, v1.namespace, other.namespace}),
-            3,
+            len({copies[0].namespace, other.namespace}),
+            2,
             "each runtime needs its own breaker namespace",
         )
 
-    async def test_breaker_entries_do_not_grow_with_per_chat_copies(self) -> None:
-        base = Settings(
+    async def test_breaker_entries_are_stable_across_equal_runtime_instances(self) -> None:
+        values = dict(
             _env_file=None,
             searxng_url="http://searxng:8080",
-            web_evidence_v2_group_ids="777",
         )
         searx = AsyncMock(side_effect=RuntimeError("searx down"))
         ddgs = AsyncMock(return_value=[])
 
         for index in range(5):
             await router.route_auto(
-                f"canary-{index}",
-                base.for_chat(777),
+                f"equal-{index}",
+                Settings(**values),
                 8,
                 kind="web",
                 result_url_key="url",
@@ -163,7 +160,7 @@ class SearchRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 ddgs_call=ddgs,
             )
 
-        runtime = get_search_runtime(base.for_chat(777))
+        runtime = get_search_runtime(Settings(**values))
         self.assertEqual(
             {key.namespace for key in runtime.breaker._entries},
             {runtime.namespace},

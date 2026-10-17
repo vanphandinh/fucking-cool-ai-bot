@@ -1,8 +1,8 @@
 """PR3 regression checks for conditional auto-fetch under a question budget.
 
-Auto-fetch must stay off unless both flags are on, read at most the configured
-number of sources with bounded concurrency, share one question-scoped budget,
-reuse the request-scoped read cache, and report unread sources honestly.
+Auto-fetch is always on for web search, reads at most the configured number of
+sources with bounded concurrency, shares one question-scoped budget, reuses the
+request-scoped read cache, and reports unread sources honestly.
 """
 
 from __future__ import annotations
@@ -86,26 +86,10 @@ class _ExplicitUrlRouter:
 
 
 def _settings(**overrides) -> Settings:
-    values = {
-        "web_evidence_v2_enabled": True,
-        "web_auto_fetch_enabled": True,
-        **overrides,
-    }
-    return Settings(_env_file=None, **values)
+    return Settings(_env_file=None, **overrides)
 
 
 class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
-    def test_both_flags_are_required(self):
-        self.assertTrue(auto_fetch.auto_fetch_active(_settings()))
-        self.assertFalse(
-            auto_fetch.auto_fetch_active(_settings(web_auto_fetch_enabled=False))
-        )
-        self.assertFalse(
-            auto_fetch.auto_fetch_active(
-                _settings(web_evidence_v2_enabled=False, web_auto_fetch_enabled=True)
-            )
-        )
-
     async def test_budget_never_goes_negative_and_reports_exhaustion(self):
         budget = auto_fetch.AutoFetchBudget(0.5)
         self.assertFalse(budget.exhausted)
@@ -199,7 +183,7 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AutoFetchOrchestrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_no_web_tool_call_reads_nothing_even_with_both_flags_on(self):
+    async def test_no_web_tool_call_reads_nothing(self):
         reads: list[str] = []
         searches: list[str] = []
 
@@ -219,35 +203,7 @@ class AutoFetchOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((reads, searches), ([], []))
         self.assertFalse(answer.searched)
 
-    async def test_flags_off_never_reads_a_source_during_web_search(self):
-        router = _SearchThenNothing()
-        reads: list[str] = []
-
-        async def fake_read(url, settings, mode="auto", *, operations=None, query=""):
-            reads.append(url)
-            return UrlReadResult("body", url, "generic_reader", True)
-
-        # The search backend is pinned instead of left to the live providers:
-        # this test is about the flag gate, so it must never depend on whether
-        # DDGS/SearXNG happen to answer (or throttle) during a suite run.
-        # ``test_feature_flags_default_off`` owns the shipped-defaults claim.
-        settings = Settings(
-            _env_file=None,
-            web_evidence_v2_enabled=False,
-            web_auto_fetch_enabled=False,
-        )
-        with _patch_search() as search_mock, patch(
-            "app.core.orchestrator.url_service.read_url", new=fake_read
-        ):
-            answer = await Orchestrator(settings, router).ask(QUERY)
-
-        self.assertEqual(reads, [])
-        self.assertEqual(search_mock.await_count, 1, "the search itself still ran")
-        self.assertTrue(answer.searched)
-        self.assertIn("https://bulletin.example.net/report", router.output)
-        self.assertNotIn("[WEB AUTO-FETCH", router.output)
-
-    async def test_enabled_auto_fetch_reads_top_sources_and_labels_evidence(self):
+    async def test_auto_fetch_reads_top_sources_and_labels_evidence(self):
         router = _SearchThenNothing()
         reads: list[str] = []
 

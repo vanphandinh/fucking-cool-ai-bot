@@ -66,7 +66,7 @@ class ReaderArticleFocusTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("could not find the target resource", extracted)
         self.assertLessEqual(len(extracted), 6000)
 
-    async def test_cached_jina_snapshot_falls_back_to_live_page_in_both_modes(self):
+    async def test_cached_jina_snapshot_falls_back_to_live_page(self):
         stale = (
             "Title: Test Document\n\nURL Source: https://example.org/article\n\n"
             "Warning: This is a cached snapshot of the original page, "
@@ -88,24 +88,22 @@ class ReaderArticleFocusTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(str(request.url), "https://example.org/article")
             return httpx.Response(200, text=live, headers={"content-type": "text/html"})
 
-        for v2 in (False, True):
-            requested.clear()
-            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-            with patch("app.search.reader._build_client", return_value=client):
-                result = await read_url(
-                    "https://example.org/article",
-                    Settings(_env_file=None, crawl4ai_enabled=False, web_evidence_v2_enabled=v2),
-                    query="Example Domain",
-                )
-            self.assertTrue(result.ok, result.text)
-            self.assertIn("Example Domain", result.text)
-            self.assertNotIn("Test Article", result.text)
-            self.assertEqual(
-                requested, [
-                    "https://r.jina.ai/https://example.org/article",
-                    "https://example.org/article",
-                ],
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with patch("app.search.reader._build_client", return_value=client):
+            result = await read_url(
+                "https://example.org/article",
+                Settings(_env_file=None, crawl4ai_enabled=False),
+                query="Example Domain",
             )
+        self.assertTrue(result.ok, result.text)
+        self.assertIn("Example Domain", result.text)
+        self.assertNotIn("Test Article", result.text)
+        self.assertEqual(
+            requested, [
+                "https://r.jina.ai/https://example.org/article",
+                "https://example.org/article",
+            ],
+        )
 
     async def test_cached_jina_snapshot_does_not_replace_unavailable_live_page(self):
         stale = (

@@ -27,9 +27,6 @@ class UserRequest:
     text: str
     quoted_text: str | None = None
     images: tuple[ImageAttachment, ...] = ()
-    # Telegram chat the request came from; lets the per-chat canary allowlist
-    # resolve the settings this one request must run with.
-    chat_id: int | None = None
 
     @property
     def requires_vision(self) -> bool:

@@ -82,20 +82,15 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
             )
         else:
             if crawl.ok:
-                if settings.web_evidence_v2_enabled:
-                    from .evidence import select_evidence
+                from .evidence import select_evidence
 
-                    selected = select_evidence(
-                        crawl.text, crawl.source_url, query,
-                        truncated=len(crawl.text) >= settings.crawl4ai_max_chars,
-                    )
-                    if not selected.startswith(_EMPTY_EVIDENCE):
-                        return UrlReadResult(selected, crawl.source_url, "crawl4ai", True)
-                    logger.warning("Crawl4AI returned no usable evidence; fallback generic reader")
-                else:
-                    return UrlReadResult(
-                        neutralize_untrusted(crawl.text), crawl.source_url, "crawl4ai", True
-                    )
+                selected = select_evidence(
+                    crawl.text, crawl.source_url, query,
+                    truncated=len(crawl.text) >= settings.crawl4ai_max_chars,
+                )
+                if not selected.startswith(_EMPTY_EVIDENCE):
+                    return UrlReadResult(selected, crawl.source_url, "crawl4ai", True)
+                logger.warning("Crawl4AI returned no usable evidence; fallback generic reader")
             else:
                 logger.warning(
                     "Crawl4AI URL read failed (%s); fallback generic reader",
@@ -105,8 +100,8 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
     text = await reader.read_page(
         fetch_url, timeout=settings.request_timeout_sec,
         **({"operations": operations, "budget": budget} if operations else {}),
-        **({"query": query, "max_extracted_chars": settings.web_evidence_max_extracted_chars}
-           if settings.web_evidence_v2_enabled else {}),
+        query=query,
+        max_extracted_chars=settings.web_evidence_max_extracted_chars,
     )
     ok = bool(text) and not text.startswith(("Không tải được trang", *_EMPTY_EVIDENCE))
     return UrlReadResult(text, fetch_url, "generic_reader", ok)

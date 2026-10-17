@@ -89,23 +89,14 @@ class ToolDefinition:
         object.__setattr__(self, "parameters", frozen)
 
 
-# Rollback-safe default: the pre-PR4 equal-split synthesis behaviour.
-SYNTHESIS_MODES = ("v1", "v2")
-
-
 @dataclass(frozen=True, slots=True)
 class ChatRequest:
     messages: tuple[ChatMessage, ...]
     tools: tuple[ToolDefinition, ...] = ()
-    synthesis_mode: str = "v1"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
-        mode = str(self.synthesis_mode or "v1").strip().lower()
-        if mode not in SYNTHESIS_MODES:
-            raise ValueError(f"synthesis_mode must be one of {SYNTHESIS_MODES}")
-        object.__setattr__(self, "synthesis_mode", mode)
 
 
 def _freeze_usage(value: Mapping[str, int] | None) -> Mapping[str, int] | None:

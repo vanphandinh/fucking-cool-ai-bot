@@ -375,7 +375,7 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_unicode_citation_does_not_abort_v2_answer(self):
         answer = "Xem [nguồn](https://evil.example.org/?q=\ud800)."
         settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
         orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
         with patch(
@@ -387,13 +387,13 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("evil.example.org", result.text)
         self.assertEqual(result.citation_diagnostics.removed, 1)
 
-    async def test_flag_on_marks_a_citation_that_was_never_retrieved(self):
+    async def test_marks_a_citation_that_was_never_retrieved(self):
         answer = (
             f"Tổng quan: <a href=\"{EVIDENCE_URL}\">NASA</a> "
             f"và [chi tiết]({INVENTED_URL})."
         )
         settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
         orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
         with patch(
@@ -409,21 +409,6 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.citation_diagnostics.detected, 2)
         self.assertEqual(result.citation_diagnostics.allowed, 1)
         self.assertEqual(result.citation_diagnostics.removed, 1)
-
-    async def test_flag_off_leaves_the_answer_byte_for_byte(self):
-        answer = f"Theo [NASA]({INVENTED_URL}) thì hạ cánh có người là 2028."
-        settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=False
-        )
-        orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
-        with patch(
-            "app.core.orchestrator.search_service.search",
-            new=AsyncMock(return_value=[dict(EVIDENCE_HIT)]),
-        ):
-            result = await orchestrator.ask("Sứ mệnh Artemis hạ cánh có người?")
-
-        self.assertEqual(result.text, answer)
-        self.assertIsNone(result.citation_diagnostics)
 
     def test_nested_anchor_inside_evidence_anchor_is_unlinked_and_marked(self):
         text = (
@@ -472,7 +457,7 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_fetched_page_is_valid_evidence_for_its_own_url(self):
         answer = f"Trang này nói rõ điều đó: {EVIDENCE_URL}"
         settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
         orchestrator = Orchestrator(settings, _FetchThenAnswer(EVIDENCE_URL, answer))
         with patch(
@@ -491,7 +476,7 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
         user_url = "https://example.com/private-doc"
         answer = f"Mình đã đọc {user_url}."
         settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
         orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
         with patch(
@@ -504,13 +489,13 @@ class OrchestratorCitationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(UNVERIFIED_MARKER, result.text)
 
     async def test_guard_run_is_logged_with_counts(self):
-        """Canary observability: every V2 guard run leaves one log line."""
+        """Every guarded answer leaves one log line."""
         answer = (
             f"Tổng quan: <a href=\"{EVIDENCE_URL}\">NASA</a> "
             f"và [chi tiết]({INVENTED_URL})."
         )
         settings = Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
         orchestrator = Orchestrator(settings, _SearchThenAnswer(answer))
         with patch(

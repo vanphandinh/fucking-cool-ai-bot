@@ -16,8 +16,8 @@ Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docke
 - [Crawl4AI URL reading](docs/CRAWL4AI_INTEGRATION.md)
 - [X/Twitter content fetching](docs/X_CONTENT_FETCHING.md)
 - [SearXNG production trên VPS](DEPLOY_SEARXNG_VPS.md)
-- [Chạy lại gate và bật cờ trên VPS](docs/VPS_REDEPLOY_AND_FEATURE_FLAGS.md)
-- [Bộ câu live smoke V1/V2](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md)
+- [Chạy lại gate và redeploy trên VPS](docs/VPS_REDEPLOY_AND_FEATURE_FLAGS.md)
+- [Bộ câu live smoke V2](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md)
 
 `README.md`, `.env.example`, runtime source, Docker/CI và các active operator guide là source of truth cho current deployment contract.
 
@@ -159,51 +159,59 @@ Retry bounds validation:
 - per-request cumulative: `1..20` và `>= consecutive`;
 - recovery hops: `1..20`.
 
-## Web Evidence V2 (flag-gated)
+## Web Evidence V2 (mặc định)
 
-Pipeline evidence V2 nằm sau feature flag và **mặc định tắt**:
+Web Evidence V2 là **pipeline web duy nhất**; không còn cờ bật/tắt, canary hay đường rollback V1. Các biến cấu hình còn lại chỉ là biên tài nguyên:
 
 ```env
-WEB_EVIDENCE_V2_ENABLED=false
 WEB_EVIDENCE_MAX_EXTRACTED_CHARS=120000
-WEB_AUTO_FETCH_ENABLED=false
 WEB_AUTO_FETCH_MAX_SOURCES=2
 WEB_AUTO_FETCH_BUDGET_SEC=20
 ```
 
-Khi bật, V2 thay đổi bốn điểm:
+Năm điểm của pipeline:
 
 1. **Evidence extraction:** nội dung trang được parse bounded, bỏ chrome/navigation, chọn chunk liên quan và giữ label `[SOURCE n / CHUNK m]` + URL thay vì cắt 8.000 ký tự đầu tiên.
 2. **Source ranking:** kết quả web được dedupe theo canonical URL và xếp theo lexical relevance (title trọng số 2, snippet 1) kèm đa dạng domain; `SEARCH_BACKEND=auto` chỉ chấp nhận SearXNG sớm khi có >= 2 result từ 2 domain độc lập đạt score >= 0,20.
-3. **Conditional auto-fetch:** chỉ khi cả hai flag V2 bật; tối đa 2 nguồn **cho toàn câu hỏi** nhờ một coordinator request-scoped (deadline monotonic + reservation canonical URL bằng lock + semaphore 2 lượt đọc song song), nên nhiều `web_search` đồng thời không thể vượt cap; tổng budget 20 giây cho cả câu hỏi và bị chặn tiếp bởi budget question/job; ưu tiên URL người dùng, cache theo canonical URL trong request, nguồn không đọc được được báo đúng trạng thái.
-4. **Synthesis packing:** bằng chứng web được đóng gói theo độ liên quan và đa dạng nguồn, giữ URL/chunk label, tổng vẫn **<= 12.000 ký tự**; output của tool không thuộc web không bị bỏ. `synthesis_mode` là request-scoped và **mặc định `v1`** (chia đều như trước PR4); `v2` mới dùng packing thích ứng. Search listing bị giới hạn <= 3.600 ký tự khi auto-fetch để dành tối thiểu 2.400 ký tự cho bằng chứng.
+3. **Auto-fetch luôn bật:** tối đa 2 nguồn **cho toàn câu hỏi** nhờ một coordinator request-scoped (deadline monotonic + reservation canonical URL bằng lock + semaphore 2 lượt đọc song song), nên nhiều `web_search` đồng thời không thể vượt cap; tổng budget 20 giây cho cả câu hỏi và bị chặn tiếp bởi budget question/job; ưu tiên URL người dùng, cache theo canonical URL trong request, nguồn không đọc được được báo đúng trạng thái.
+4. **Synthesis packing:** bằng chứng web được đóng gói theo độ liên quan và đa dạng nguồn, giữ URL/chunk label, tổng vẫn **<= 12.000 ký tự**; output của tool không thuộc web không bị bỏ. Packer V2 và instruction grounding là duy nhất, không còn `synthesis_mode`/packer equal-split V1. Search listing bị giới hạn <= 3.600 ký tự khi auto-fetch để dành tối thiểu 2.400 ký tự cho bằng chứng.
 5. **Framing hardening:** delimiter hệ thống trong nội dung không đáng tin bị vô hiệu hóa, nên trang độc hại không thể tạo marker đóng/mở khung giả hoặc nhãn nguồn giả.
 
-Rollback tức thời: đặt `WEB_EVIDENCE_V2_ENABLED=0` (và/hoặc `WEB_AUTO_FETCH_ENABLED=0`) rồi recreate bot. Không thay đổi image search, X/Twitter resolver, giới hạn tải **2 MiB**, cap **6.000 ký tự/tool**, cap **12.000 ký tự/synthesis**, SSRF/DNS pinning/redirect validation, timeout/cancellation, cache/circuit breaker và Crawl4AI isolation.
+Không còn rollback bằng biến môi trường. Muốn quay lại hành vi trước cutover, redeploy image/commit trước; không có nhánh V1 trong runtime. Các giới hạn an toàn không đổi: image search, X/Twitter resolver, tải **2 MiB**, cap **6.000 ký tự/tool**, cap **12.000 ký tự/synthesis**, SSRF/DNS pinning/redirect validation, timeout/cancellation, cache/circuit breaker và Crawl4AI isolation.
 
-Benchmark offline tái lập bằng ba cấu hình trên cùng fixture 100 case:
+Benchmark offline V2:
 
 ```bash
-python -m scripts.web_evidence_benchmark --config v1 --fixture tests/fixtures/web_evidence_v2/cases_100.json
-python -m scripts.web_evidence_benchmark --config chars --fixture tests/fixtures/web_evidence_v2/cases_100.json
 python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json
 python -m scripts.web_evidence_benchmark --auto-fetch
 ```
 
-Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md). Quyết định phát hành và phần chấm chất lượng model thật nằm ở [`RELEASE_DECISION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) và [`QUALITY_EVALUATION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md); bộ câu live và cách chấm ở [`docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật và không phải nghiệm thu production. V2 chưa đạt điều kiện pilot — lý do ở mục 2 của RELEASE_DECISION.
+Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md); các bảng V1/chars cũ chỉ là hồ sơ lịch sử, không còn chạy được. Quyết định phát hành và phần chấm chất lượng model thật nằm ở [`RELEASE_DECISION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) và [`QUALITY_EVALUATION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md); bộ câu live và cách chấm ở [`docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật. Hồ sơ cũ ghi V2 thấp hơn V1 1 câu trên bộ 21; cutover này chấp nhận rủi ro đó và không còn A/B runtime.
 
 ## Cài đặt nhanh
 
-Yêu cầu: Docker + Docker Compose plugin, Telegram bot token, ít nhất một Chainnode API key cho primary route; Python 3.12 nếu chạy helper scripts trực tiếp ngoài container.
+Yêu cầu: Docker Engine + Docker Compose plugin, Telegram bot token, ít nhất một Chainnode API key cho primary route; Python 3.12 (khớp image) nếu chạy helper scripts trực tiếp ngoài container. Trên VPS Ubuntu/Debian, cài Docker theo [hướng dẫn chính thức](https://docs.docker.com/engine/install/ubuntu/) (hoặc nhanh: `curl -fsSL https://get.docker.com | sh` rồi `sudo usermod -aG docker "$USER"`).
 
 ```bash
 git clone https://github.com/vanphandinh/fucking-cool-ai-bot.git
 cd fucking-cool-ai-bot
 python scripts/sync_env.py
 nano .env
-docker compose up -d --build
+
+# SearXNG (khuyến nghị): không bật profile này thì web search chỉ còn DDGS
+cp -i searxng/settings.example.yml searxng/settings.yml
+openssl rand -hex 32                 # dán vào server.secret_key trong settings.yml
+nano searxng/settings.yml
+python scripts/check_searxng_settings.py
+
+docker compose --profile searxng config --quiet
+docker compose --profile searxng up -d --build
 docker compose logs -f bot
 ```
+
+`.env` và `searxng/settings.yml` là file thật ngoài Git (chứa secret). Chi tiết SearXNG production: [DEPLOY_SEARXNG_VPS.md](DEPLOY_SEARXNG_VPS.md).
+
+Chưa biết chat id của group: đặt `LEARN_GROUP_ID_MODE=1`, thêm bot vào group rồi gửi một tin nhắn — log in `GROUP_ID_LEARN: chat_id=...`; điền id đó vào `ALLOWED_GROUP_IDS` rồi trả `LEARN_GROUP_ID_MODE=0`. Để `ALLOWED_GROUP_IDS` trống và learn-mode tắt thì bot không trả lời ở đâu cả.
 
 Cấu hình tối thiểu:
 

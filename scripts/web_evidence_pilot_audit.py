@@ -223,8 +223,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     _print_metrics(metrics)
     print(
-        "note: V1 rows never run the guard, so their guard columns stay zero; "
-        "the marker rate is only meaningful for v2."
+        "note: historical pre-cutover rows never run the guard, so their guard "
+        "columns stay zero; current smoke artifacts are v2-only."
     )
 
     reasons = stop_reasons(metrics)

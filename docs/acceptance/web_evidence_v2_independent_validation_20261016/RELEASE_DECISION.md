@@ -1,5 +1,11 @@
 # Web Evidence V2 — RELEASE DECISION (kiểm định độc lập, 2026-10-16)
 
+> **Hồ sơ lịch sử, trước cutover V2-only.** Các cờ `WEB_EVIDENCE_V2_ENABLED`,
+> `WEB_EVIDENCE_V2_GROUP_IDS` và `WEB_AUTO_FETCH_ENABLED` đã bị xóa khỏi runtime;
+> quyết định dưới đây ghi lại trạng thái và điều kiện tại thời điểm kiểm định,
+> không còn là hướng dẫn vận hành hiện tại. Runbook hiện tại:
+> [VPS_REDEPLOY_AND_FEATURE_FLAGS.md](../../VPS_REDEPLOY_AND_FEATURE_FLAGS.md).
+
 ## 1. Bảng tiêu chí
 
 | # | Tiêu chí | Trạng thái | Bằng chứng |

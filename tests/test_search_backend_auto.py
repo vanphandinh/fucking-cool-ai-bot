@@ -36,10 +36,19 @@ class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
         reset_search_runtimes()
 
     async def test_auto_uses_searxng_alone_when_results_are_enough(self) -> None:
+        query = "solar capacity 2026"
         searx = AsyncMock(
             return_value=[
-                {"title": "x1", "url": "https://x/1", "snippet": ""},
-                {"title": "x2", "url": "https://x/2", "snippet": ""},
+                {
+                    "title": "Solar capacity 2026 report",
+                    "url": "https://energy.example/1",
+                    "snippet": "Solar capacity grew in 2026.",
+                },
+                {
+                    "title": "2026 solar capacity outlook",
+                    "url": "https://research.example/2",
+                    "snippet": "Outlook for solar capacity in 2026.",
+                },
             ]
         )
         ddgs = AsyncMock(return_value=[])
@@ -48,8 +57,8 @@ class UnifiedTextSearchRoutingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
-            results = await service.search("x", settings)
-        self.assertEqual(results[0]["title"], "x1")
+            results = await service.search(query, settings)
+        self.assertEqual(results[0]["title"], "Solar capacity 2026 report")
         searx.assert_awaited_once()
         ddgs.assert_not_awaited()
 

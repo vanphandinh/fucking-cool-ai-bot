@@ -177,8 +177,8 @@ class Answer:
     target_rotations: int = 0
     model_rotations: int = 0
     credential_failovers: int = 0
-    # V2 only: what the deterministic citation guard found and changed. ``None``
-    # on the V1 path, where the answer text is never rewritten.
+    # What the deterministic citation guard found and changed. ``None`` only
+    # when the router never produced an answer to guard.
     citation_diagnostics: CitationDiagnostics | None = None
     # Provider-reported token usage summed over the whole request; ``None`` when
     # the provider reports nothing. Never used for routing decisions.
@@ -195,8 +195,7 @@ class Orchestrator:
         name = (self.settings.bot_username or "").strip().lstrip("@")
         return f"@{name}" if name else "(trợ lý AI)"
 
-    def system_prompt(self, settings: Settings | None = None) -> str:
-        active = settings or self.settings
+    def system_prompt(self) -> str:
         today = datetime.now(_VN_TZ).date().isoformat()
         evidence_guidance = (
             "KHI KIỂM CHỨNG THÔNG TIN TỪ WEB:\n"
@@ -218,7 +217,7 @@ class Orchestrator:
             "hoặc fetch_url. Không tự tạo, không nhớ lại liên kết chưa truy "
             "xuất; nếu thiếu trang chính thức trong kết quả, nói rõ là chưa "
             "tìm thấy thay vì đưa một liên kết phỏng đoán.\n"
-        ) if active.web_evidence_v2_enabled else ""
+        )
         return (
             f"Bạn là trợ lý AI tên {self.bot_display_name}, hoạt động trong một "
             "group Telegram riêng tư.\n"
@@ -270,18 +269,10 @@ class Orchestrator:
         if request is None:
             request = UserRequest(text=question or "", quoted_text=quoted)
 
-        # Resolve the rollout scope once per request: the global flag serves
-        # every chat, the canary allowlist serves the named chats, and every
-        # other chat keeps self.settings untouched (V1 byte-for-byte).
-        settings = self.settings.for_chat(request.chat_id)
-        if settings is not self.settings:
-            logger.info(
-                "v2_canary chat_id=%s scope=allowlist policy=v2",
-                request.chat_id,
-            )
+        settings = self.settings
 
         messages: list[ChatMessage] = [
-            ChatMessage("system", (TextPart(self.system_prompt(settings)),))
+            ChatMessage("system", (TextPart(self.system_prompt()),))
         ]
         for entry in (history or [])[-(settings.max_context_turns * 2) :]:
             if not isinstance(entry, dict):
@@ -310,9 +301,7 @@ class Orchestrator:
         user_supplied_url = bool(_request_urls(request))
         from ..search.source_ranking import verification_intent
 
-        verification_context = (
-            settings.web_evidence_v2_enabled and verification_intent(request.text)
-        )
+        verification_context = verification_intent(request.text)
         freshness_boost_used = False
 
         async def cached_read(key: tuple[str, str], factory) -> str:
@@ -413,8 +402,6 @@ class Orchestrator:
 
         async def reserve_auto_fetch_targets(query: str, results: list[dict]) -> list[str]:
             """Select and atomically reserve URLs for this burst, or nothing."""
-            if not auto_fetch.auto_fetch_active(settings):
-                return []
             if user_supplied_url or auto_fetch_coordinator.exhausted:
                 return []
             candidates = auto_fetch.select_targets(
@@ -465,7 +452,7 @@ class Orchestrator:
                     q,
                     results,
                     max_chars=SEARCH_LISTING_MAX_CHARS if targets else _TOOL_OUTPUT_CAP,
-                    include_publication_dates=settings.web_evidence_v2_enabled,
+                    include_publication_dates=True,
                 )
                 if not targets:
                     return payload
@@ -507,10 +494,7 @@ class Orchestrator:
                         settings,
                         mode,
                         operations=operations,
-                        **(
-                            {"query": request.text}
-                            if settings.web_evidence_v2_enabled else {}
-                        ),
+                        query=request.text,
                     )
                     url_results[cache_url] = result
                     if result.ok:
@@ -530,9 +514,6 @@ class Orchestrator:
                 ChatRequest(
                     messages=tuple(messages),
                     tools=TOOLS,
-                    synthesis_mode=(
-                        "v2" if settings.web_evidence_v2_enabled else "v1"
-                    ),
                 ),
                 tool_executor,
                 requires_vision=request.requires_vision,
@@ -548,10 +529,10 @@ class Orchestrator:
                 await asyncio.gather(*pending, return_exceptions=True)
             url_inflight.clear()
 
-        # Deterministic citation enforcement, V2 only. The allowed set is the
-        # evidence actually placed in the generation context (tool results and
-        # read pages) plus the URLs the user supplied: never model output, so an
-        # invented link cannot legitimize itself.
+        # Deterministic citation enforcement for the only web policy. The allowed
+        # set is the evidence actually placed in the generation context (tool
+        # results and read pages) plus the URLs the user supplied: never model
+        # output, so an invented link cannot legitimize itself.
         if result.usage:
             logger.info(
                 "ai_usage provider=%s prompt=%s completion=%s total=%s",
@@ -563,25 +544,24 @@ class Orchestrator:
 
         answer_text = result.content
         citation_diagnostics: CitationDiagnostics | None = None
-        if settings.web_evidence_v2_enabled:
-            allowed_urls = {
-                str(item.get("url") or "")
-                for item in sources
-                if isinstance(item, dict)
-            }
-            allowed_urls.update(_request_urls(request))
-            answer_text, citation_diagnostics = enforce_v2_citations(
-                answer_text, allowed_urls
-            )
-            logger.info(
-                "v2_citation_guard detected=%d allowed=%d removed=%d "
-                "reasons=%s error=%s",
-                citation_diagnostics.detected,
-                citation_diagnostics.allowed,
-                citation_diagnostics.removed,
-                dict(citation_diagnostics.reasons),
-                citation_diagnostics.error or "-",
-            )
+        allowed_urls = {
+            str(item.get("url") or "")
+            for item in sources
+            if isinstance(item, dict)
+        }
+        allowed_urls.update(_request_urls(request))
+        answer_text, citation_diagnostics = enforce_v2_citations(
+            answer_text, allowed_urls
+        )
+        logger.info(
+            "v2_citation_guard detected=%d allowed=%d removed=%d "
+            "reasons=%s error=%s",
+            citation_diagnostics.detected,
+            citation_diagnostics.allowed,
+            citation_diagnostics.removed,
+            dict(citation_diagnostics.reasons),
+            citation_diagnostics.error or "-",
+        )
 
         return Answer(
             text=answer_text,
@@ -607,7 +587,7 @@ def _no_search_results(query: str) -> str:
 
 def _format_search_results(
     query: str, results: list[dict], *, max_chars: int = _TOOL_OUTPUT_CAP,
-    include_publication_dates: bool = False,
+    include_publication_dates: bool = True,
 ) -> str:
     """Render the search listing inside ``max_chars``, keeping URLs intact.
 

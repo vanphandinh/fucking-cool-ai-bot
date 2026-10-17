@@ -448,7 +448,7 @@ async def _handle_question(
                     return
 
                 request = UserRequest(
-                    text=question, quoted_text=quoted, images=images, chat_id=chat_id
+                    text=question, quoted_text=quoted, images=images
                 )
                 typing_task = asyncio.create_task(
                     _typing_loop(bot, chat_id, message_thread_id=message_thread_id)

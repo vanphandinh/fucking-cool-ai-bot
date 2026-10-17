@@ -104,7 +104,7 @@ class MergeHelpersTests(unittest.TestCase):
 class FreshnessBoostWiringTests(unittest.IsolatedAsyncioTestCase):
     def _settings(self) -> Settings:
         return Settings(
-            _env_file=None, search_backend="ddgs", web_evidence_v2_enabled=True
+            _env_file=None, search_backend="ddgs"
         )
 
     async def test_boost_runs_once_and_appends_the_current_year(self):

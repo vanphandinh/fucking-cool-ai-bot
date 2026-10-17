@@ -1,22 +1,24 @@
-# VPS — chạy lại toàn bộ gate và bật tính năng
+# VPS — chạy lại toàn bộ gate và redeploy
 
-Runbook vận hành cho deployment Docker Compose trên VPS Linux. Mốc tham chiếu: `main` = `fc19b4e`, CI xanh trên 3.11 / 3.12 / 3.13 (test, audit, docker build, smoke config image).
+Runbook vận hành cho deployment Docker Compose trên VPS Linux. Mốc tham chiếu: `main` sau cutover V2-only — bộ gate offline tại cutover: 913 test OK (skipped=11) và `ruff check` sạch. CI (`Audit checks`) chạy cùng các bước đó trên 3.11 / 3.12 / 3.13, kèm audit, docker build và smoke config image; xem trạng thái workflow của revision đang deploy trước khi lên production.
 
-Tài liệu này **không** thay thế [RELEASE_DECISION](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md): code đã merge với cờ tắt, còn việc *bật* cờ là quyết định vận hành có điều kiện riêng (mục 5 và 9).
+Tài liệu này **không** thay thế [RELEASE_DECISION](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md). Web Evidence V2 là pipeline duy nhất; không còn cờ bật/tắt, canary hay rollback V1 trong runtime.
 
 ---
 
-## 0. Ba trạng thái cờ
+## 0. Trạng thái pipeline
 
-| Trạng thái | `WEB_EVIDENCE_V2_ENABLED` | `WEB_AUTO_FETCH_ENABLED` | Ý nghĩa |
-| --- | --- | --- | --- |
-| A — V1 (mặc định) | `false` | `false` | Hành vi cũ, guard không chạy |
-| B — V2 (canary hoặc toàn cục) | `true` (hoặc allowlist) | `false` | Evidence/ranking/guard V2 |
-| C — V2 + Auto Fetch | `true` | `true` | Thêm đọc nguồn tự động (tối đa 2 nguồn, ngân sách ≤ 20s) |
+Web Evidence V2 là policy duy nhất cho web search. Auto-fetch luôn bật. Ba biến còn lại chỉ là biên tài nguyên:
 
-`WEB_AUTO_FETCH_ENABLED` chỉ có hiệu lực khi V2 bật: `auto_fetch_enabled` trả `False` nếu thiếu một trong hai cờ (`app/search/auto_fetch.py`).
+```env
+WEB_EVIDENCE_MAX_EXTRACTED_CHARS=120000
+WEB_AUTO_FETCH_MAX_SOURCES=2      # trần cứng của config là 2
+WEB_AUTO_FETCH_BUDGET_SEC=20      # trần cứng là 20
+```
 
-Đường an toàn nhất để "bật tính năng" là **canary**: giữ cờ toàn cục `false`, chỉ định chat id được dùng V2.
+Ba key đã retire và **phải bị xóa khỏi `.env`** trước khi sync: `WEB_EVIDENCE_V2_ENABLED`, `WEB_EVIDENCE_V2_GROUP_IDS`, `WEB_AUTO_FETCH_ENABLED`. `scripts/sync_env.py` sẽ exit `2` nếu còn key lạ.
+
+Rollback duy nhất là redeploy image/commit trước; không có nhánh V1 trong code.
 
 ---
 
@@ -57,7 +59,7 @@ python -m pip install -r requirements-audit.txt ruff==0.16.6 pip-audit==2.10.1
 export PYTHONUTF8=1            # bắt buộc nếu stdout không phải UTF-8 (LANG=C, Windows)
 unset ALLOW_LIVE_NETWORK       # tripwire mạng phải đang bật
 
-python tests/run_tests.py                                   # 923 OK (skipped=11) ở mốc fc19b4e
+python tests/run_tests.py                                   # 913 OK (skipped=11) tại cutover V2-only
 python -m unittest discover -s tests -p 'test_*.py' -q       # CI chạy cả hai entrypoint
 python -m ruff check .
 python -m pip check
@@ -94,6 +96,8 @@ deactivate
 cd /srv/fucking-cool-ai-bot
 umask 077
 cp .env "$HOME/fcai-env-backup-$(date +%Y%m%d%H%M)"   # ngoài repo; khôi phục: cp <file> .env
+# Bắt buộc trước sync: xóa các key đã retire, nếu không sync_env.py exit 2
+sed -i '/^WEB_EVIDENCE_V2_ENABLED=/d; /^WEB_EVIDENCE_V2_GROUP_IDS=/d; /^WEB_AUTO_FETCH_ENABLED=/d' .env
 python scripts/sync_env.py            # giữ value cũ, thêm key mới, siết mode 0600
 docker compose --profile searxng config --quiet
 
@@ -118,16 +122,34 @@ docker compose --profile searxng exec searxng wget -qO- http://127.0.0.1:8080/he
 Dòng log phải thấy khi bot khởi động:
 
 ```
-web_evidence_v2 scope=off policy=v1            # trạng thái A
-web_evidence_v2 scope=canary groups=1 policy=v2-for-allowlist
-web_evidence_v2 scope=global policy=v2
+web_evidence policy=v2 auto_fetch=always
 ```
 
-Nếu không thấy dòng `web_evidence_v2 scope=…`, bot đang chạy image cũ — rebuild lại, `restart` không áp dụng env/image mới.
+Nếu không thấy dòng `web_evidence policy=…`, bot đang chạy image cũ — rebuild lại, `restart` không áp dụng env/image mới.
+
+### 3.1 Lifecycle search runtime (từ `892e40d`)
+
+Runtime search (breaker + cache + single-flight) khoá theo **giá trị cấu hình**: mọi `Settings` có cùng cấu hình chia sẻ đúng một runtime, và `runtime.namespace` ổn định thay `id(settings)` trong breaker key. Không còn `Settings.for_chat`/copy per-chat của canary.
+
+Kiểm tra ngay trong container:
+
+```bash
+docker compose exec -T bot python - <<'PY'
+from app.config import Settings
+from app.search.runtime import get_search_runtime
+
+base = Settings()
+copies = [base.model_copy() for _ in range(3)]   # Settings cùng cấu hình phải dùng chung runtime
+runtimes = [get_search_runtime(s) for s in [base, *copies]]
+print("distinct runtimes:", len({id(r) for r in runtimes}), "| namespace:", runtimes[0].namespace)
+PY
+```
+
+Kỳ vọng: `distinct runtimes: 1`. Ra `4` nghĩa là container vẫn chạy image cũ (breaker + cache không dùng chung, có nguy cơ phình RAM) — `restart` không áp dụng code mới, phải `up -d --build --force-recreate`.
 
 ---
 
-## 4. Smoke sau deploy (trước khi bật cờ)
+## 4. Smoke sau deploy
 
 ```bash
 # 1) SearXNG JSON: general + images phải có results > 0
@@ -162,47 +184,18 @@ Trong Telegram (người thật, nhóm allowlist):
 
 ---
 
-## 5. Bật tính năng
+## 5. Kiểm tra cutover
 
-### 5.1 Canary V2 — khuyến nghị
+Không còn bước bật canary/global/auto-fetch. Sau khi deploy, xác nhận:
 
-```env
-WEB_EVIDENCE_V2_ENABLED=false
-WEB_EVIDENCE_V2_GROUP_IDS=-1001234567890,-1009876543210
-WEB_AUTO_FETCH_ENABLED=false
-```
+1. Log có `web_evidence policy=v2 auto_fetch=always`.
+2. Một câu hỏi thời sự có search trả nguồn <= 8 và có thể đọc tối đa 2 nguồn.
+3. Câu trả lời có citation được guard kiểm tra; URL bịa bị thay bằng marker `[nguồn chưa xác minh]`.
+4. Không có traceback `Settings`/field đã xóa trong log.
 
-```bash
-docker compose up -d --no-deps --force-recreate bot
-docker compose logs --tail=20 bot | grep web_evidence_v2     # scope=canary
-```
+### 5.1 Crawl4AI — chỉ sau gate live riêng
 
-Chat ngoài danh sách (và request không có chat id) giữ nguyên hành vi V1. Rollback: xoá danh sách → recreate.
-
-### 5.2 V2 toàn cục
-
-```env
-WEB_EVIDENCE_V2_ENABLED=true
-WEB_EVIDENCE_V2_GROUP_IDS=
-WEB_EVIDENCE_MAX_EXTRACTED_CHARS=120000
-```
-
-Đây là bước vượt qua kết luận pilot hiện tại: trên bộ 21 chuẩn, V2 đạt 19/21 so với V1 20/21, và lỗi Q6 (nguồn cũ khi query chỉ nói "trang chính thức của X") tái hiện 3/3 lượt. Bật toàn cục là quyết định có ý thức, không phải hệ quả của việc merge.
-
-### 5.3 Auto Fetch (trạng thái C)
-
-```env
-WEB_EVIDENCE_V2_ENABLED=true
-WEB_AUTO_FETCH_ENABLED=true
-WEB_AUTO_FETCH_MAX_SOURCES=2      # trần cứng của config là 2
-WEB_AUTO_FETCH_BUDGET_SEC=20      # trần cứng là 20
-```
-
-Chỉ bật sau khi B đã chạy ổn và các mục token/latency production đã có số. Theo dõi log đọc nguồn, redirect/SSRF bị chặn, và thời gian đọc.
-
-### 5.4 Crawl4AI — chỉ sau gate live riêng
-
-Đừng bật cùng lúc với V2. Trình tự bắt buộc (chi tiết: [CRAWL4AI_INTEGRATION.md](CRAWL4AI_INTEGRATION.md)):
+Crawl4AI là backend riêng, chỉ bật sau khi cutover V2 ổn định. Trình tự bắt buộc (chi tiết: [CRAWL4AI_INTEGRATION.md](CRAWL4AI_INTEGRATION.md)):
 
 ```bash
 # sinh token rồi dán vào .env: CRAWL4AI_API_TOKEN=...
@@ -230,20 +223,20 @@ Chỉ khi mọi bước trên pass mới đặt `CRAWL4AI_ENABLED=1` rồi `dock
 
 ---
 
-## 6. Đo lại sau khi bật
+## 6. Đo lại sau cutover
 
 ```bash
-# A/B trên bộ 21 câu, không auto-fetch (so sánh công bằng)
+# Bộ 21 câu V2, auto-fetch luôn bật
 PYTHONUTF8=1 python -m scripts.web_evidence_live_smoke \
-  --mode both --no-auto-fetch --timeout 180 \
-  --output /tmp/smoke_ab_$(date +%Y%m%d).json
+  --timeout 180 \
+  --output /tmp/smoke_v2_$(date +%Y%m%d).json
 
 # Tập trung vào ca đã biết là yếu
 PYTHONUTF8=1 python -m scripts.web_evidence_live_smoke \
-  --mode v2 --ids 6,15 --output /tmp/smoke_q6_q15.json
+  --ids 6,15 --output /tmp/smoke_q6_q15.json
 
 # Số liệu vận hành + stop condition (offline, đọc artifact)
-python scripts/web_evidence_pilot_audit.py /tmp/smoke_ab_$(date +%Y%m%d).json
+python scripts/web_evidence_pilot_audit.py /tmp/smoke_v2_$(date +%Y%m%d).json
 ```
 
 `web_evidence_pilot_audit.py` in latency p50/p95, token usage thật (nếu adapter trả), tỉ lệ guard phải sửa, tỉ lệ marker "nguồn chưa xác minh", URL ngoài tập evidence, và verdict stop-condition. Exit `0` chỉ nghĩa "không thấy stop condition trong artifact", **không** phải kết luận chất lượng.
@@ -254,29 +247,26 @@ Artifact thu được vẫn cần chấm tay theo rubric: xem `docs/WEB_EVIDENCE
 
 ## 7. Rollback
 
+Không còn rollback bằng `.env`. Quay lại image/commit trước:
+
 ```bash
-# về V1 byte-for-byte
-sed -i 's/^WEB_EVIDENCE_V2_ENABLED=.*/WEB_EVIDENCE_V2_ENABLED=false/' .env
-sed -i 's/^WEB_AUTO_FETCH_ENABLED=.*/WEB_AUTO_FETCH_ENABLED=false/' .env
-sed -i 's/^WEB_EVIDENCE_V2_GROUP_IDS=.*/WEB_EVIDENCE_V2_GROUP_IDS=/' .env
-docker compose up -d --no-deps --force-recreate bot
-docker compose logs --tail=20 bot | grep web_evidence_v2        # scope=off policy=v1
+git checkout <sha>
+docker compose --profile searxng up -d --build --force-recreate bot searxng
+docker compose logs --tail=20 bot | grep web_evidence
 ```
 
-- Không cần rollback DB/schema: bot không có persistence ngoài RAM; cache V1/V2 tách namespace `:v2`.
+- Không cần rollback DB/schema: bot không có persistence ngoài RAM.
 - Crawl4AI: `CRAWL4AI_ENABLED=0` + recreate bot; giữ nguyên firewall và rules bảo vệ.
-- Nếu lỗi nằm ở code, quay lại image/commit trước: `git checkout <sha> && docker compose up -d --build --force-recreate bot searxng`.
+- Sau rollback, `.env` cũ vẫn phải khớp vocabulary của image đang chạy.
 
 ---
 
-## 8. Stop conditions (tắt V2 ngay)
+## 8. Stop conditions (redeploy image trước)
 
-- Guard crash ≥ 1 (mất câu trả lời của người dùng).
+- Guard crash >= 1 (mất câu trả lời của người dùng).
 - Bypass citation nghiêm trọng mới phát hiện trên model thật.
 - Marker `[nguồn chưa xác minh]` xuất hiện ở phần lớn câu trả lời có search (≈ > 10%) — evidence pack đang hỏng.
-- Cùng một lỗi "nguồn cũ" lặp ≥ 2 lần/ngày ở nhóm câu thời sự.
-
----
+- Cùng một lỗi "nguồn cũ" lặp >= 2 lần/ngày ở nhóm câu thời sự.
 
 ## 9. Giới hạn đã biết (đừng đọc là đã xong)
 

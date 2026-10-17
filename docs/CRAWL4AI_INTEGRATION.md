@@ -561,7 +561,7 @@ The bot does not forward arbitrary browser config, hooks, JavaScript, provider s
 
 ### Crawl4AI output under Web Evidence V2
 
-With `WEB_EVIDENCE_V2_ENABLED=1`, Crawl4AI markdown is treated exactly like generic reader text: it goes through the same bounded excerpt selection (`[SOURCE n / CHUNK m]` labels plus URL) and the same relevance/diversity synthesis packing. A Crawl4AI result that yields no usable evidence still falls back to the generic reader once, and its existing `CRAWL4AI_MAX_CHARS` ceiling (default 12000, config max 50000) is unchanged — V2 never raises the 120000-character internal candidate scan above the reader path nor the 12000-character synthesis cap. Setting `WEB_EVIDENCE_V2_ENABLED=0` restores raw Crawl4AI markdown with no further configuration change.
+Crawl4AI markdown is treated exactly like generic reader text: it always goes through the same bounded excerpt selection (`[SOURCE n / CHUNK m]` labels plus URL) and the same relevance/diversity synthesis packing. A Crawl4AI result that yields no usable evidence still falls back to the generic reader once, and its existing `CRAWL4AI_MAX_CHARS` ceiling (default 12000, config max 50000) is unchanged — the pipeline never raises the 120000-character internal candidate scan above the reader path nor the 12000-character synthesis cap. There is no raw-markdown fallback switch; `CRAWL4AI_ENABLED=0` disables the backend entirely.
 
 ## Rollback
 

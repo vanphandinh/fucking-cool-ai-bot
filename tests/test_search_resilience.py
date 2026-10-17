@@ -199,8 +199,16 @@ class ResilientTextRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fresh_cache_avoids_repeating_upstream_search(self) -> None:
         results = [
-            {"title": "one", "url": "https://one", "snippet": ""},
-            {"title": "two", "url": "https://two", "snippet": ""},
+            {
+                "title": "Fresh cache solar capacity report",
+                "url": "https://one.example/report",
+                "snippet": "Solar capacity data for the fresh cache query.",
+            },
+            {
+                "title": "Solar capacity second source",
+                "url": "https://two.example/report",
+                "snippet": "Independent solar capacity source.",
+            },
         ]
         searx = AsyncMock(return_value=results)
         ddgs = AsyncMock(return_value=[])
@@ -209,8 +217,8 @@ class ResilientTextRoutingTests(unittest.IsolatedAsyncioTestCase):
             patch("app.search.searxng_backend.search_searxng", new=searx),
             patch("app.search.ddgs_backend.search_ddgs", new=ddgs),
         ):
-            first = await service.search("fresh-cache", settings)
-            second = await service.search("fresh-cache", settings)
+            first = await service.search("fresh cache solar capacity", settings)
+            second = await service.search("fresh cache solar capacity", settings)
         self.assertEqual(first, second)
         self.assertEqual(searx.await_count, 1)
         ddgs.assert_not_awaited()
