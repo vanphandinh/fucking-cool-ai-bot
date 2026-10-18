@@ -160,6 +160,61 @@ class RankWebResultsTests(unittest.TestCase):
         for item in archived:
             self.assertIn(item["url"], urls)
 
+    def test_recency_floor_matches_the_independence_floor_across_topics(self):
+        """A fresh, independently relevant release is reserved on any topic.
+
+        The reservation reuses the same 0.20 relevance definition the
+        independence gate and auto-fetch use: a dated release scoring in
+        [0.20, 0.30) must still displace the weakest slot instead of falling
+        into a dead zone, while an unrelated filler scoring near zero stays
+        out (pinned by the test below).
+        """
+        now = datetime.now(timezone.utc)
+        cases = (
+            (
+                "highland rail signal upgrade commissioning date",
+                "https://rail.example.gov/press/commissioning-update",
+                "signal commissioning",
+            ),
+            (
+                "harbor ferry electrification program first sailing",
+                "https://harbor.example.gov/news-release/ferry-architecture",
+                "harbor ferry electrification program sailing mission",
+            ),
+        )
+        for query, fresh_url, fresh_title in cases:
+            with self.subTest(query=query):
+                archived = [
+                    _hit(
+                        f"https://archive{i}.example{i}.org/history",
+                        query,
+                        query,
+                        published_at=(now - timedelta(days=900 + i)).isoformat(),
+                    )
+                    for i in range(7)
+                ]
+                mid = _hit(
+                    "https://mid.example.net/overview",
+                    query,
+                    "background news",
+                    published_at=(now - timedelta(days=300)).isoformat(),
+                )
+                fresh = _hit(
+                    fresh_url,
+                    fresh_title,
+                    "",
+                    published_at=(now - timedelta(days=20)).isoformat(),
+                )
+                score = source_ranking.lexical_score(query, fresh)
+                self.assertGreaterEqual(score, source_ranking.MIN_INDEPENDENT_SCORE)
+                ranked = source_ranking.rank_web_results(
+                    query, archived + [mid, fresh], limit=8,
+                    verification_context=True,
+                )
+                urls = [item["url"] for item in ranked]
+                self.assertEqual(len(ranked), 8)
+                self.assertIn(fresh_url, urls)
+
     def test_recent_but_unrelated_page_is_never_reserved(self):
         """The reservation may not displace a relevant hit with a fresh filler."""
         now = datetime.now(timezone.utc)

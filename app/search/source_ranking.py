@@ -22,9 +22,11 @@ TITLE_WEIGHT = 2.0
 SNIPPET_WEIGHT = 1.0
 MIN_INDEPENDENT_SCORE = 0.20
 MIN_INDEPENDENT_DOMAINS = 2
-# Keep one moderately relevant dated alternative discoverable during fact
-# checks, without promoting a fresh but unrelated page into the top results.
-MIN_RECENT_VERIFICATION_SCORE = 0.30
+# A dated alternative only qualifies when it is independently relevant: the
+# reservation reuses the same 0.20 floor the independence gate and auto-fetch
+# use. A second, higher floor here created a dead zone (a fresh release
+# scoring 0.20-0.30 could never be reserved on any topic), while the unrelated
+# filler it was meant to exclude scores near zero and stays out regardless.
 
 _VERIFICATION_INTENT = re.compile(
     r"\b(xac minh|kiem chung|kiem tra tinh xac thuc|thuc hu|"
@@ -193,7 +195,7 @@ def rank_web_results(
     if verify and len(chosen) == limit:
         recent = [
             record for record in records
-            if lexical_score(query, record["item"]) >= MIN_RECENT_VERIFICATION_SCORE
+            if lexical_score(query, record["item"]) >= MIN_INDEPENDENT_SCORE
             and (age := publication_age_days(record["item"])) is not None
             and age <= 365
         ]
