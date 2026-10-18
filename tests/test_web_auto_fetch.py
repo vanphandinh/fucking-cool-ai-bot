@@ -1,4 +1,4 @@
-"""PR3 regression checks for conditional auto-fetch under a question budget.
+"""PR3 regression checks for auto-fetch under a question budget.
 
 Auto-fetch is always on for web search, reads at most the configured number of
 sources with bounded concurrency, shares one question-scoped budget, reuses the

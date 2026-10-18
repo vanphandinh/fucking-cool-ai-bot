@@ -47,11 +47,7 @@ The token metric is a character/4 **estimate**, not provider token usage.
 `evidence_recall` checks literal labeled evidence in successfully fetched page
 outputs. These measures are distinct: a discoverable URL may yield no evidence.
 
-Arm C (`--config v2`) packs with `synthesis_mode="v2"`, so a fresh 40-case
-`--config v2` run matches the PR4 `web_evidence_100_v2.json` semantics rather
-than the historical `web_evidence_v2_pr2.json` / `web_evidence_v2_pr3.json`
-files, which predate the request-scoped synthesis-mode split and whose recorded
-numbers are kept unchanged. Arms A and B use `synthesis_mode="v1"`.
+`--config v2` is the only supported benchmark config: it packs with the V2 relevance/diversity policy, so a fresh 40-case run matches the PR4 `web_evidence_100_v2.json` semantics. The historical `web_evidence_v2_pr2.json` / `web_evidence_v2_pr3.json` files predate the V2-only cutover and their recorded numbers are kept unchanged. Historical arms A and B used the deleted V1 equal-split packer.
 
 `answer_accuracy_extractive_proxy`, `citation_precision_extractive_proxy`,
 and `unsupported_claim_rate_extractive_proxy` use a deterministic synthetic
@@ -91,7 +87,7 @@ character caps.
 The ranking pass adds ~1.4 ms p50 to `search_ms` (0.372 → 1.735 ms), which is
 negligible next to fetch time. The accuracy/citation numbers remain
 **extractive proxy** results, not model answers; PR3 also cannot measure
-conditional auto-fetch, because the fixed replay never enables it; the separate
+auto-fetch orchestration, because the fixed replay never runs it; the separate
 `--auto-fetch` replay measures that path.
 
 ## PR4 three-way comparison on the 100-case fixture (2026-10-14, historical pre-cutover)
@@ -144,16 +140,15 @@ unchanged 12000-character synthesis cap.
 
 All accuracy/citation numbers remain **extractive proxy** measurements. They do
 not establish model answer quality, human-verified citation precision,
-conditional auto-fetch behaviour, provider tokens or production latency; those
+auto-fetch orchestration behaviour, provider tokens or production latency; those
 remain `NOT MEASURED` in [`../acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md`](../acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md).
 
-## Conditional auto-fetch offline replay (2026-10-14 hardening)
+## Auto-fetch offline replay (2026-10-14 hardening)
 
 `--auto-fetch` is a second, separate replay: instead of a fixed first-two-source
 policy it drives the real `Orchestrator.ask` with a mock router that issues one
 `web_search`, a mock search backend returning the case's eight hits, and an
-intercepted `reader._fetch_limited` that serves the case snapshots. Both V2
-flags are on, so the request-scoped auto-fetch coordinator, URL service, reader
+intercepted `reader._fetch_limited` that serves the case snapshots. The V2 policy is always on, so the request-scoped auto-fetch coordinator, URL service, reader
 and packing all execute for real. Report:
 `docs/benchmarks/web_evidence_auto_fetch.json`.
 

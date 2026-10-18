@@ -34,7 +34,6 @@ from app.search import reader, service, url_service
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = ROOT / "tests/fixtures/web_evidence_v2/cases.json"
-DEFAULT_REPORT = ROOT / "docs/benchmarks/web_evidence_v2_current.json"
 CONFIGS = ("v2",)
 # Kept out of the web-evidence framing so non-web outputs can be checked for
 # survival independently of page content.
@@ -98,7 +97,7 @@ class _SearchThenAnswer:
 async def replay_auto_fetch(
     case: dict, *, budget_sec: float = 20.0, fixture: Path = FIXTURE
 ) -> dict:
-    """Drive ``Orchestrator.ask`` with conditional auto-fetch enabled.
+    """Drive ``Orchestrator.ask`` with auto-fetch enabled (always on).
 
     Search and HTTP are intercepted, but the real routing, URL service, reader,
     auto-fetch coordinator and packing run. The recorded metrics show what the
@@ -174,7 +173,7 @@ async def evaluate_auto_fetch(
     budget_sec: float = 20.0,
     fixture: Path = FIXTURE,
 ) -> dict:
-    """Aggregate the conditional auto-fetch replay into a report."""
+    """Aggregate the auto-fetch replay into a report."""
     cases = cases if cases is not None else load_cases(fixture)
     rows = [await replay_auto_fetch(case, budget_sec=budget_sec, fixture=fixture) for case in cases]
     evidence_total = sum(row["evidence_expected_total"] for row in rows)
@@ -473,7 +472,7 @@ def main() -> None:
     parser.add_argument(
         "--auto-fetch",
         action="store_true",
-        help="replay conditional auto-fetch through Orchestrator.ask",
+        help="replay auto-fetch through Orchestrator.ask",
     )
     parser.add_argument(
         "--auto-fetch-budget-sec", type=float, default=20.0
