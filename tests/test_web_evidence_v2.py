@@ -1,4 +1,4 @@
-"""Offline regression checks for V2 URL evidence and V1 rollback."""
+"""Offline regression checks for V2 URL evidence."""
 
 from __future__ import annotations
 

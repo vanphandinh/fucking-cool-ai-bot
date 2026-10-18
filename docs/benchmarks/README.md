@@ -1,6 +1,6 @@
 # Web Evidence V2 offline benchmark
 
-The initial V1 baseline is `web_evidence_v1_baseline.json`. Its forty cases
+The initial V1 baseline is `archive/web_evidence_v1_baseline.json`. Its forty cases
 are **synthetic**, checked-in snapshots produced by
 `scripts/generate_web_evidence_fixtures.py`. No live website or personal data
 is included. The dataset has 10 fact, 8 buried, 8 multi-source, 7 freshness,
@@ -12,17 +12,19 @@ Run from the repository root:
 ```sh
 python -m unittest tests.test_web_evidence_benchmark -v
 # 40-case replay set
-python -m scripts.web_evidence_benchmark --config v2 --output docs/benchmarks/web_evidence_v2_pr3.json
+python -m scripts.web_evidence_benchmark --config v2 --output /tmp/bench_v2_40.json
 # 100-case replay set
-python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output docs/benchmarks/web_evidence_100_v2.json
+python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/web_evidence_v2/cases_100.json --output /tmp/bench_v2_100.json
 # Auto-fetch path
-python -m scripts.web_evidence_benchmark --auto-fetch --output docs/benchmarks/web_evidence_auto_fetch.json
+python -m scripts.web_evidence_benchmark --auto-fetch --output /tmp/bench_autofetch.json
 python -m scripts.generate_web_evidence_fixtures
 ```
 
 The V1, chars-only and three-arm results below are **historical records** from
-before the V2-only cutover. Their commands no longer exist; the JSON files are
-kept for audit, not as a runnable baseline.
+before the V2-only cutover. Their commands no longer exist; the JSON files live
+in `docs/benchmarks/archive/`, are read-only, and are kept for audit — not as a
+runnable baseline. The examples above write to `/tmp/` so a fresh run can never
+overwrite them.
 
 Two synthetic fixtures are checked in, both produced by
 `scripts/generate_web_evidence_fixtures.py`:
@@ -47,7 +49,7 @@ The token metric is a character/4 **estimate**, not provider token usage.
 `evidence_recall` checks literal labeled evidence in successfully fetched page
 outputs. These measures are distinct: a discoverable URL may yield no evidence.
 
-`--config v2` is the only supported benchmark config: it packs with the V2 relevance/diversity policy, so a fresh 40-case run matches the PR4 `web_evidence_100_v2.json` semantics. The historical `web_evidence_v2_pr2.json` / `web_evidence_v2_pr3.json` files predate the V2-only cutover and their recorded numbers are kept unchanged. Historical arms A and B used the deleted V1 equal-split packer.
+`--config v2` is the only supported benchmark config: it packs with the V2 relevance/diversity policy, so a fresh 40-case run matches the PR4 `web_evidence_100_v2.json` semantics. The historical `archive/web_evidence_v2_pr2.json` / `archive/web_evidence_v2_pr3.json` files predate the V2-only cutover and their recorded numbers are kept unchanged. Historical arms A and B used the deleted V1 equal-split packer.
 
 `answer_accuracy_extractive_proxy`, `citation_precision_extractive_proxy`,
 and `unsupported_claim_rate_extractive_proxy` use a deterministic synthetic
@@ -192,7 +194,7 @@ harness artifact, not a production regression**:
 
 Before the cutover, `--legacy-harness` reproduced the three-output shape
 deterministically. The flag and the V1 arm were removed with the cutover, so
-`docs/benchmarks/web_evidence_v1_legacy_harness.json` remains the audit record
+`docs/benchmarks/archive/web_evidence_v1_legacy_harness.json` remains the audit record
 of that run: `request_tokens_median_estimate` 728.0, `evidence_recall` 0.4894,
 `answer_accuracy_extractive_proxy` 0.475, `source_recall_at_8` 0.8627,
 `citation_precision_extractive_proxy` 1.0,
