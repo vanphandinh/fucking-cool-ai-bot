@@ -2,10 +2,65 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from scripts import check_crawl4ai_vps_live as live
+
+
+class TestCrawl4AIVpsLiveInUnittestCI(unittest.TestCase):
+    def test_live_probe_is_opt_in_without_touching_host(self):
+        with (
+            patch("sys.argv", ["check_crawl4ai_vps_live.py"]),
+            self.assertRaises(SystemExit) as ctx,
+            redirect_stderr(io.StringIO()),
+        ):
+            live.main()
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_failed_probe_never_reports_pass(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["check_crawl4ai_vps_live.py", "--live"]),
+            patch.object(live.sys, "platform", "linux"),
+            patch.object(live.os, "geteuid", return_value=0, create=True),
+            patch.object(live, "run", side_effect=RuntimeError("probe failed")),
+            patch.object(live.sys, "stderr", stderr),
+        ):
+            self.assertEqual(live.main(), 1)
+        self.assertIn("LIVE EGRESS INCOMPLETE", stderr.getvalue())
+
+    def test_live_probe_uses_existing_containers_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            capture = SimpleNamespace(
+                readouterr=lambda: SimpleNamespace(out=stdout.getvalue(), err=stderr.getvalue())
+            )
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                test_live_probe_uses_existing_containers_without_mutation(
+                    Path(directory), capture
+                )
+
+    def test_live_probe_refuses_implicit_activation_and_missing_enabled_setting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            test_live_probe_refuses_implicit_activation_and_missing_enabled_setting(
+                Path(directory)
+            )
+
+    def test_failed_live_probe_never_reports_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            capture = SimpleNamespace(
+                readouterr=lambda: SimpleNamespace(out=stdout.getvalue(), err=stderr.getvalue())
+            )
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                test_failed_probe_never_reports_pass(Path(directory), capture)
 
 
 def test_live_probe_uses_existing_containers_without_mutation(tmp_path, capsys):

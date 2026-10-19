@@ -7,8 +7,10 @@ import io
 import json
 import shutil
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts import crawl4ai_security_audit as audit
@@ -173,43 +175,39 @@ def test_single_command_does_not_contain_destructive_operations():
 
 
 class TestAuditInUnittestCI(unittest.TestCase):
-    """Run essential regression gates in the project's unittest-based CI."""
+    """Bridge every pytest-style module regression into unittest discovery."""
 
-    def test_rejects_public_crawler_network(self):
-        candidate = compose_config()
-        candidate["services"]["crawl4ai"]["networks"]["crawl4ai_uplink"] = {}
-        with self.assertRaises(RuntimeError):
-            assert_compose(candidate)
+    def test_compose_rejects_network_and_privilege_regressions(self):
+        test_compose_rejects_network_and_privilege_regressions()
 
-    def test_current_squid_dns_guard(self):
-        audit.check_proxy_and_dns()
+    def test_current_compose_is_safe(self):
+        test_current_compose_is_safe()
 
-    def test_rejects_unsafe_compose_privilege(self):
-        candidate = compose_config()
-        candidate["services"]["crawl4ai"]["cap_add"] = ["NET_ADMIN"]
-        with self.assertRaises(RuntimeError):
-            assert_compose(candidate)
+    def test_proxy_dns_acl_and_detection_of_unsafe_allow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            test_proxy_dns_acl_and_detection_of_unsafe_allow(Path(directory))
 
-    def test_failed_checks_hide_sensitive_errors(self):
-        output = io.StringIO()
-        with (patch.object(audit, "check_compose", side_effect=RuntimeError("secret")),
-              patch.object(audit, "check_proxy_and_dns"),
-              patch.object(audit, "check_boot_service"),
-              patch.object(audit, "check_live_restart_policies"),
-              patch.object(audit, "check_reboot_evidence"),
-              redirect_stdout(output)):
-            self.assertEqual(audit.main(), 1)
-        self.assertIn("FAIL: Docker network topology", output.getvalue())
-        self.assertNotIn("secret", output.getvalue())
+    def test_boot_service_only_queries_status(self):
+        test_boot_service_only_queries_status()
 
-    def test_unverified_security_gates_remain_visible(self):
-        output = io.StringIO()
-        with (patch.object(audit, "check_compose"),
-              patch.object(audit, "check_proxy_and_dns"),
-              patch.object(audit, "check_boot_service"),
-              patch.object(audit, "check_live_restart_policies"),
-              patch.object(audit, "check_reboot_evidence", side_effect=OSError()),
-              redirect_stdout(output)):
-            self.assertEqual(audit.main(), 0)
-        self.assertIn("UNVERIFIED: Real reboot evidence", output.getvalue())
-        self.assertIn("UNVERIFIED: firewall protection during Docker startup", output.getvalue())
+    def test_live_restart_policies_require_all_existing_containers_disabled(self):
+        test_live_restart_policies_require_all_existing_containers_disabled()
+
+    def test_unverified_never_claimed_as_full_security_pass(self):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        capture = SimpleNamespace(
+            readouterr=lambda: SimpleNamespace(out=stdout.getvalue(), err=stderr.getvalue())
+        )
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            test_unverified_never_claimed_as_full_security_pass(capture)
+
+    def test_static_network_failure_is_reported_without_sensitive_details(self):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        capture = SimpleNamespace(
+            readouterr=lambda: SimpleNamespace(out=stdout.getvalue(), err=stderr.getvalue())
+        )
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            test_static_network_failure_is_reported_without_sensitive_details(capture)
+
+    def test_single_command_does_not_contain_destructive_operations(self):
+        test_single_command_does_not_contain_destructive_operations()
