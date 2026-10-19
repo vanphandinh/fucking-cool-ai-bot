@@ -79,6 +79,44 @@ class CanonicalEnvVocabularyTests(unittest.TestCase):
         scanner = self._scanner()
         self.assertEqual(scanner.scan_repository(ROOT), ())
 
+    def test_captured_run_artifacts_are_skipped_but_prose_is_not(self) -> None:
+        scanner = self._scanner()
+        retired = "CHAINNODE_API_" + "KEYS"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "docs" / "acceptance" / "run_1.json"
+            archived = root / "docs" / "benchmarks" / "archive" / "old.json"
+            report = root / "docs" / "acceptance" / "EVALUATION.md"
+            for target in (artifact, archived):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    f'{{"url": "https://example.test/{retired}"}}\n',
+                    encoding="utf-8",
+                )
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text(f"{retired}=old\n", encoding="utf-8")
+            with patch.object(
+                scanner, "tracked_files", return_value=(artifact, archived, report)
+            ):
+                self.assertEqual(
+                    scanner.scan_repository(root),
+                    (f"{report.relative_to(root)}:1:{retired}",),
+                )
+
+    def test_json_outside_captured_dirs_is_still_scanned(self) -> None:
+        scanner = self._scanner()
+        retired = "XKIRO_API_" + "KEYS"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "docs" / "schema.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f'{{"key": "{retired}"}}\n', encoding="utf-8")
+            with patch.object(scanner, "tracked_files", return_value=(target,)):
+                self.assertEqual(
+                    scanner.scan_repository(root),
+                    (f"{target.relative_to(root)}:1:{retired}",),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

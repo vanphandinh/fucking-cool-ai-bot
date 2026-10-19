@@ -66,6 +66,22 @@ _RETIRED_PROVIDER_PATTERN = re.compile(
     "|".join("".join(parts) for parts in _RETIRED_PROVIDER_PATTERN_PARTS),
     flags=re.IGNORECASE,
 )
+# Machine-written run and benchmark output is data, not deployment
+# vocabulary: it records model answers together with the URLs they cited, and
+# a cited URL can contain text that matches a retired identifier (for example
+# a percent-encoded path). Scanning it fails the gate on data the repository
+# cannot change, so those JSON artifacts are skipped while prose guides in the
+# same directories stay scanned.
+_CAPTURED_ARTIFACT_DIRS = ("acceptance", "benchmarks")
+
+
+def _is_captured_artifact(relative: Path) -> bool:
+    return (
+        relative.suffix == ".json"
+        and len(relative.parts) >= 3
+        and relative.parts[0] == "docs"
+        and relative.parts[1] in _CAPTURED_ARTIFACT_DIRS
+    )
 
 
 def retired_identifiers() -> tuple[str, ...]:
@@ -114,6 +130,8 @@ def scan_repository(root: Path = ROOT) -> tuple[str, ...]:
 
         relative = path.relative_to(root)
         if relative.parts[:2] == ("docs", "superpowers"):
+            continue
+        if _is_captured_artifact(relative):
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
             for retired in scan_text(line):
