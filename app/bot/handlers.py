@@ -341,6 +341,7 @@ async def _send_answer_parts(
     parts: list[str],
     *,
     on_ack: Callable[[str], None] | None = None,
+    on_all_acked: Callable[[], None] | None = None,
 ) -> bool:
     if not parts:
         return False
@@ -371,12 +372,15 @@ async def _send_answer_parts(
         )
         return False
 
+    if len(parts) == 1 and on_all_acked is not None:
+        on_all_acked()
+
     extra_kwargs = {}
     if message.message_thread_id:
         extra_kwargs["message_thread_id"] = message.message_thread_id
 
     try:
-        for part in parts[1:]:
+        for index, part in enumerate(parts[1:], start=1):
             payload, needs_html = _delivery_payload(part)
             send_kwargs = {
                 "chat_id": message.chat.id,
@@ -398,7 +402,8 @@ async def _send_answer_parts(
                 )
             if on_ack is not None:
                 on_ack(telegram_html_to_plain(part))
-            await asyncio.sleep(0.15)
+            if index < len(parts) - 1:
+                await asyncio.sleep(0.15)
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "Gửi phần tiếp theo thất bại (chat %s): exc_type=%s",
@@ -406,6 +411,8 @@ async def _send_answer_parts(
             type(exc).__name__,
         )
         return False
+    if on_all_acked is not None:
+        on_all_acked()
     return True
 
 
@@ -513,9 +520,30 @@ async def _handle_question(
                     return
 
                 parts = split_telegram_html(answer.text, 3900) or ["..."]
+                full_committed = False
+
+                def commit_full_delivery() -> None:
+                    nonlocal full_committed
+                    if full_committed:
+                        return
+                    full_committed = True
+                    stats.record_answer(answer.provider)
+                    if answer.searched:
+                        stats.record_search()
+                    memory_text = (
+                        f"[kèm {len(images)} ảnh] {question}"
+                        if images
+                        else question
+                    )
+                    memory.push_exchange(
+                        conversation_key,
+                        memory_text,
+                        telegram_html_to_plain(answer.text),
+                    )
+
                 def commit_partial_delivery() -> bool:
                     nonlocal partial_committed
-                    if partial_committed or not acknowledged_parts:
+                    if full_committed or partial_committed or not acknowledged_parts:
                         return False
                     partial_committed = True
                     marker = "\n[...] Câu trả lời chưa hoàn chỉnh"
@@ -548,7 +576,10 @@ async def _handle_question(
 
                 try:
                     delivered = await _send_answer_parts(
-                        message, parts, on_ack=acknowledged_parts.append
+                        message,
+                        parts,
+                        on_ack=acknowledged_parts.append,
+                        on_all_acked=commit_full_delivery,
                     )
                 except asyncio.CancelledError:
                     commit_partial_delivery()
@@ -557,13 +588,6 @@ async def _handle_question(
                     if commit_partial_delivery():
                         await message.reply(_INCOMPLETE_DELIVERY_TEXT)
                     return
-
-                stats.record_answer(answer.provider)
-                if answer.searched:
-                    stats.record_search()
-                memory_text = f"[kèm {len(images)} ảnh] {question}" if images else question
-                memory.push(conversation_key, "user", memory_text)
-                memory.push(conversation_key, "assistant", telegram_html_to_plain(answer.text))
 
                 extra_kwargs = {}
                 if message_thread_id:

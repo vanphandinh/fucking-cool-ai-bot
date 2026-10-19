@@ -212,6 +212,62 @@ class TelegramDeliveryTests(unittest.TestCase):
 
 
 class LegacyHandlerPartialDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_final_ack_commits_full_answer_before_real_cancellation(self):
+        memory = ChatMemory()
+        stats = Stats()
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=7),
+            chat=SimpleNamespace(id=-1001),
+            message_thread_id=42,
+            bot=SimpleNamespace(
+                send_chat_action=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+            reply=AsyncMock(),
+        )
+        answer = SimpleNamespace(
+            text="A" * 5000,
+            provider="test-provider",
+            fallbacks=(),
+            searched=True,
+            sources=[],
+            images=[],
+        )
+        original_push_exchange = memory.push_exchange
+
+        def cancel_after_full_commit(key, user, assistant, *, order_key=None):
+            original_push_exchange(key, user, assistant, order_key=order_key)
+            asyncio.current_task().cancel()
+
+        memory.push_exchange = cancel_after_full_commit
+        task = asyncio.create_task(
+            _handle_question(
+                message,
+                "question",
+                None,
+                Settings(_env_file=None, question_timeout_sec=2),
+                SimpleNamespace(ask=AsyncMock(return_value=answer)),
+                memory,
+                RateLimiter(10),
+                stats,
+                _ChatLocks(),
+                SimpleNamespace(load=AsyncMock(return_value=())),
+            )
+        )
+
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+        history = memory.history_for((-1001, 42))
+        self.assertEqual([item["role"] for item in history], ["user", "assistant"])
+        self.assertEqual(history[0]["content"], "question")
+        self.assertEqual(history[1]["content"], "A" * 4000)
+        self.assertEqual(stats.partial_deliveries, 0)
+        self.assertEqual(stats.by_provider["test-provider"], 1)
+        self.assertEqual(stats.searches, 1)
+        self.assertEqual(message.reply.await_count, 1)
+        self.assertEqual(message.bot.send_message.await_count, 1)
+
     async def test_partial_send_commits_acknowledged_prefix_and_notifies_user(self):
         memory = ChatMemory()
         stats = Stats()
