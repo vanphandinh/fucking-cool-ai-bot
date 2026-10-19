@@ -32,6 +32,13 @@ SEARCH_RESULTS = [
     _hit("https://bulletin.example.net/report", QUERY),
     _hit("https://news.example.com/report", QUERY),
 ]
+# Three relevant, independent sources so a failed read leaves a spare target.
+REPLACEMENT_RESULTS = [
+    _hit("https://update.example.com/report", f"{QUERY} update"),
+    _hit("https://bulletin.example.net/report", QUERY),
+    _hit("https://spare.example.org/report", QUERY),
+    _hit("https://extra.example.org/report", QUERY),
+]
 
 
 class _SearchThenNothing:
@@ -154,6 +161,84 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(targets, [old["url"], future["url"]])
 
+    async def test_missing_dates_keep_the_freshness_discovery_read(self):
+        query = "verify NASA Artemis program crewed landing mission 2026"
+        stale = _hit(
+            "https://archive.example.com/2021",
+            "Artemis program crewed landing mission",
+            "Artemis program crewed landing mission",
+        )
+        discovery = _hit(
+            "https://www.nasa.gov/mission/artemis-iv", "Artemis IV", "Artemis IV"
+        )
+        discovery["_discovery"] = True
+        targets = auto_fetch.select_targets(
+            query, [stale, discovery], limit=2, verification_context=True
+        )
+        self.assertEqual(targets[0], discovery["url"])
+        weak = _hit("https://unrelated.example.org/page", "gardening", "gardening")
+        weak["_discovery"] = True
+        self.assertEqual(
+            auto_fetch.select_targets(
+                query, [stale, weak], limit=2, verification_context=True
+            ),
+            [stale["url"]],
+        )
+
+    async def test_change_announcing_discovery_page_is_read_first(self):
+        query = "verify NASA Artemis program crewed landing mission 2026"
+        stale = _hit(
+            "https://archive.example.com/2021",
+            "Artemis program crewed landing mission",
+            "Artemis program crewed landing mission",
+        )
+        recap = _hit(
+            "https://www.nasa.gov/centers/recap",
+            "Artemis II mission milestones recap",
+            "Artemis mission recap",
+        )
+        announcement = _hit(
+            "https://www.nasa.gov/news-release/artemis-update",
+            "NASA Strengthens Artemis, Adds Mission",
+            "Artemis mission update",
+        )
+        recap["_discovery"] = True
+        announcement["_discovery"] = True
+        targets = auto_fetch.select_targets(
+            query, [stale, recap, announcement], limit=2, verification_context=True
+        )
+        self.assertEqual(targets[0], announcement["url"])
+
+    async def test_pack_evidence_reports_single_source_and_declared_update(self):
+        packed = auto_fetch.pack_evidence(
+            [{
+                "url": "https://a.example.com/1",
+                "ok": True,
+                "text": "Updated October 6, 2026. Body text.",
+                "reason": "",
+            }],
+            max_chars=1200,
+            verification_context=True,
+        )
+        self.assertLessEqual(len(packed), 1200)
+        self.assertIn("chỉ đọc được 1 nguồn", packed)
+        self.assertIn("chưa kiểm chứng", packed)
+        self.assertIn("Nguồn khai báo cập nhật: October 6, 2026", packed)
+
+    async def test_backfill_claims_replacements_only_up_to_the_attempt_ceiling(self):
+        coordinator = auto_fetch.AutoFetchCoordinator(max_sources=2, budget_sec=5.0)
+        pool = [f"https://s{i}.example.com/report" for i in range(4)]
+        self.assertEqual(await coordinator.reserve(pool), pool[:2])
+        self.assertEqual(await coordinator.backfill(pool, 1), [pool[2]])
+        self.assertEqual(await coordinator.backfill(pool, 1), [pool[3]])
+        self.assertEqual(await coordinator.backfill(pool, 1), [])
+
+    async def test_backfill_respects_the_shared_deadline(self):
+        coordinator = auto_fetch.AutoFetchCoordinator(max_sources=2, budget_sec=0.0)
+        pool = [f"https://s{i}.example.com/report" for i in range(3)]
+        self.assertEqual(await coordinator.reserve(pool), [])
+        self.assertEqual(await coordinator.backfill(pool, 1), [])
+
     async def test_pack_evidence_respects_cap_and_reports_unread_sources(self):
         entries = [
             {"url": "https://a.example.com/1", "ok": True, "text": "x" * 400, "reason": ""},
@@ -223,6 +308,66 @@ class AutoFetchOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("evidence for https://bulletin.example.net/report", router.output)
         self.assertTrue(answer.searched)
         self.assertEqual(len(answer.sources), 2)
+
+    async def test_failed_read_is_replaced_by_the_next_candidate(self):
+        router = _SearchThenNothing()
+        reads: list[str] = []
+
+        async def fake_read(url, settings, mode="auto", *, operations=None, query=""):
+            reads.append(url)
+            if "update.example.com" in url:
+                return UrlReadResult(
+                    "Không tải được trang: HTTP 503", url, "generic_reader", False
+                )
+            return UrlReadResult(f"evidence for {url}", url, "generic_reader", True)
+
+        with (
+            _patch_search(REPLACEMENT_RESULTS),
+            patch("app.core.orchestrator.url_service.read_url", new=fake_read),
+        ):
+            answer = await Orchestrator(_settings(), router).ask(QUERY)
+
+        self.assertEqual(
+            reads,
+            [
+                "https://update.example.com/report",
+                "https://bulletin.example.net/report",
+                "https://spare.example.org/report",
+            ],
+            "the dead source is replaced by the next ranked candidate",
+        )
+        self.assertIn("KHÔNG đọc được nguồn này", router.output)
+        self.assertIn("evidence for https://spare.example.org/report", router.output)
+        self.assertIn("chỉ đọc được 2 nguồn", router.output)
+        self.assertTrue(answer.searched)
+
+    async def test_failed_reads_are_not_retried_past_the_attempt_ceiling(self):
+        router = _SearchThenNothing()
+        reads: list[str] = []
+
+        async def dead_read(url, settings, mode="auto", *, operations=None, query=""):
+            reads.append(url)
+            return UrlReadResult("Không tải được trang: HTTP 503", url, "generic_reader", False)
+
+        with (
+            _patch_search(REPLACEMENT_RESULTS),
+            patch("app.core.orchestrator.url_service.read_url", new=dead_read),
+        ):
+            answer = await Orchestrator(_settings(), router).ask(QUERY)
+
+        # Default cap is two sources; replacements are capped at twice that.
+        self.assertEqual(len(reads), 4)
+        self.assertEqual(len(set(reads)), 4)
+        self.assertIn("chỉ đọc được 0 nguồn", router.output)
+        self.assertNotIn("Nội dung URL", router.output)
+        self.assertEqual(
+            {item["url"] for item in answer.sources},
+            {
+                item["url"]
+                for item in select_diverse_sources(REPLACEMENT_RESULTS, limit=8)
+            },
+            "a failed read never becomes a source",
+        )
 
     async def test_failed_read_is_reported_and_never_counted_as_a_source(self):
         router = _SearchThenNothing()
@@ -367,12 +512,12 @@ class AutoFetchOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-def _patch_search():
+def _patch_search(results=None):
     from unittest.mock import AsyncMock
 
     return patch(
         "app.core.orchestrator.search_service.search",
-        new=AsyncMock(return_value=[dict(item) for item in SEARCH_RESULTS]),
+        new=AsyncMock(return_value=[dict(item) for item in (results or SEARCH_RESULTS)]),
     )
 
 

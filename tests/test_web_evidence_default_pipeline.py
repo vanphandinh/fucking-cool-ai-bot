@@ -92,6 +92,31 @@ class DefaultOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             orchestrator.system_prompt(Settings(_env_file=None))
 
 
+    async def test_search_backend_failure_returns_no_evidence_marker(self):
+        from app.search.router import RoutedSearchError
+
+        router = _SearchFailureRouter()
+        orchestrator = Orchestrator(Settings(_env_file=None), router)
+        with patch(
+            "app.core.orchestrator.search_service.search",
+            new=AsyncMock(side_effect=RoutedSearchError("all backends unavailable")),
+        ):
+            result = await orchestrator.ask(QUERY)
+
+        self.assertIn("KHÔNG có bằng chứng mới", router.output)
+        self.assertIn("chưa kiểm chứng", router.output)
+        self.assertFalse(result.searched)
+
+
+class _SearchFailureRouter:
+    def __init__(self) -> None:
+        self.output = ""
+
+    async def complete(self, request, tool_executor, **kwargs):
+        self.output = await tool_executor("web_search", {"query": QUERY})
+        return CompletionResult("chưa kiểm chứng được", "fake", ())
+
+
 class HandlerRequestTests(unittest.IsolatedAsyncioTestCase):
     async def test_text_handler_passes_a_request_without_chat_id(self):
         captured: list[UserRequest] = []

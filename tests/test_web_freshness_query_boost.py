@@ -97,6 +97,15 @@ class MergeHelpersTests(unittest.TestCase):
             [item["url"] for item in merged], [item["url"] for item in primary]
         )
 
+    def test_reserved_discovery_item_keeps_private_provenance(self):
+        primary = [dict(_OLD, url=f"https://a.example.com/{i}") for i in range(8)]
+        merged = _merge_search_results(
+            primary, [dict(_BOOST_ONLY)], limit=8, reserve_slot=True
+        )
+        marked = [item for item in merged if item.get("_discovery")]
+        self.assertEqual([item["url"] for item in marked], [_BOOST_ONLY["url"]])
+        self.assertNotIn("_discovery", primary[0])
+
     def test_zero_limit_returns_no_results(self):
         self.assertEqual(_merge_search_results([_OLD], [_BOOST_ONLY], limit=0), [])
 
@@ -117,7 +126,7 @@ class FreshnessBoostWiringTests(unittest.IsolatedAsyncioTestCase):
             await orchestrator.ask(QUERY)
         queries = [call.args[0] for call in search_mock.await_args_list]
         year = str(datetime.now(_VN_TZ).year)
-        self.assertEqual(queries, [QUERY, f"{QUERY} {year}", QUERY])
+        self.assertEqual(queries, [QUERY, f"{QUERY} {year} update", QUERY])
         self.assertIn(_BOOST_ONLY["url"], harness.outputs[0])
 
     async def test_no_boost_when_a_recent_dated_source_is_already_displayed(self):
