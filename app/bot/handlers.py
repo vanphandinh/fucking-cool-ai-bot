@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncIterator
@@ -53,6 +54,10 @@ _ALL_PROVIDERS_FAILED_TEXT = (
 )
 _NO_CAPABLE_PROVIDER_TEXT = (
     "Không có AI provider nào đang cấu hình hỗ trợ loại input này."
+)
+_INCOMPLETE_DELIVERY_TEXT = (
+    "⚠️ Câu trả lời mới gửi được một phần do lỗi Telegram. "
+    "Phần đã gửi được giữ lại; bạn có thể hỏi lại để tiếp tục."
 )
 
 
@@ -331,7 +336,12 @@ def _delivery_payload(text: str) -> tuple[str, bool]:
     return text, True
 
 
-async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
+async def _send_answer_parts(
+    message: Message,
+    parts: list[str],
+    *,
+    on_ack: Callable[[str], None] | None = None,
+) -> bool:
     if not parts:
         return False
 
@@ -351,6 +361,8 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
 
     try:
         await send_first(parts[0])
+        if on_ack is not None:
+            on_ack(telegram_html_to_plain(parts[0]))
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "Gửi câu trả lời đầu tiên thất bại (chat %s): exc_type=%s",
@@ -384,6 +396,8 @@ async def _send_answer_parts(message: Message, parts: list[str]) -> bool:
                     text=telegram_html_to_plain(part),
                     **extra_kwargs,
                 )
+            if on_ack is not None:
+                on_ack(telegram_html_to_plain(part))
             await asyncio.sleep(0.15)
     except Exception as exc:  # noqa: BLE001
         logger.error(
@@ -420,6 +434,8 @@ async def _handle_question(
             await message.reply("⏳ Bạn đang hỏi hơi nhanh, xin chờ một lát rồi thử lại nhé.")
         return
     stats.record_question()
+    acknowledged_parts: list[str] = []
+    partial_committed = False
 
     try:
         async with asyncio.timeout(settings.question_timeout_sec):
@@ -497,7 +513,49 @@ async def _handle_question(
                     return
 
                 parts = split_telegram_html(answer.text, 3900) or ["..."]
-                if not await _send_answer_parts(message, parts):
+                def commit_partial_delivery() -> bool:
+                    nonlocal partial_committed
+                    if partial_committed or not acknowledged_parts:
+                        return False
+                    partial_committed = True
+                    marker = "\n[...] Câu trả lời chưa hoàn chỉnh"
+                    prefix = "\n".join(acknowledged_parts)
+                    incomplete_answer = prefix[: 4000 - len(marker)] + marker
+                    memory_text = (
+                        f"[kèm {len(images)} ảnh] {question}"
+                        if images
+                        else question
+                    )
+                    try:
+                        memory.push_exchange(
+                            conversation_key,
+                            memory_text,
+                            incomplete_answer,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error(
+                            "Partial answer memory commit failed: exc_type=%s",
+                            type(exc).__name__,
+                        )
+                    try:
+                        stats.record_partial_delivery()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error(
+                            "Partial answer accounting failed: exc_type=%s",
+                            type(exc).__name__,
+                        )
+                    return True
+
+                try:
+                    delivered = await _send_answer_parts(
+                        message, parts, on_ack=acknowledged_parts.append
+                    )
+                except asyncio.CancelledError:
+                    commit_partial_delivery()
+                    raise
+                if not delivered:
+                    if commit_partial_delivery():
+                        await message.reply(_INCOMPLETE_DELIVERY_TEXT)
                     return
 
                 stats.record_answer(answer.provider)
@@ -537,7 +595,12 @@ async def _handle_question(
     except TimeoutError:
         stats.record_error("Câu hỏi quá thời gian xử lý")
         logger.warning("Câu hỏi quá thời gian xử lý (chat %s)", chat_id)
-        await message.reply("⏳ Câu hỏi đã quá thời gian chờ/xử lý. Bạn thử lại sau nhé.")
+        timeout_message = (
+            _INCOMPLETE_DELIVERY_TEXT
+            if partial_committed
+            else "⏳ Câu hỏi đã quá thời gian chờ/xử lý. Bạn thử lại sau nhé."
+        )
+        await message.reply(timeout_message)
 
 
 async def _typing_loop(bot: Bot, chat_id: int, message_thread_id: int | None = None) -> None:

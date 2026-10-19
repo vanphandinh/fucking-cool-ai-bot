@@ -78,6 +78,45 @@ class LegacyLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(delivered)
         self.assertNotIn(SECRET, "\n".join(logs.output))
 
+    async def test_partial_delivery_does_not_log_private_payload(self):
+        memory = ChatMemory()
+        stats = Stats()
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=3),
+            chat=SimpleNamespace(id=-200),
+            message_thread_id=None,
+            bot=SimpleNamespace(
+                send_chat_action=AsyncMock(),
+                send_message=AsyncMock(side_effect=RuntimeError(SECRET)),
+            ),
+            reply=AsyncMock(),
+        )
+        answer = SimpleNamespace(
+            text="A" * 5000,
+            provider="test",
+            fallbacks=(),
+            searched=False,
+            sources=[],
+            images=[],
+        )
+        with self.assertLogs("app.bot.handlers", level="ERROR") as logs:
+            await _handle_question(
+                message,
+                "hello",
+                None,
+                Settings(_env_file=None, question_timeout_sec=2),
+                SimpleNamespace(ask=AsyncMock(return_value=answer)),
+                memory,
+                RateLimiter(10),
+                stats,
+                _ChatLocks(),
+                SimpleNamespace(load=AsyncMock(return_value=())),
+            )
+        self.assertNotIn(SECRET, "\\n".join(logs.output))
+        self.assertEqual(stats.partial_deliveries, 1)
+        self.assertEqual(stats.by_provider["test"], 0)
+        self.assertEqual(len(memory.history_for(-200)), 2)
+
     async def test_optional_image_delivery_error_does_not_log_private_payload(self):
         answer = SimpleNamespace(
             text="hello", provider="test", searched=False,
