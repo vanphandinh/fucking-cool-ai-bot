@@ -1,0 +1,2010 @@
+{
+  "created_utc": "2026-10-18T15:46:14.062567+00:00",
+  "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
+  "question_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "x_status_url": "https://x.com/jack/status/20",
+  "auto_fetch": true,
+  "quality_verdict": "NOT MEASURED",
+  "token_usage_note": "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token counts are unavailable for this row.",
+  "results": [
+    {
+      "id": 1,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Thủ đô của New Zealand là gì, dân số khoảng bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Thủ đô của New Zealand là <b>Wellington</b>. Dân số khu vực đô thị Wellington hiện khoảng hơn 400.000 người (nếu tính toàn vùng Greater Wellington thì tầm trên 500.000).",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2321,
+        "completion_tokens": 53,
+        "total_tokens": 2374
+      },
+      "elapsed_seconds": 5.027
+    },
+    {
+      "id": 2,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Nước sôi ở bao nhiêu độ C tại áp suất mực nước biển, và ở đỉnh Everest thì sao?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Ở áp suất mực nước biển (1 atm), nước sôi tại <b>100°C</b>.\n\nTrên đỉnh Everest, do áp suất khí quyển chỉ còn khoảng 1/3 so với mực nước biển, nước sôi ở nhiệt độ thấp hơn nhiều, chỉ tầm <b>68–70°C</b>. Vì nước không đủ nóng nên việc nấu chín thức ăn trên đó khó hơn hẳn.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2328,
+        "completion_tokens": 87,
+        "total_tokens": 2415
+      },
+      "elapsed_seconds": 5.527
+    },
+    {
+      "id": 3,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Ngôn ngữ Python ra mắt năm nào và do ai tạo ra?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Ngôn ngữ Python được tạo ra bởi <b>Guido van Rossum</b> và chính thức ra mắt lần đầu vào năm <b>1991</b>.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2320,
+        "completion_tokens": 38,
+        "total_tokens": 2358
+      },
+      "elapsed_seconds": 3.504
+    },
+    {
+      "id": 4,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Hành tinh nào có ngày dài nhất trong Hệ Mặt Trời (tính theo giờ Trái Đất)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "<b>Sao Kim</b> (Venus) có ngày dài nhất trong Hệ Mặt Trời nếu tính theo thời gian tự quay quanh trục: khoảng <b>5.832 giờ Trái Đất</b> (~243 ngày Trái Đất). Nó còn quay ngược chiều so với đa số hành tinh khác.\n\nNếu tính theo \"ngày mặt trời\" (thời gian từ lúc mặt trời mọc đến lần mọc tiếp theo), thì cũng chính Sao Kim giữ kỷ lục với khoảng 116,75 ngày Trái Đất (~2.802 giờ), do nó quay rất chậm và cùng chiều với hướng di chuyển trên quỹ đạo.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2326,
+        "completion_tokens": 133,
+        "total_tokens": 2459
+      },
+      "elapsed_seconds": 6.019
+    },
+    {
+      "id": 5,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Great Barrier Reef length km along Queensland coast Wikipedia",
+          "results": [
+            {
+              "url": "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikivoyage.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://commons.wikimedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikiquote.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.wikidata.org/wiki/Q7343",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Environmental_threats_to_the_Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia “Great Barrier Reef”, rạn san hô trải dài khoảng bao nhiêu km dọc bờ biển Queensland?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://commons.wikimedia.org/wiki/Great_Barrier_Reef",
+        "https://en.wikipedia.org/wiki/Environmental_threats_to_the_Great_Barrier_Reef",
+        "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://en.wikiquote.org/wiki/Great_Barrier_Reef",
+        "https://en.wikivoyage.org/wiki/Great_Barrier_Reef",
+        "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://www.wikidata.org/wiki/Q7343"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo bài Wikipedia về Great Barrier Reef, rạn san hô này trải dài khoảng <b>2.300 km</b> dọc bờ biển Queensland, Úc (tương đương hơn 1.400 dặm).",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "snippet": ""
+        },
+        {
+          "title": "Great Barrier Reef – Travel guide at Wikivoyage",
+          "url": "https://en.wikivoyage.org/wiki/Great_Barrier_Reef",
+          "snippet": "The Great Barrier Reef is a coral formation, the largest in the world, and one of the seven natural wonders off the Pacific coast of Queensland, Australia."
+        },
+        {
+          "title": "Great Barrier Reef - Wikimedia Commons",
+          "url": "https://commons.wikimedia.org/wiki/Great_Barrier_Reef",
+          "snippet": "8 thg 6, 2026 ... over 2300 km long coral reef off Australia's northeast coast, UNESCO World Heritage Site. Выгляд Вялікага бар'ернага рыфа з космасу. image."
+        },
+        {
+          "title": "Great Barrier Reef - Wikiquote",
+          "url": "https://en.wikiquote.org/wiki/Great_Barrier_Reef",
+          "snippet": "The reef is located in the Coral Sea, off the coast of Queensland, Australia, separated from the coast by a channel 160 kilometres (100 mi) wide in places and ..."
+        },
+        {
+          "title": "Great Barrier Reef - Wikidata",
+          "url": "https://www.wikidata.org/wiki/Q7343",
+          "snippet": "over 2300 km long coral reef off Australia's northeast coast, UNESCO World Heritage Site."
+        }
+      ],
+      "source_urls": [
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://en.wikivoyage.org/wiki/Great_Barrier_Reef",
+        "https://commons.wikimedia.org/wiki/Great_Barrier_Reef",
+        "https://en.wikiquote.org/wiki/Great_Barrier_Reef",
+        "https://www.wikidata.org/wiki/Q7343"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 15683,
+        "completion_tokens": 108,
+        "total_tokens": 15791
+      },
+      "elapsed_seconds": 22.96
+    },
+    {
+      "id": 6,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://svs.gsfc.nasa.gov/5632",
+              "published_at": ""
+            },
+            {
+              "url": "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/missions/2026/04/01/live-artemis-ii-launch-day-updates",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026 2026 update",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/directorates/esdmd/nasa-strengthens-artemis-adds-mission-refines-overall-architecture",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/artemis-ii-news-and-updates",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/artemis-iii-news-and-updates",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "Artemis III crewed lunar landing mission site:nasa.gov",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/wp-content/uploads/2015/01/artemis-iii-science-definition-report-12042020c.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/news-release/nasa-marches-toward-artemis-iii-mission-in-2027-names-crew-members",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/news-release/nasa-rolls-out-artemis-iii-moon-rocket-core-stage",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/how-nasas-artemis-iii-lander-test-will-pave-way-for-moon-landings",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/our-artemis-iii-crew",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://go.nasa.gov/4mrIi7C",
+        "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+        "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+        "https://svs.gsfc.nasa.gov/5632",
+        "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+        "https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/how-nasas-artemis-iii-lander-test-will-pave-way-for-moon-landings",
+        "https://www.nasa.gov/directorates/esdmd/nasa-strengthens-artemis-adds-mission-refines-overall-architecture",
+        "https://www.nasa.gov/humans-in-space/artemis",
+        "https://www.nasa.gov/mission/artemis-ii",
+        "https://www.nasa.gov/mission/artemis-iii",
+        "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+        "https://www.nasa.gov/news-release/nasa-marches-toward-artemis-iii-mission-in-2027-names-crew-members",
+        "https://www.nasa.gov/news-release/nasa-rolls-out-artemis-iii-moon-rocket-core-stage",
+        "https://www.nasa.gov/our-artemis-iii-crew",
+        "https://www.nasa.gov/wp-content/uploads/2015/01/artemis-iii-science-definition-report-12042020c.pdf"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo thông tin cập nhật từ NASA, kế hoạch đã thay đổi so với dự kiến ban đầu. <b>Artemis III</b> (dự kiến năm 2027) giờ là sứ mệnh bay thử nghiệm để kiểm tra các hệ thống quan trọng và <i>sẽ không hạ cánh xuống Mặt Trăng</i>.\n\nLần hạ cánh có phi hành đoàn thực tế hiện được lên kế hoạch cho một sứ mệnh Artemis tiếp theo, dự kiến vào năm <b>2028</b>.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Artemis II Mission Milestones: An Image and Video Recap - NASA",
+          "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+          "snippet": "21 thg 4, 2026 ... On April 1, 2026, Artemis II launched on a nearly 10-day voyage around the Moon, marking the first crewed flight of NASA's Orion."
+        }
+      ],
+      "source_urls": [
+        "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 14990,
+        "completion_tokens": 179,
+        "total_tokens": 15169
+      },
+      "elapsed_seconds": 32.284
+    },
+    {
+      "id": 7,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "buried",
+      "question": "Trong tiêu chuẩn ISO 8601, định dạng ngày “cơ bản” (basic format) viết thế nào so với định dạng “mở rộng” (extended)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Trong ISO 8601, khác biệt chính nằm ở dấu phân cách:\n\n<b>Định dạng mở rộng (extended)</b> dùng dấu gạch ngang để tách năm, tháng, ngày. Ví dụ: <code>2026-10-18</code>.\n\n<b>Định dạng cơ bản (basic)</b> bỏ hết dấu gạch ngang, viết liền các con số. Ví dụ: <code>20261018</code>.\n\nQuy tắc này cũng áp dụng cho giờ (dùng <code>:</code> trong extended, bỏ trong basic), nên một timestamp đầy đủ sẽ là <code>2026-10-18T14:30:00</code> (extended) so với <code>20261018T143000</code> (basic).",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2343,
+        "completion_tokens": 188,
+        "total_tokens": 2531
+      },
+      "elapsed_seconds": 6.904
+    },
+    {
+      "id": 8,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Mount Everest Wikipedia official height year",
+          "results": [
+            {
+              "url": "https://simple.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/OfficialQI/posts/when-it-was-first-recorded-the-height-of-mount-everest-was-officially-measured-a/1484549743711976",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.quora.com/How-tall-is-Mount-Everest-in-feet-and-meters",
+              "published_at": ""
+            },
+            {
+              "url": "https://museumofprinting.org/print-connections-by-richard-romano/because-its-there",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Timeline_of_Mount_Everest_expeditions",
+              "published_at": ""
+            },
+            {
+              "url": "https://de.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.quora.com/When-the-height-of-Mt-Everest-was-first-measured-was-it-correct-and-how-did-they-measure-it",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "Mount Everest Wikipedia official height year 2026 update",
+          "results": [
+            {
+              "url": "https://www.instagram.com/p/DZISeRUxDWp",
+              "published_at": ""
+            },
+            {
+              "url": "https://simple.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/OfficialQI/posts/when-it-was-first-recorded-the-height-of-mount-everest-was-officially-measured-a/1484549743711976",
+              "published_at": ""
+            },
+            {
+              "url": "https://commons.wikimedia.org/wiki/Category:Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://vi.wikipedia.org/wiki/Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://vi.wikipedia.org/wiki/Danh_s%C3%A1ch_n%C3%BAi_cao_nh%E1%BA%A5t_th%E1%BA%BF_gi%E1%BB%9Bi",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/List_of_highest_mountains_on_Earth",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "Mount Everest new official height 8848.86 meters announced 2020 China Nepal",
+          "results": [
+            {
+              "url": "https://www.nepaltrekkinginhimalaya.com/pages/new-height-of-mount-everest-is-8-848-86-meters",
+              "published_at": ""
+            },
+            {
+              "url": "https://boldhimalaya.com/mount-everest-height",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.dw.com/en/china-nepal-announce-revised-everest-height/a-55861600",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thestandard.com.hk/world/article/160650/Everest-measured-higher-at-884886-meters",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/mounteverest8848M/posts/2-it-has-more-than-one-official-heightfor-many-years-there-was-debate-over-wheth/1452444069583037",
+              "published_at": ""
+            },
+            {
+              "url": "https://x.com/historyinmemes/status/2062657145498411066?lang=vi",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia về “Mount Everest”, độ cao chính thức mới nhất được công bố năm nào và là bao nhiêu mét?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://boldhimalaya.com/mount-everest-height",
+        "https://de.wikipedia.org/wiki/Mount_Everest",
+        "https://en.wikipedia.org/wiki/Mount_Everest",
+        "https://en.wikipedia.org/wiki/Timeline_of_Mount_Everest_expeditions",
+        "https://museumofprinting.org/print-connections-by-richard-romano/because-its-there",
+        "https://simple.wikipedia.org/wiki/Mount_Everest",
+        "https://www.dw.com/en/china-nepal-announce-revised-everest-height/a-55861600",
+        "https://www.facebook.com/OfficialQI/posts/when-it-was-first-recorded-the-height-of-mount-everest-was-officially-measured-a/1484549743711976",
+        "https://www.facebook.com/mounteverest8848M/posts/2-it-has-more-than-one-official-heightfor-many-years-there-was-debate-over-wheth/1452444069583037",
+        "https://www.instagram.com/p/DZISeRUxDWp",
+        "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+        "https://www.nepaltrekkinginhimalaya.com/pages/new-height-of-mount-everest-is-8-848-86-meters",
+        "https://www.quora.com/How-tall-is-Mount-Everest-in-feet-and-meters",
+        "https://www.thestandard.com.hk/world/article/160650/Everest-measured-higher-at-884886-meters",
+        "https://x.com/historyinmemes/status/2062657145498411066?lang=vi"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo bài Wikipedia về \"Mount Everest\", độ cao chính thức mới nhất được công bố vào <b>tháng 12 năm 2020</b>, là <b>8.848,86 mét</b>.\n\nCon số này do Nepal và Trung Quốc cùng nhau đo đạc rồi công bố chung, thay thế cho các mức đo cũ trước đó.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Mount Everest - Simple English Wikipedia, the free encyclopedia",
+          "url": "https://simple.wikipedia.org/wiki/Mount_Everest",
+          "snippet": "Mount Everest is in the Himalayas, a tall mountain range in Asia. ... It is about 8,848 metres (29,029 feet) high and one of the Seven Summits. Everest is located ..."
+        },
+        {
+          "title": "When it was first recorded, the height of Mount Everest was officially ...",
+          "url": "https://www.facebook.com/OfficialQI/posts/when-it-was-first-recorded-the-height-of-mount-everest-was-officially-measured-a/1484549743711976",
+          "snippet": "24 thg 7, 2026 ... This was on QI when Stephen Fry was hosting. The question was, “Who was the first person to put two feet on Mt Everest?” 12w · 63 ..."
+        },
+        {
+          "title": "How tall is Mount Everest in feet and meters? - Quora",
+          "url": "https://www.quora.com/How-tall-is-Mount-Everest-in-feet-and-meters",
+          "snippet": "29 thg 5, 2026 ... Mount Everest is 29,029 feet (8,848 meters) tall. It is about 5 1/2 miles up. The best time for climbing is in the early months of the year."
+        },
+        {
+          "title": "Because It's There - Museum of Printing",
+          "url": "https://museumofprinting.org/print-connections-by-richard-romano/because-its-there",
+          "snippet": "Over the years, the elevation of the mountain has been refined and its official height now is 29,029 feet. ... “Mount Everest,” Wikipedia, last modified on ..."
+        },
+        {
+          "title": "Mount Everest's height has been recalculated numerous times over ...",
+          "url": "https://www.instagram.com/p/DZISeRUxDWp",
+          "snippet": "3 thg 6, 2026 ... ... on June 3, 2026: \"Mount Everest's height has been recalculated ... The first official measurement of Mount Everest came out to ..."
+        },
+        {
+          "title": "New Height of Mount Everest is 8848.86 meters",
+          "url": "https://www.nepaltrekkinginhimalaya.com/pages/new-height-of-mount-everest-is-8-848-86-meters",
+          "snippet": "... 2020 as today, Nepal and China jointly made an official announcement of new height of Mount Everest after both countries recently measured the World's tal."
+        },
+        {
+          "title": "Mount Everest Height: 8848.86 Meters & Measurement History",
+          "url": "https://boldhimalaya.com/mount-everest-height",
+          "snippet": "4 thg 11, 2025 ... Later surveys by China (2005) and the joint Nepal-China survey (2020) refined this number, confirming the official modern height as 8,848.86 ..."
+        },
+        {
+          "title": "How Tall is Mount Everest? Official Height in Feet and Meters",
+          "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+          "snippet": "29 thg 9, 2026 ... Official height: 8,848.86 m / 29,031.7 ft, or 29,031 feet 8.5 inches; Confirmed by the Nepal and China joint resurvey, announced December 2020 ..."
+        }
+      ],
+      "source_urls": [
+        "https://simple.wikipedia.org/wiki/Mount_Everest",
+        "https://www.facebook.com/OfficialQI/posts/when-it-was-first-recorded-the-height-of-mount-everest-was-officially-measured-a/1484549743711976",
+        "https://www.quora.com/How-tall-is-Mount-Everest-in-feet-and-meters",
+        "https://museumofprinting.org/print-connections-by-richard-romano/because-its-there",
+        "https://www.instagram.com/p/DZISeRUxDWp",
+        "https://www.nepaltrekkinginhimalaya.com/pages/new-height-of-mount-everest-is-8-848-86-meters",
+        "https://boldhimalaya.com/mount-everest-height",
+        "https://www.magicalnepal.com/blog/how-tall-is-mount-everest"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 26331,
+        "completion_tokens": 178,
+        "total_tokens": 26509
+      },
+      "elapsed_seconds": 44.589
+    },
+    {
+      "id": 9,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh tốc độ tải tối đa lý thuyết của USB 3.2 Gen 2, Thunderbolt 4 và HDMI 2.1.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "So sánh tốc độ tải tối đa lý thuyết (bandwidth) của 3 chuẩn này:\n\n• <b>USB 3.2 Gen 2:</b> 10 Gbps\n• <b>Thunderbolt 4:</b> 40 Gbps\n• <b>HDMI 2.1:</b> 48 Gbps\n\nNhư vậy về mặt lý thuyết, HDMI 2.1 có băng thông cao nhất (48 Gbps), gấp 1.2 lần Thunderbolt 4 và 4.8 lần USB 3.2 Gen 2.\n\nTuy nhiên cần lưu ý: HDMI 2.1 thiết kế chuyên để truyền tín hiệu hình ảnh/âm thanh, không dùng để chép dữ liệu như ổ cứng. Còn Thunderbolt 4 (40 Gbps) hỗ trợ truyền dữ liệu, xuất hình và cấp nguồn cùng lúc, thực tế thường cho tốc độ data thuần khoảng 32 Gbps (phần còn lại dành cho video/overhead). USB 3.2 Gen 2 thì phổ biến nhất cho nhu cầu chép dữ liệu hàng ngày.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2336,
+        "completion_tokens": 234,
+        "total_tokens": 2570
+      },
+      "elapsed_seconds": 6.906
+    },
+    {
+      "id": 10,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Wi-Fi 802.11n ac ax be release year timeline IEEE standard",
+          "results": [
+            {
+              "url": "https://hiretablets.co.uk/history-of-wi-fi-complete-timeline-of-all-generations-with-specs",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/IEEE_802.11n",
+              "published_at": ""
+            },
+            {
+              "url": "https://standards.ieee.org/beyond-standards/the-evolution-of-wi-fi-technology-and-standards",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.reddit.com/r/networking/comments/j2p0wz/wifi_101_origins_and_history",
+              "published_at": ""
+            },
+            {
+              "url": "https://oneworldrental.com/blog/history-of-wifi-timeline-of-all-wifi-generations-with-specs-details",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://getvoip.com/history-of-wifi",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/IEEE_802.11",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "multi_source",
+      "question": "Tổng hợp các mốc thời gian chính của chuẩn Wi-Fi (802.11n/ac/ax/be) và năm ra mắt.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/IEEE_802.11",
+        "https://en.wikipedia.org/wiki/IEEE_802.11n",
+        "https://getvoip.com/history-of-wifi",
+        "https://hiretablets.co.uk/history-of-wi-fi-complete-timeline-of-all-generations-with-specs",
+        "https://oneworldrental.com/blog/history-of-wifi-timeline-of-all-wifi-generations-with-specs-details",
+        "https://standards.ieee.org/beyond-standards/the-evolution-of-wi-fi-technology-and-standards",
+        "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+        "https://www.reddit.com/r/networking/comments/j2p0wz/wifi_101_origins_and_history"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Dưới đây là các mốc thời gian chính của chuẩn Wi-Fi bạn hỏi:\n\n• <b>802.11n (Wi-Fi 4)</b> — ra mắt năm <b>2009</b>. Tốc độ tối đa 600 Mbps, hỗ trợ cả băng tần 2.4 GHz và 5 GHz, lần đầu áp dụng công nghệ MIMO.\n• <b>802.11ac (Wi-Fi 5)</b> — ra mắt năm <b>2013</b>. Tốc độ lên đến 3.5 Gbps, chỉ chạy trên băng tần 5 GHz, giới thiệu MU-MIMO giúp router giao tiếp với nhiều thiết bị cùng lúc.\n• <b>802.11ax (Wi-Fi 6)</b> — ra mắt năm <b>2019</b>. Tốc độ tối đa 9.6 Gbps, quay lại hỗ trợ cả 2.4 GHz và 5 GHz, tập trung vào khả năng chịu tải nhiều thiết bị đồng thời thay vì chỉ tăng tốc độ đơn thuần.\n• <b>802.11be (Wi-Fi 7)</b> — chuẩn IEEE được thông qua vào năm <b>2024</b>. Bổ sung băng tần 6 GHz, hỗ trợ Multi-Link Operation (MLO) cho phép thiết bị kết hợp nhiều băng tần cùng lúc để giảm độ trễ và tăng tốc độ đáng kể.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Wi-Fi Generations: Complete Timeline, History and Speeds",
+          "url": "https://hiretablets.co.uk/history-of-wi-fi-complete-timeline-of-all-generations-with-specs",
+          "snippet": "The evolution of Wi-Fi generations spans nearly three decades, from the original IEEE 802.11 standard in 1997 to Wi-Fi 7 in 2024. If you're wondering when ..."
+        },
+        {
+          "title": "IEEE 802.11n - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/IEEE_802.11n",
+          "snippet": "IEEE 802.11n, formally IEEE 802.11n-2009 and also simply called 802.11n, is a wireless-networking standard that uses multiple antennas to increase data ..."
+        },
+        {
+          "title": "The Evolution of Wi-Fi Technology and Standards - IEEE SA",
+          "url": "https://standards.ieee.org/beyond-standards/the-evolution-of-wi-fi-technology-and-standards",
+          "snippet": "16 thg 5, 2023 ... IEEE 802.11n™, or Wi-Fi 4, was introduced in 2009 to support the 2.4 GHz and 5GHz frequency bands, with up to 600 Mbit/s data rates, multiple ..."
+        },
+        {
+          "title": "Wi-Fi 101: Origins and History : r/networking - Reddit",
+          "url": "https://www.reddit.com/r/networking/comments/j2p0wz/wifi_101_origins_and_history",
+          "snippet": "30 thg 9, 2020 ... July 1999: Apple introduced the iBook and AirPort, the first major consumer products to use the 802.11b standard. 1999: The Wireless Ethernet ..."
+        },
+        {
+          "title": "History of WiFi – Timeline of All WiFi Generations with Specs & Details",
+          "url": "https://oneworldrental.com/blog/history-of-wifi-timeline-of-all-wifi-generations-with-specs-details",
+          "snippet": "12 thg 2, 2025 ... WiFi 4 (2009) – IEEE 802.11n · Launch Year: 2009 · Frequency: 2.4 GHz & 5 GHz · Speed: Up to 600 Mbps · Key Features: First dual-band WiFi; ..."
+        },
+        {
+          "title": "IEEE 802.11, The Working Group Setting the Standards for Wireless ...",
+          "url": "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+          "snippet": "Date. Result. Format & Version, Incorporated Baselines, Predicted Initial, Predicted Recirc, Predicted Initial, Predicted Recirc. IEEE Std P802.11bi ..."
+        },
+        {
+          "title": "The History of WiFi - GetVoIP",
+          "url": "https://getvoip.com/history-of-wifi",
+          "snippet": "IEEE continues developing 802.11bp for devices powered by harvested energy. A demonstration takes place during the July 2026 meetings, as work progresses toward ..."
+        }
+      ],
+      "source_urls": [
+        "https://hiretablets.co.uk/history-of-wi-fi-complete-timeline-of-all-generations-with-specs",
+        "https://en.wikipedia.org/wiki/IEEE_802.11n",
+        "https://standards.ieee.org/beyond-standards/the-evolution-of-wi-fi-technology-and-standards",
+        "https://www.reddit.com/r/networking/comments/j2p0wz/wifi_101_origins_and_history",
+        "https://oneworldrental.com/blog/history-of-wifi-timeline-of-all-wifi-generations-with-specs-details",
+        "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+        "https://getvoip.com/history-of-wifi"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7804,
+        "completion_tokens": 351,
+        "total_tokens": 8155
+      },
+      "elapsed_seconds": 23.236
+    },
+    {
+      "id": 11,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh định mức tiêu thụ điện của một máy tính để bàn phổ thông và một laptop phổ thông khi chạy tác vụ nhẹ.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khi chạy tác vụ nhẹ (lướt web, soạn văn bản), laptop thường chỉ tiêu thụ khoảng <b>15–30W</b>, còn máy tính để bàn phổ thông rơi vào tầm <b>50–100W</b> (tính cả màn hình).\n\nLý do chính là laptop được thiết kế tối ưu pin từ linh kiện đến chip xử lý điện áp thấp, trong khi PC dùng linh kiện hiệu năng cao hơn và phải \"nuôi\" thêm màn hình rời. Nếu chỉ xét riêng thùng máy PC thì cũng đã tốn cỡ 30–60W cho tác vụ nhẹ rồi.\n\nTóm lại, cùng một việc nhẹ nhàng thì PC sẽ tốn điện gấp khoảng <b>2–3 lần</b> so với laptop.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2332,
+        "completion_tokens": 164,
+        "total_tokens": 2496
+      },
+      "elapsed_seconds": 6.065
+    },
+    {
+      "id": 12,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "Liệt kê các khác biệt chính về hiệu năng giữa CPU và GPU cho tác vụ AI suy luận.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khác biệt chính về hiệu năng giữa CPU và GPU khi chạy AI suy luận (inference):\n\n<b>Kiến trúc xử lý</b>\nCPU có ít nhân nhưng mỗi nhân rất mạnh, tối ưu cho xử lý tuần tự và logic phức tạp. GPU có hàng nghìn nhân nhỏ hơn, thiết kế để chạy song song lượng lớn phép tính ma trận — thứ chiếm phần lớn thời gian trong inference.\n\n<b>Tốc độ suy luận</b>\nVới mô hình lớn hoặc batch nhiều request cùng lúc, GPU nhanh hơn CPU từ vài lần đến vài chục lần nhờ khả năng tính toán song song. CPU thường chỉ cạnh tranh được khi chạy mô hình nhỏ, lượng request thấp hoặc dùng kỹ thuật lượng tử hóa (quantization) sâu như INT8/INT4.\n\n<b>Bộ nhớ</b>\nGPU dùng VRAM có băng thông cực cao (thường >1 TB/s trên các dòng mới), giúp nạp trọng số mô hình nhanh hơn hẳn so với RAM hệ thống của CPU (thường chỉ vài chục đến ~100 GB/s). Bù lại, dung lượng VRAM giới hạn hơn nên mô hình quá lớn có thể không nhét vừa một card GPU.\n\n<b>Độ trễ request đầu tiên</b>\nCPU thường có độ trễ khởi tạo và xử lý request đơn lẻ tốt hơn vì không tốn thời gian copy dữ liệu qua lại giữa RAM và VRAM. GPU sẽ phát huy lợi thế rõ rệt khi cần xử lý liên tục hoặc đồng thời nhiều token.\n\nTóm lại: GPU là lựa chọn mặc định cho inference quy mô thực tế nhờ tốc độ và băng thông vượt trội. CPU phù hợp hơn cho triển khai nhẹ, chi phí thấp hoặc môi trường không có GPU chuyên dụng.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2327,
+        "completion_tokens": 357,
+        "total_tokens": 2684
+      },
+      "elapsed_seconds": 12.033
+    },
+    {
+      "id": 13,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "latest stable Python release version 2026",
+          "results": [
+            {
+              "url": "https://phoenixnap.com/kb/latest-python-version",
+              "published_at": ""
+            },
+            {
+              "url": "https://medium.com/@gautsoni/python-3-14-in-2026-whats-new-what-s-faster-and-when-you-ll-actually-feel-it-with-code-4b2b5a62c9fd",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.python.org/downloads/release/python-3150",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.anaconda.com/docs/reference/policies-practices/python-version-support",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.herodevs.com/blog-posts/python-end-of-life-dates-every-versions-support-timeline",
+              "published_at": ""
+            },
+            {
+              "url": "https://releasebytes.com/python",
+              "published_at": ""
+            },
+            {
+              "url": "https://realpython.com/python-news-june-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://astral.sh/blog/python-3.15",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "latest stable Python release version 2026 2026 update",
+          "results": [
+            {
+              "url": "https://www.linkedin.com/pulse/latest-stable-release-python-3147-released-august-5-2026-hari-m-k9i3f",
+              "published_at": ""
+            },
+            {
+              "url": "https://tech-insider.org/ie/python-3-15-release-3-10-end-of-life-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://patchletter.com/en/software/python",
+              "published_at": ""
+            },
+            {
+              "url": "https://medium.com/@gautsoni/python-3-14-in-2026-whats-new-what-s-faster-and-when-you-ll-actually-feel-it-with-code-4b2b5a62c9fd",
+              "published_at": ""
+            },
+            {
+              "url": "https://devguide.python.org/versions",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.herodevs.com/blog-posts/python-end-of-life-dates-every-versions-support-timeline",
+              "published_at": ""
+            },
+            {
+              "url": "https://astral.sh/blog/python-3.15",
+              "published_at": ""
+            },
+            {
+              "url": "https://releasebytes.com/python",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Phiên bản ổn định mới nhất của Python tính đến hôm nay là gì và phát hành khi nào?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://medium.com/@gautsoni/python-3-14-in-2026-whats-new-what-s-faster-and-when-you-ll-actually-feel-it-with-code-4b2b5a62c9fd",
+        "https://phoenixnap.com/kb/latest-python-version",
+        "https://realpython.com/python-news-june-2026",
+        "https://releasebytes.com/python",
+        "https://www.anaconda.com/docs/reference/policies-practices/python-version-support",
+        "https://www.herodevs.com/blog-posts/python-end-of-life-dates-every-versions-support-timeline",
+        "https://www.linkedin.com/pulse/latest-stable-release-python-3147-released-august-5-2026-hari-m-k9i3f",
+        "https://www.python.org/downloads/release/python-3150"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tính đến hôm nay (18/10/2026), phiên bản ổn định mới nhất của Python là <b>Python 3.15.0</b>, được phát hành vào ngày <b>9 tháng 10 năm 2026</b> theo trang chủ python.org.\n\nĐây là bản phát hành lớn mới nhất, bổ sung nhiều tính năng đáng chú ý như UTF-8 làm mã hóa mặc định (PEP 686), kiểu dữ liệu <code>sentinel</code> và <code>frozendict</code> tích hợp sẵn, lazy imports giúp khởi động nhanh hơn, cùng trình biên dịch JIT thử nghiệm được cải thiện hiệu năng khoảng 7-8%.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "The Latest Version of Python | phoenixNAP KB",
+          "url": "https://phoenixnap.com/kb/latest-python-version",
+          "snippet": "Mar 12, 2026 · The latest stable Python version ensures better performance, improved compatibility with modern libraries, and ongoing security support. This guide will explain the current Python release, why updating matters, and how to check and upgrade your installed version."
+        },
+        {
+          "title": "Python 3.14 in 2026: What's New, What's Faster, and When You'll ...",
+          "url": "https://medium.com/@gautsoni/python-3-14-in-2026-whats-new-what-s-faster-and-when-you-ll-actually-feel-it-with-code-4b2b5a62c9fd",
+          "snippet": "5 thg 3, 2026 ... As of Feb 3, 2026, the latest maintenance release is Python 3.14.3 ... stable interface, reducing the “works on this patch, breaks on ..."
+        },
+        {
+          "title": "Python Release Python 3.15.0",
+          "url": "https://www.python.org/downloads/release/python-3150",
+          "snippet": "9 thg 10, 2026 ... This is the stable release of Python 3.15.0 ... Python 3.15.0 is the newest major release of the Python programming language, and it contains many ..."
+        },
+        {
+          "title": "Python version support - Anaconda",
+          "url": "https://www.anaconda.com/docs/reference/policies-practices/python-version-support",
+          "snippet": "Anaconda is ending support for Python 3.10 in October 2026. Python Version. Release Date. End of Support. Python 3.14. October 2025."
+        },
+        {
+          "title": "Python End-of-Life Dates: Every Version's Support Timeline",
+          "url": "https://www.herodevs.com/blog-posts/python-end-of-life-dates-every-versions-support-timeline",
+          "snippet": "15 thg 9, 2026 ... October 2026: Python 3.15 is expected to ship its final release, giving teams a new upgrade target with the longest possible support runway ( ..."
+        },
+        {
+          "title": "Latest Python Releases, Changelog & Updates - ReleaseBytes",
+          "url": "https://releasebytes.com/python",
+          "snippet": "1 day ago · The latest Python release notes, changelogs and updates, summarised in plain English - new features, breaking changes, security advisories and deprecations, updated continuously."
+        },
+        {
+          "title": "Python 3.15 Hits Feature Freeze and Other News for June 2026",
+          "url": "https://realpython.com/python-news-june-2026",
+          "snippet": "8 thg 6, 2026 ... Python 3.15 hits feature freeze with a built-in sentinel, PEP 829 lands, Pydantic forks httpx, and AI goes bug-hunting in C code."
+        },
+        {
+          "title": "The latest stable release of Python is Python 3.14.7 ... - LinkedIn",
+          "url": "https://www.linkedin.com/pulse/latest-stable-release-python-3147-released-august-5-2026-hari-m-k9i3f",
+          "snippet": "18 thg 8, 2026 ... The latest stable release of Python is Python 3.14.7, released on August 5, 2026. · 2. Deferred Evaluation of Annotations · 3. Multiple ..."
+        }
+      ],
+      "source_urls": [
+        "https://phoenixnap.com/kb/latest-python-version",
+        "https://medium.com/@gautsoni/python-3-14-in-2026-whats-new-what-s-faster-and-when-you-ll-actually-feel-it-with-code-4b2b5a62c9fd",
+        "https://www.python.org/downloads/release/python-3150",
+        "https://www.anaconda.com/docs/reference/policies-practices/python-version-support",
+        "https://www.herodevs.com/blog-posts/python-end-of-life-dates-every-versions-support-timeline",
+        "https://releasebytes.com/python",
+        "https://realpython.com/python-news-june-2026",
+        "https://www.linkedin.com/pulse/latest-stable-release-python-3147-released-august-5-2026-hari-m-k9i3f"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 16310,
+        "completion_tokens": 216,
+        "total_tokens": 16526
+      },
+      "elapsed_seconds": 28.549
+    },
+    {
+      "id": 14,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "CEO of Microsoft 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/789vn.vn/posts/ng%C3%A0y-11102026-ceo-microsoft-satya-nadella-%C4%91%C4%83ng-tr%C3%AAn-x-m%E1%BB%99t-c%C3%A2u-khi%E1%BA%BFn-m%C3%ACnh-suy-ngh/1083536534298132",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.clay.com/dossier/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://news.microsoft.com/satya-nadella-australia-visit-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.youtube.com/watch?v=FFMm454fxNA",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.cnbc.com/2026/10/01/linkedin-chief-roslansky-microsoft-exit.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Satya_Nadella",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "CEO of Microsoft 2026 2026 update",
+          "results": [
+            {
+              "url": "https://www.facebook.com/SocialSamosa/posts/microsoft-ceo-satya-nadella-says-2026-will-be-a-defining-year-for-ai-urging-the-/1275364084618037",
+              "published_at": ""
+            },
+            {
+              "url": "https://news.microsoft.com/build-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.phucanh.vn/microsoft-phat-hanh-windows-11-version-26h2-2026-update-nhung-dieu-can-biet.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.clay.com/dossier/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.youtube.com/watch?v=FFMm454fxNA",
+              "published_at": ""
+            },
+            {
+              "url": "https://blog.cloudcapsule.io/blog/whats-new-in-microsoft-365-february-2026-updates",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Hiện tại ai là CEO của Microsoft?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://news.microsoft.com/satya-nadella-australia-visit-2026",
+        "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+        "https://www.clay.com/dossier/microsoft-ceo",
+        "https://www.cnbc.com/2026/10/01/linkedin-chief-roslansky-microsoft-exit.html",
+        "https://www.facebook.com/789vn.vn/posts/ng%C3%A0y-11102026-ceo-microsoft-satya-nadella-%C4%91%C4%83ng-tr%C3%AAn-x-m%E1%BB%99t-c%C3%A2u-khi%E1%BA%BFn-m%C3%ACnh-suy-ngh/1083536534298132",
+        "https://www.facebook.com/SocialSamosa/posts/microsoft-ceo-satya-nadella-says-2026-will-be-a-defining-year-for-ai-urging-the-/1275364084618037",
+        "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+        "https://www.youtube.com/watch?v=FFMm454fxNA"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Hiện tại CEO của Microsoft là <b>Satya Nadella</b>. Ông giữ chức CEO từ tháng 2/2014 và kiêm luôn Chủ tịch hội đồng quản trị từ tháng 6/2021.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Ngày 11/10/2026, CEO Microsoft Satya Nadella đăng trên X một câu ...",
+          "url": "https://www.facebook.com/789vn.vn/posts/ng%C3%A0y-11102026-ceo-microsoft-satya-nadella-%C4%91%C4%83ng-tr%C3%AAn-x-m%E1%BB%99t-c%C3%A2u-khi%E1%BA%BFn-m%C3%ACnh-suy-ngh/1083536534298132",
+          "snippet": "3 ngày trước ... Ngày 11/10/2026, CEO Microsoft Satya Nadella đăng trên X một câu khiến mình suy nghĩ cả buổi: hãy thiết kế mọi hệ thống AI với giả định \"nó ..."
+        },
+        {
+          "title": "Who is the CEO of Microsoft in 2026? Satya Nadella - Unify",
+          "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+          "snippet": "Who is the CEO of Microsoft in 2026? · Satya Nadella rose through Microsoft: Various positions of increasing authority from 1992, then Executive Vice President, ..."
+        },
+        {
+          "title": "Who is the CEO of Microsoft in 2026? Satya Nadella's Bio - Clay",
+          "url": "https://www.clay.com/dossier/microsoft-ceo",
+          "snippet": "15 thg 4, 2026 ... Who is the CEO of Microsoft? As an Indian-American business executive, Satya Narayana Nadella has made significant strides in the tech industry."
+        },
+        {
+          "title": "Satya Nadella Australia Visit 2026 - Microsoft Source",
+          "url": "https://news.microsoft.com/satya-nadella-australia-visit-2026",
+          "snippet": "Satya Nadella's Australia Visit 2026. Microsoft Chairman and CEO, Satya Nadella, visited Australia on April 22-23, 2026. Watch his keynote from the Microsoft AI ..."
+        },
+        {
+          "title": "Microsoft Build 2026 | Satya Nadella Opening Keynote - YouTube",
+          "url": "https://www.youtube.com/watch?v=FFMm454fxNA",
+          "snippet": "2 thg 6, 2026 ... Join the Microsoft Build 2026 opening keynote, streamed live from San Francisco. Follow along as Microsoft CEO Satya Nadella and other top ..."
+        },
+        {
+          "title": "Ex-LinkedIn CEO Roslansky to leave Microsoft after other ...",
+          "url": "https://www.cnbc.com/2026/10/01/linkedin-chief-roslansky-microsoft-exit.html",
+          "snippet": "Oct 1, 2026 · Microsoft executive Ryan Roslansky, who led the software company's LinkedIn subsidiary for six years, will leave at the end of 2026. Satya Nadella, Microsoft's CEO, announced the departure in a ..."
+        },
+        {
+          "title": "Who Is the Current CEO in Microsoft? - posts.terabox.com",
+          "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+          "snippet": "Quick Snapshot As of September 2026, Satya Nadella is the Chairman and CEO of Microsoft. He took the helm as CEO on February 4, 2014, succeeding Steve Ballmer, and was later appointed Chairman of the Board in 2021. Nadella is widely considered one of the most effective leaders in the technology sector, having overseen Microsoft's transition to a cloud-first and AI-first business model."
+        },
+        {
+          "title": "Microsoft CEO Satya Nadella says 2026 will be a defining year for AI ...",
+          "url": "https://www.facebook.com/SocialSamosa/posts/microsoft-ceo-satya-nadella-says-2026-will-be-a-defining-year-for-ai-urging-the-/1275364084618037",
+          "snippet": "6 thg 1, 2026 ... Microsoft CEO Satya Nadella says 2026 will be a defining year for AI, urging the industry to move beyond 'AI slop' debates and focus on ..."
+        }
+      ],
+      "source_urls": [
+        "https://www.facebook.com/789vn.vn/posts/ng%C3%A0y-11102026-ceo-microsoft-satya-nadella-%C4%91%C4%83ng-tr%C3%AAn-x-m%E1%BB%99t-c%C3%A2u-khi%E1%BA%BFn-m%C3%ACnh-suy-ngh/1083536534298132",
+        "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+        "https://www.clay.com/dossier/microsoft-ceo",
+        "https://news.microsoft.com/satya-nadella-australia-visit-2026",
+        "https://www.youtube.com/watch?v=FFMm454fxNA",
+        "https://www.cnbc.com/2026/10/01/linkedin-chief-roslansky-microsoft-exit.html",
+        "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+        "https://www.facebook.com/SocialSamosa/posts/microsoft-ceo-satya-nadella-says-2026-will-be-a-defining-year-for-ai-urging-the-/1275364084618037"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7806,
+        "completion_tokens": 76,
+        "total_tokens": 7882
+      },
+      "elapsed_seconds": 21.644
+    },
+    {
+      "id": 15,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+              "published_at": ""
+            },
+            {
+              "url": "https://itechexpo.com.vn",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/vec.expo/posts/-veew-2026-%C4%91i%E1%BB%83m-%C4%91%E1%BA%BFn-kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-c%E1%BB%A7a-ng%C3%A0nh-s%E1%BB%B1-ki%E1%BB%87n-l%E1%BA%A7n-%C4%91%E1%BA%A7u-ti%C3%AAn-t%E1%BA%A1i-vi%E1%BB%87t-nam-/122182117298970844",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026 2026 update",
+          "results": [
+            {
+              "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+              "published_at": ""
+            },
+            {
+              "url": "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.techz.vn/225-1026-1-su-kien-cong-nghe-quoc-te-fpt-transform-2026-ve-ai-cloud-va-data-ylt711649.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://nghenhinvietnam.vn/top-5-chiec-dien-thoai-di-dong-se-ra-mat-vao-thang-10-nam-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://tapchicongthuong.vn/khoi-dong-cac-san-pham-cong-nghe-chien-luoc-trong-nam-2026--bo-cong-thuong-quyet-tam-chuyen-tu-nghien-cuu-sang-ung-dung-thuc-tien-ben-vung-556559.htm",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Sự kiện công nghệ lớn nào diễn ra trong tháng này (tháng hiện tại của bạn)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+        "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+        "https://itechexpo.com.vn",
+        "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+        "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+        "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tháng 10/2026 này có khá nhiều sự kiện công nghệ lớn, đặc biệt tập trung ở Hà Nội và TP.HCM. Nổi bật nhất là:\n\n<b>FPT TRANSFORM 2026</b> diễn ra ngày 17/10 tại InterContinental Landmark 72, Hà Nội với chủ đề \"Ship AI Live\". Sự kiện có hơn 50 phiên chia sẻ chuyên sâu về AI, Cloud, Data cùng hơn 10 workshop kỹ thuật thực hành (như Agentic Workflow, AI Coding) và khu vực trưng bày hơn 200 giải pháp công nghệ.\n\nNgoài ra còn có <b>GITEX Vietnam</b> lần đầu tổ chức tại Hà Nội trong tháng 10, chuỗi triển lãm công nghiệp tại Trung tâm Triển lãm Việt Nam (VEC) từ 13–15/10 với hơn 300 đơn vị tham gia, và <b>iTECH EXPO 2026</b> tại TP.HCM vừa kết thúc đầu tháng.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Sẵn sàng chào đón sự kiện công nghiệp lớn nhất năm 2026 tại Việt ...",
+          "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+          "snippet": "5 ngày trước ... Từ ngày 13 đến 15/10/2026, Trung tâm Triển lãm Việt Nam (VEC), Đông Anh, Hà Nội sẽ trở thành tâm điểm hội tụ của hơn 300 đơn vị trưng bày đến từ ..."
+        },
+        {
+          "title": "Lịch sự kiện tại VEC 2026: Cập nhật đầy đủ, mới nhất",
+          "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+          "snippet": "Lịch sự kiện tháng 9/2026 ; 09–11/09. Tuần lễ Công nghiệp & Công nghệ Việt Nam 2026 (VITW 2026). VEC, Sở Công thương TP. Hà Nội, dmg events, Camel, COEX, ADPEX."
+        },
+        {
+          "title": "Triển lãm công nghệ GITEX Vietnam sẽ lần đầu tiên diễn ra tại Hà ...",
+          "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+          "snippet": "2 thg 5, 2025 ... VTV.vn - Hà Nội sẽ đăng cai tổ chức sự kiện công nghệ GITEX Vietnam vào tháng 10/2026. Đây là thông tin được thông báo tại GITEX ASIA x Ai ..."
+        },
+        {
+          "title": "MTA Hanoi chính thức quay trở lại vào tháng 10/2026",
+          "url": "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+          "snippet": "23 thg 3, 2026 ... Không chỉ giới thiệu các giải pháp sản xuất mới, những sự kiện này còn tạo cơ hội để doanh nghiệp trong nước gặp gỡ các thương hiệu công nghệ ..."
+        },
+        {
+          "title": "VEEW 2026: Cột mốc định hình nền kinh tế trải nghiệm Việt Nam",
+          "url": "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+          "snippet": "6 ngày trước ... Sự kiện sẽ diễn ra từ ngày 17 đến ngày 19 tháng 10 năm 2026 tại Trung tâm Triển lãm Việt Nam (VEC), Đông Anh, Hà Nội. Đây là công trình biểu ..."
+        },
+        {
+          "title": "iTech Expo 2026",
+          "url": "https://itechexpo.com.vn",
+          "snippet": "iTECH EXPO 2026 vẫn đang diễn ra đến hết ngày 02/10/2026 tại Queen Plaza Kỳ Hòa, TP.HCM. Hãy đến với sự kiện để trực tiếp khám phá các sản phẩm, giải pháp công ..."
+        },
+        {
+          "title": "KHÔNG THỂ BỎ LỠ: CHUỖI SỰ KIỆN SÔI ĐỘNG TẠI VEC THÁNG ...",
+          "url": "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844",
+          "snippet": "28 thg 9, 2026 ... ⊛ Mining Vietnam & Construction 2026 (21.04 -23.04): Triển lãm quốc tế về Công nghiệp khai thác mỏ, Khôi phục tài nguyên khoáng sản và Xây dựng ..."
+        },
+        {
+          "title": "FPT tổ chức FPT TRANSFORM 2026 - sự kiện công nghệ quốc tế chuyên sâu ...",
+          "url": "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+          "snippet": "Sự kiện công nghệ quốc tế FPT TRANSFORM 2026 với chủ đề \"Ship AI Live\" dự kiến diễn ra ngày 17/10/2026 tại InterContinental Landmark 72, Hà Nội. Sự kiện mang đến không gian chuyên sâu về AI, Cloud và Data, nơi cộng đồng kỹ sư, nhà phát triển có thể cập nhật công nghệ mới, trao đổi kinh nghiệm triển khai và trực ..."
+        }
+      ],
+      "source_urls": [
+        "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+        "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+        "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+        "https://itechexpo.com.vn",
+        "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844",
+        "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 8111,
+        "completion_tokens": 259,
+        "total_tokens": 8370
+      },
+      "elapsed_seconds": 31.132
+    },
+    {
+      "id": 16,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "giá iPhone mới nhất chính hãng tại Việt Nam tháng 10 2026",
+          "results": [
+            {
+              "url": "https://vietnamnet.vn/5-mau-iphone-chinh-hang-gia-re-nhat-thang-10-nen-mua-may-nao-2565428.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat",
+              "published_at": ""
+            },
+            {
+              "url": "https://hoanghamobile.com/tin-tuc/gia-dt-iphone",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.viettablet.com/bang-gia-iphone-15-series",
+              "published_at": ""
+            },
+            {
+              "url": "https://cellphones.com.vn/mobile/apple.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/taoxanhh.com.vn/posts/-b%E1%BA%A3ng-gi%C3%A1-iphone-th%C3%A1ng-102026iphone-18-series-ch%C3%ADnh-th%E1%BB%A9c-l%C3%AAn-k%E1%BB%87-17-series-c%C3%B3-th%C3%AA/1396585119354117",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "giá iPhone mới nhất chính hãng tại Việt Nam tháng 10 2026 2026 update",
+          "results": [
+            {
+              "url": "https://cellphones.com.vn/sforum/bang-gia-cac-dong-dien-thoai-iphone-hien-nay",
+              "published_at": ""
+            },
+            {
+              "url": "https://mytour.vn/vi/blog/cong-nghe/bang-gia-iphone-moi-nhat-2026-cap-nhat-gia-chinh-hang-va-iphone-da-qua-su-dung-mytour.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/viettabletcom/posts/b%E1%BA%A3ng-gi%C3%A1-iphone-16-series-c%E1%BA%ADp-nh%E1%BA%ADt-th%C3%A1ng-102026-gi%C3%A1-b%C3%A1n-m%E1%BB%9Bi-t%E1%BA%A1i-viettablet-/1589205626582113",
+              "published_at": ""
+            },
+            {
+              "url": "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat",
+              "published_at": ""
+            },
+            {
+              "url": "https://hoanghamobile.com/tin-tuc/gia-dt-iphone",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.viettablet.com/bang-gia-iphone-15-series",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "conflicting",
+      "question": "Giá chính xác của một chiếc iPhone mới nhất tại Việt Nam hôm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://cellphones.com.vn/mobile/apple.html",
+        "https://cellphones.com.vn/sforum/bang-gia-cac-dong-dien-thoai-iphone-hien-nay",
+        "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+        "https://hoanghamobile.com/tin-tuc/gia-dt-iphone",
+        "https://vietnamnet.vn/5-mau-iphone-chinh-hang-gia-re-nhat-thang-10-nen-mua-may-nao-2565428.html",
+        "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+        "https://www.viettablet.com/bang-gia-iphone-15-series",
+        "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "iPhone mới nhất tại Việt Nam hiện nay là <b>iPhone 18 series</b>. Theo bảng giá cập nhật tháng 10/2026, mức giá khởi điểm chính hãng như sau:\n\n- iPhone 18 Pro 256GB: <code>32.299.000đ</code>\n- iPhone 18 Pro Max 256GB: <code>37.999.000đ</code>\n\nGiá có thể thay đổi tùy thời điểm và chương trình khuyến mãi của từng đại lý, nên bạn hỏi trực tiếp cửa hàng để có giá chốt cuối cùng nhé.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "5 mẫu iPhone chính hãng giá rẻ nhất tháng 10: Nên mua máy nào?",
+          "url": "https://vietnamnet.vn/5-mau-iphone-chinh-hang-gia-re-nhat-thang-10-nen-mua-may-nao-2565428.html",
+          "snippet": "Thị trường iPhone chính hãng tại Việt Nam tháng 10/2026 xuất hiện nhiều lựa chọn đáng chú ý khi iPhone 13, iPhone 14 và iPhone 16e giảm giá mạnh, trở thành những mẫu iPhone rẻ nhất."
+        },
+        {
+          "title": "Bảng giá iPhone hiện nay tại FPT Shop, cập nhật mới nhất 10/2026",
+          "url": "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+          "snippet": "Bảng giá iPhone hiện nay tại FPT Shop (cập nhật ngày 12/10/2026) gồm 12 mẫu iPhone mới chính hãng VN/A, từ iPhone 15 đến iPhone 18 Pro Max và iPhone Duo màn ..."
+        },
+        {
+          "title": "Cập nhật bảng giá iPhone năm 2026: Giá tốt, ưu đãi hấp dẫn",
+          "url": "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat",
+          "snippet": "1 thg 10, 2026 ... Bảng giá iPhone 18 series mới nhất tháng 10/2026 ; iPhone 18 Pro 2TB Chính Hãng. 70.599.000đ ; iPhone 18 Pro Max 256GB Chính Hãng. 37.999.000đ."
+        },
+        {
+          "title": "Giá điện thoại iPhone mới nhất 2026: Bảng giá chính hãng và iPhone cũ",
+          "url": "https://hoanghamobile.com/tin-tuc/gia-dt-iphone",
+          "snippet": "Hoàng Hà Mobile sẽ giúp bạn cập nhật bảng giá đt iPhone mới nhất 2026, đồng thời phân tích chi tiết dễ đưa ra quyết định mua sắm hợp lý."
+        },
+        {
+          "title": "Bảng giá iPhone 15 series cập nhật mới nhất tháng 10/2026",
+          "url": "https://www.viettablet.com/bang-gia-iphone-15-series",
+          "snippet": "5 ngày trước ... Hiện tại, iPhone 15 đang có mức giá tương đối dễ chịu trong phân khúc. Cụ thể, phiên bản 128GB có giá 17.499.000 ₫ đối với máy mới và 11.299.000 ..."
+        },
+        {
+          "title": "iPhone (Apple) chính hãng, giá tốt, góp 0% từ 0đ T10/2026",
+          "url": "https://cellphones.com.vn/mobile/apple.html",
+          "snippet": "Lưu ý: Đây là mức giá iPhone bán tại tháng 10/2026, giá bán sẽ được thay đổi liên tục dựa trên các chương trình khuyến mãi mà CellphoneS mang đến như các dịp lễ (Tết, Black Friday, Back to School) - các đợt sale ngày đôi lớn nhất trong năm."
+        },
+        {
+          "title": "Bảng giá iPhone hiện nay mới nhất 2026 (iPhone Mới - Cũ)",
+          "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+          "snippet": "Bạn đang muốn sở hữu cho mình một chiếc iPhone nhưng không biết nên lựa chọn phiên bản nào? Xem ngay bài viết tổng hợp bảng giá iPhone hiện nay mới nhất tháng 10/2026 để lựa chọn cho mình chiếc điện thoại phù hợp nhé!"
+        }
+      ],
+      "source_urls": [
+        "https://vietnamnet.vn/5-mau-iphone-chinh-hang-gia-re-nhat-thang-10-nen-mua-may-nao-2565428.html",
+        "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+        "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat",
+        "https://hoanghamobile.com/tin-tuc/gia-dt-iphone",
+        "https://www.viettablet.com/bang-gia-iphone-15-series",
+        "https://cellphones.com.vn/mobile/apple.html",
+        "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 16756,
+        "completion_tokens": 218,
+        "total_tokens": 16974
+      },
+      "elapsed_seconds": 44.234
+    },
+    {
+      "id": 17,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "conflicting",
+      "question": "Dân số chính xác của một xã miền núi nhỏ bất kỳ vào đêm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không ai có thể biết con số chính xác tuyệt đối đâu. Dân số thay đổi liên tục từng phút (sinh, tử, người đi/về), và không xã nào cập nhật real-time theo kiểu đếm từng người mỗi đêm cả.\n\nDữ liệu dân số thường chỉ được thống kê qua các đợt tổng điều tra hoặc sổ hộ khẩu/tạm trú của công an xã — đó là những con số gần đúng tại một thời điểm nhất định, không phải \"đêm nay\".",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2325,
+        "completion_tokens": 98,
+        "total_tokens": 2423
+      },
+      "elapsed_seconds": 5.375
+    },
+    {
+      "id": 18,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "mực nước biển dâng dự báo 5 mét trong 5 năm tới 2026 2031",
+          "results": [
+            {
+              "url": "https://moitruong.net.vn/muc-nuoc-bien-dang-cao-do-bang-tan-chay-nhanh-o-tay-nam-cuc-67873.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://documents1.worldbank.org/curated/en/099051625143037334/pdf/P176996-1f81a83a-aa8f-49d2-84ea-ec7d286593c5.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://tphcm.chinhphu.vn/thong-tin-tphcm-bi-xoa-so-vao-nam-2050-chua-du-can-cu-khoa-hoc-10119601.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://hcmcpv.org.vn/tin-tuc/bo-tn-mt-bac-tin-dong-bang-song-cuu-long-bi-%E2%80%98%E2%80%98xoa-so%E2%80%99%E2%80%99-vao-nam-2050-1491859291",
+              "published_at": ""
+            },
+            {
+              "url": "https://kienhai.angiang.gov.vn/huong-ung-tuan-le-quoc-gia-phong-chong-thien-tai-nam-2026-cong-dong-chung-tay-phong-chong-thien-tai",
+              "published_at": ""
+            },
+            {
+              "url": "https://mae.gov.vn/noidung/Lists/DuThaoVanBan/Attachments/2333/1.%20BCTH_QHDB.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://vncold.vn/TinTuc/Index",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.tapchikientruc.com.vn/chuyen-muc/giai-phap-quy-hoach-kien-truc-cac-cong-trinh-xay-dung-co-ban-theo-kich-ban-nuoc-bien-dang-o-viet-nam.html",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "conflicting",
+      "question": "Có đúng là nước biển sẽ dâng 5 mét trong 5 năm tới không?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://documents1.worldbank.org/curated/en/099051625143037334/pdf/P176996-1f81a83a-aa8f-49d2-84ea-ec7d286593c5.pdf",
+        "https://hcmcpv.org.vn/tin-tuc/bo-tn-mt-bac-tin-dong-bang-song-cuu-long-bi-%E2%80%98%E2%80%98xoa-so%E2%80%99%E2%80%99-vao-nam-2050-1491859291",
+        "https://kienhai.angiang.gov.vn/huong-ung-tuan-le-quoc-gia-phong-chong-thien-tai-nam-2026-cong-dong-chung-tay-phong-chong-thien-tai",
+        "https://mae.gov.vn/noidung/Lists/DuThaoVanBan/Attachments/2333/1.%20BCTH_QHDB.pdf",
+        "https://moitruong.net.vn/muc-nuoc-bien-dang-cao-do-bang-tan-chay-nhanh-o-tay-nam-cuc-67873.html",
+        "https://tphcm.chinhphu.vn/thong-tin-tphcm-bi-xoa-so-vao-nam-2050-chua-du-can-cu-khoa-hoc-10119601.htm",
+        "https://vncold.vn/TinTuc/Index",
+        "https://www.tapchikientruc.com.vn/chuyen-muc/giai-phap-quy-hoach-kien-truc-cac-cong-trinh-xay-dung-co-ban-theo-kich-ban-nuoc-bien-dang-o-viet-nam.html"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không đúng đâu. Không có cơ quan khoa học hay tổ chức quốc tế uy tín nào dự báo nước biển sẽ dâng 5 mét chỉ trong 5 năm tới (2026–2031). Con số này hoàn toàn phi thực tế về mặt vật lý.\n\nTheo các báo cáo của IPCC, mực nước biển trung bình toàn cầu hiện đang tăng khoảng vài mm mỗi năm. Ngay cả trong những kịch bản biến đổi khí hậu xấu nhất, mức dâng được tính bằng <i>cm</i> cho từng thập kỷ, còn mức dâng hàng mét là câu chuyện của nhiều thế kỷ hoặc thiên niên kỷ khi toàn bộ các dải băng lớn tan chảy.\n\nTóm lại, đây là thông tin sai lệch. Bạn không cần lo lắng về con số 5 mét trong 5 năm tới nhé.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Mực nước biển dâng cao do băng tan chảy nhanh ở Tây Nam Cực",
+          "url": "https://moitruong.net.vn/muc-nuoc-bien-dang-cao-do-bang-tan-chay-nhanh-o-tay-nam-cuc-67873.html",
+          "snippet": "6 thg 11, 2023 ... El Niño trong giai đoạn 2026–2027 được dự báo nằm trong nhóm những đợt mạnh nhất từng được ghi nhận, làm tăng nguy cơ hạn hán, lũ lụt và thời ..."
+        },
+        {
+          "title": "Việt Nam 2045— Tăng trưởng Xanh hơn - World Bank Documents",
+          "url": "https://documents1.worldbank.org/curated/en/099051625143037334/pdf/P176996-1f81a83a-aa8f-49d2-84ea-ec7d286593c5.pdf",
+          "snippet": "... mực nước biển dâng và bão gây tổn thất lớn về cơ sở hạ tầng - như đường bộ ... năm, bao gồm du lịch biển, trong đó số lượt khách quốc tế tăng 8-10% mỗi ..."
+        },
+        {
+          "title": "Thông tin TPHCM bị “xóa sổ” vào năm 2050 chưa đủ căn cứ khoa học",
+          "url": "https://tphcm.chinhphu.vn/thong-tin-tphcm-bi-xoa-so-vao-nam-2050-chua-du-can-cu-khoa-hoc-10119601.htm",
+          "snippet": "1 thg 11, 2019 ... Thứ hai, trong nghiên cứu của Climate Central, các tác giả sử dụng kịch bản nước biển dâng 2 m kết hợp với triều cường trong xây dựng bản đồ ..."
+        },
+        {
+          "title": "Bộ TN-MT bác tin Đồng bằng sông Cửu Long bị ''xóa sổ'' vào năm ...",
+          "url": "https://hcmcpv.org.vn/tin-tuc/bo-tn-mt-bac-tin-dong-bang-song-cuu-long-bi-%E2%80%98%E2%80%98xoa-so%E2%80%99%E2%80%99-vao-nam-2050-1491859291",
+          "snippet": "2 thg 11, 2019 ... Tại Việt Nam, nghiên cứu đưa ra giả định, nước biển dâng do biến đổi khí hậu có thể “xóa sổ” Đồng bằng sông Cửu Long trong vòng 30 năm tới, gây ..."
+        },
+        {
+          "title": "Hưởng ứng Tuần lễ Quốc gia phòng, chống thiên tai năm 2026 ...",
+          "url": "https://kienhai.angiang.gov.vn/huong-ung-tuan-le-quoc-gia-phong-chong-thien-tai-nam-2026-cong-dong-chung-tay-phong-chong-thien-tai",
+          "snippet": "19 thg 5, 2026 ... Hưởng ứng Tuần lễ Quốc gia Phòng, chống thiên tai năm 2026, đặc khu Kiên Hải kêu gọi toàn thể cán bộ và nhân dân nêu cao tinh thần chủ động, ..."
+        },
+        {
+          "title": "BÁO CÁO TỔNG HỢP - BỘ NÔNG NGHIỆP VÀ MÔI TRƯỜNG",
+          "url": "https://mae.gov.vn/noidung/Lists/DuThaoVanBan/Attachments/2333/1.%20BCTH_QHDB.pdf",
+          "snippet": "10 thg 5, 2026 ... ... đến năm 2050. BÁO CÁO TỔNG HỢP. 11 biển. Hệ thống đê biển, đê cửa sông ... nước biển dâng. - Khu vực miền Nam: Có tổng chiều dài trên ..."
+        },
+        {
+          "title": "HỘI ĐẬP LỚN & PHÁT TRIỂN NGUỒN NƯỚC VIÊT NAM",
+          "url": "https://vncold.vn/TinTuc/Index",
+          "snippet": "Sáng 14/9/2026, Đoàn công tác của Bộ Công Thương và Hội Đập lớn Cộng hòa Dân chủ Nhân dân Lào do Phó Cục trưởng Cục Năng lượng Sanya Somvichith, trưởng đoàn, và ..."
+        },
+        {
+          "title": "Giải pháp quy hoạch, kiến trúc các công trình xây dựng cơ bản theo ...",
+          "url": "https://www.tapchikientruc.com.vn/chuyen-muc/giai-phap-quy-hoach-kien-truc-cac-cong-trinh-xay-dung-co-ban-theo-kich-ban-nuoc-bien-dang-o-viet-nam.html",
+          "snippet": "17 thg 4, 2018 ... Mực NBD đến 60m thì các vùng lãnh thổ bị ngập đã tăng lên rất nhiều, ăn sâu vào thềm lục địa của cả 2 miền. Khu vực miền Nam, ĐBSCL là vùng bị ..."
+        }
+      ],
+      "source_urls": [
+        "https://moitruong.net.vn/muc-nuoc-bien-dang-cao-do-bang-tan-chay-nhanh-o-tay-nam-cuc-67873.html",
+        "https://documents1.worldbank.org/curated/en/099051625143037334/pdf/P176996-1f81a83a-aa8f-49d2-84ea-ec7d286593c5.pdf",
+        "https://tphcm.chinhphu.vn/thong-tin-tphcm-bi-xoa-so-vao-nam-2050-chua-du-can-cu-khoa-hoc-10119601.htm",
+        "https://hcmcpv.org.vn/tin-tuc/bo-tn-mt-bac-tin-dong-bang-song-cuu-long-bi-%E2%80%98%E2%80%98xoa-so%E2%80%99%E2%80%99-vao-nam-2050-1491859291",
+        "https://kienhai.angiang.gov.vn/huong-ung-tuan-le-quoc-gia-phong-chong-thien-tai-nam-2026-cong-dong-chung-tay-phong-chong-thien-tai",
+        "https://mae.gov.vn/noidung/Lists/DuThaoVanBan/Attachments/2333/1.%20BCTH_QHDB.pdf",
+        "https://vncold.vn/TinTuc/Index",
+        "https://www.tapchikientruc.com.vn/chuyen-muc/giai-phap-quy-hoach-kien-truc-cac-cong-trinh-xay-dung-co-ban-theo-kich-ban-nuoc-bien-dang-o-viet-nam.html"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 8350,
+        "completion_tokens": 212,
+        "total_tokens": 8562
+      },
+      "elapsed_seconds": 17.034
+    },
+    {
+      "id": 19,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc trực tiếp URL https://example.com và cho biết trang nói gì (kiểm tra đường `fetch_url` trực tiếp; URL cố định để tái lập).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://example.com"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đã đọc xong. Trang <a href=\"https://example.com\">example.com</a> chỉ là một trang mẫu dùng cho mục đích tài liệu, không cần xin phép khi sử dụng. Nội dung ghi rõ đây không phải dịch vụ thực tế và khuyên không nên dùng nó để test hay giám sát hệ thống.\n\nNói ngắn gọn thì nó là domain giữ chỗ của IANA, không có nội dung gì đặc biệt cả.",
+      "cited_urls": [
+        "https://example.com"
+      ],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://example.com",
+          "url": "https://example.com",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://example.com"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 1,
+        "allowed": 1,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 6053,
+        "completion_tokens": 113,
+        "total_tokens": 6166
+      },
+      "elapsed_seconds": 10.396
+    },
+    {
+      "id": 20,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Dùng image search cho truy vấn “Eiffel Tower” và mô tả 1–2 kết quả (kiểm tra đường image search không đổi).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://commons.wikimedia.org/wiki/File:Champ_de_Mars_from_the_Eiffel_Tower_-_July_2006_edit.jpg",
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://www.britannica.com/topic/Eiffel-Tower-Paris-France",
+        "https://www.flickr.com/photos/29314071@N00/761420786"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đã tìm xong với truy vấn \"Eiffel Tower\", hệ thống sẽ tự gửi ảnh cho bạn. Mình mô tả nhanh 2 kết quả đầu tiên nhé:\n\n<b>Ảnh 1</b> (nguồn Openverse): Tháp Eiffel chụp vào lúc chạng vạng, ánh sáng trời tối dần làm nổi bật phần khung thép của tháp.\n\n<b>Ảnh 2</b> (nguồn morilly.com): Nằm trong bộ sưu tập ảnh các điểm tham quan ở Paris, cũng chụp Tháp Eiffel. Chi tiết cụ thể trong ảnh thì mình chỉ khẳng định được khi nhìn trực tiếp hình thôi.\n\nLuồng image search hoạt động bình thường, không có gì thay đổi nha.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Eiffel Tower at dusk 2",
+          "url": "https://www.flickr.com/photos/29314071@N00/761420786",
+          "snippet": "openverse"
+        },
+        {
+          "title": "Paris attractions eiffel tower 60 photos - Morilly.…",
+          "url": "https://morilly.com/blog/paris-attractions-eiffel-tower",
+          "snippet": "morilly.com"
+        },
+        {
+          "title": "Eiffel Tower | History, Height, & Facts | Britannica",
+          "url": "https://www.britannica.com/topic/Eiffel-Tower-Paris-France",
+          "snippet": "Bing"
+        },
+        {
+          "title": "Champ de Mars from the Eiffel Tower - July 2006 edit",
+          "url": "https://commons.wikimedia.org/wiki/File:Champ_de_Mars_from_the_Eiffel_Tower_-_July_2006_edit.jpg",
+          "snippet": "wikicommons.images"
+        }
+      ],
+      "source_urls": [
+        "https://www.flickr.com/photos/29314071@N00/761420786",
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://www.britannica.com/topic/Eiffel-Tower-Paris-France",
+        "https://commons.wikimedia.org/wiki/File:Champ_de_Mars_from_the_Eiffel_Tower_-_July_2006_edit.jpg"
+      ],
+      "images_count": 4,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 6074,
+        "completion_tokens": 168,
+        "total_tokens": 6242
+      },
+      "elapsed_seconds": 12.248
+    },
+    {
+      "id": 21,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc URL X/Twitter status https://x.com/jack/status/20 bằng fetch_url mode=x_thread và tóm tắt nội dung; nếu không đọc được, nói rõ lỗi.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đọc được rồi. Đây là tweet của <b>jack</b> (Jack Dorsey) với nội dung:\n\n<blockquote>just setting up my twttr</blockquote>\n\nChỉ có đúng một câu này, không có thread dài hơn. Đây chính là tweet đầu tiên trong lịch sử Twitter (nay là X), đăng năm 2006 khi Jack Dorsey mới thiết lập nền tảng.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://x.com/jack/status/20",
+          "url": "https://x.com/jack/status/20",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 6021,
+        "completion_tokens": 125,
+        "total_tokens": 6146
+      },
+      "elapsed_seconds": 9.151
+    }
+  ],
+  "search_preflight": {
+    "ok": true,
+    "result_count": 8,
+    "error_type": "",
+    "elapsed_seconds": 1.144
+  },
+  "v2_summary": {
+    "completed": 21,
+    "attempted": 21,
+    "latency_median_sec": 12.033,
+    "latency_p95_sec": 44.234,
+    "prompt_tokens_median": 6053,
+    "completion_tokens_median": 168,
+    "usage_reported_rows": 21
+  }
+}

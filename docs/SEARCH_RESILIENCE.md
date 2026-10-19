@@ -121,10 +121,17 @@ Không còn cờ bật/tắt hay nhánh V1.
   chưa được đọc trong request.
 - **Request-scoped coordinator:** mọi burst `web_search` trong cùng một câu hỏi chia
   sẻ một `AutoFetchCoordinator`: deadline monotonic, giữ chỗ (reservation) canonical URL
-  bằng lock nên tổng số nguồn auto-fetch không vượt 2 cho **toàn câu hỏi**, và semaphore
-  giới hạn 2 lượt đọc song song. Không trừ ngân sách sau `gather()` nên hai burst chạy
-  đồng thời không thể vượt cap hay tiêu budget hai lần; deadline bị chặn tiếp bởi
-  budget/deadline của question/job.
+  bằng lock nên tổng số nguồn auto-fetch **đọc được** không vượt 2 cho **toàn câu hỏi**,
+  và semaphore giới hạn 2 lượt đọc song song. Không trừ ngân sách sau `gather()` nên hai
+  burst chạy đồng thời không thể vượt cap hay tiêu budget hai lần; deadline bị chặn tiếp
+  bởi budget/deadline của question/job.
+- **Đọc bù khi nguồn lỗi:** một read thất bại không tạo chứng cứ nên không được chiếm
+  slot của câu hỏi; burst đọc tiếp candidate kế tiếp trong danh sách đã xếp hạng, tối đa
+  `MAX_BACKFILL_ROUNDS` vòng. Lượt đọc bù vẫn dùng chung claim set (không đọc trùng URL),
+  chung deadline và bị chặn bởi attempt ceiling `2 × WEB_AUTO_FETCH_MAX_SOURCES`, nên chuỗi
+  link chết không thể biến auto-fetch thành crawl không giới hạn. Nguồn lỗi vẫn được báo
+  `KHÔNG đọc được nguồn này` và header ghi đúng số nguồn thực sự đọc được; hết ngân sách
+  hoặc hết candidate thì báo ít nguồn hơn, không bao giờ tính là đã đọc.
 - **User URL:** nếu message hoặc quoted text chứa URL, auto-fetch không chạy; URL
   người dùng cung cấp vẫn được ưu tiên qua `fetch_url`.
 - **Request-scoped cache:** nội dung đã đọc được cache theo canonical URL trong phạm

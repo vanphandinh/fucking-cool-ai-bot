@@ -1,0 +1,16 @@
+# Loopback-only override for host-run live smoke tests.
+#
+# Production keeps SearXNG private to the Docker network (no published port).
+# This override adds a 127.0.0.1-only port so `scripts/web_evidence_live_smoke.py`
+# can reach the same backend from the host instead of silently falling back to
+# DDGS without publication dates.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.smoke.yml \
+#     --profile searxng up -d searxng
+#   SEARXNG_URL=http://127.0.0.1:8080 \
+#     python -m scripts.web_evidence_live_smoke --output /tmp/smoke.json
+services:
+  searxng:
+    ports:
+      - "127.0.0.1:${SEARXNG_SMOKE_PORT:-8080}:8080"

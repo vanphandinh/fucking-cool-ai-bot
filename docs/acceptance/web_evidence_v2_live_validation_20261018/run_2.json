@@ -1,0 +1,1341 @@
+{
+  "created_utc": "2026-10-18T15:15:17.156143+00:00",
+  "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
+  "question_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "x_status_url": "https://x.com/jack/status/20",
+  "auto_fetch": true,
+  "quality_verdict": "NOT MEASURED",
+  "token_usage_note": "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token counts are unavailable for this row.",
+  "results": [
+    {
+      "id": 1,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Wellington New Zealand population 2026",
+          "results": [
+            {
+              "url": "https://citypopulationdata.com/city/wellington-new-zealand",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+              "published_at": ""
+            },
+            {
+              "url": "https://populationstat.com/new-zealand/wellington",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulationreview.com/cities/new-zealand",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulation.online/city/new-zealand/wellington",
+              "published_at": ""
+            },
+            {
+              "url": "https://population-hub.com/en/nz/population-of-wellington-10463.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulationreview.com/cities/new-zealand/wellington",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "basic",
+      "question": "Thủ đô của New Zealand là gì, dân số khoảng bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://citypopulationdata.com/city/wellington-new-zealand",
+        "https://population-hub.com/en/nz/population-of-wellington-10463.html",
+        "https://populationstat.com/new-zealand/wellington",
+        "https://worldpopulation.online/city/new-zealand/wellington",
+        "https://worldpopulationreview.com/cities/new-zealand",
+        "https://worldpopulationreview.com/cities/new-zealand/wellington",
+        "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Thủ đô của New Zealand là <b>Wellington</b>.\n\nVề dân số, tuỳ theo cách tính mà con số sẽ khác nhau: vùng đô thị (urban area) hiện khoảng hơn <b>419.000</b> người, còn riêng khu vực nội thành thì dao động khoảng <b>208.000 – 382.000</b> người. Wellington cũng là thủ đô nằm ở vĩ độ nam nhất thế giới và là thành phố lớn thứ hai của New Zealand sau Auckland.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Wellington Population 2026 — 216,200 People | Growth & AreaWellington, New Zealand Population (2026) - Population StatWellington Population 2026 — Size, Rank & Location ...New Zealand Cities by Population 2026 - World Population ReviewWellington, New Zealand Metro Area Population (1950-2026)Populati",
+          "url": "https://citypopulationdata.com/city/wellington-new-zealand",
+          "snippet": "The population of Wellington, New Zealand is 216,200 in 2026. Explore live stats, growth rate, population density, area size, and see how Wellington ranks among other cities in New Zealand. Sep 5, 2019 · Map of Wellington, New Zealand All Biggest Cities in New Zealand Auckland 2 M Wellington 419 k Wellington, New Zealand has a population of 381,900 in 2026, the #3 biggest city in New Zealand, loca"
+        },
+        {
+          "title": "Wellington, New Zealand Metro Area Population (1950-2026)",
+          "url": "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+          "snippet": "Chart and table of population level and growth rate for the Wellington, New Zealand metro area from 1950 to 2026."
+        },
+        {
+          "title": "Wellington, New Zealand Population (2026) - Population Stat",
+          "url": "https://populationstat.com/new-zealand/wellington",
+          "snippet": "Sep 5, 2019 · Map of Wellington, New Zealand All Biggest Cities in New Zealand Auckland 2 M Wellington 419 k"
+        },
+        {
+          "title": "New Zealand Cities by Population 2026 - World Population Review",
+          "url": "https://worldpopulationreview.com/cities/new-zealand",
+          "snippet": "Wellington is also the southernmost capital city of a sovereign state. The city is relatively small and has a population of 208K residents, making it the second-largest city in New Zealand. New Zealand ’s most populous city is Auckland, with a population of 1.5M in its urban area."
+        },
+        {
+          "title": "Wellington Population 2026 — Size, Rank & Location ...",
+          "url": "https://worldpopulation.online/city/new-zealand/wellington",
+          "snippet": "Wellington, New Zealand has a population of 381,900 in 2026, the #3 biggest city in New Zealand, located in Wellington Region. Map, nearby cities and facts."
+        },
+        {
+          "title": "Population of Wellington 2026 | Wellington population ...",
+          "url": "https://population-hub.com/en/nz/population-of-wellington-10463.html",
+          "snippet": "The population in Wellington for 2026 is 360 624. Wellington is one of 44 cities in New Zealand and ranks 5 in the New Zealand population. Wellington is the capital New Zealand. Wellington city population data has been obtained from public sources."
+        }
+      ],
+      "source_urls": [
+        "https://citypopulationdata.com/city/wellington-new-zealand",
+        "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+        "https://populationstat.com/new-zealand/wellington",
+        "https://worldpopulationreview.com/cities/new-zealand",
+        "https://worldpopulation.online/city/new-zealand/wellington",
+        "https://population-hub.com/en/nz/population-of-wellington-10463.html"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7635,
+        "completion_tokens": 146,
+        "total_tokens": 7781
+      },
+      "elapsed_seconds": 17.11
+    },
+    {
+      "id": 2,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Nước sôi ở bao nhiêu độ C tại áp suất mực nước biển, và ở đỉnh Everest thì sao?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tại áp suất mực nước biển (1 atm), nước sôi ở <b>100°C</b>.\n\nTrên đỉnh Everest, áp suất khí quyển chỉ bằng khoảng 1/3 so với mực nước biển, nên nước sôi ở nhiệt độ thấp hơn nhiều, chỉ tầm <b>68–70°C</b>. Vì nước không đủ nóng nên việc nấu chín thức ăn trên đó khá khó khăn nếu không dùng nồi áp suất.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2283,
+        "completion_tokens": 93,
+        "total_tokens": 2376
+      },
+      "elapsed_seconds": 0.078
+    },
+    {
+      "id": 3,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Ngôn ngữ Python ra mắt năm nào và do ai tạo ra?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Ngôn ngữ Python được tạo ra bởi <b>Guido van Rossum</b> và chính thức ra mắt lần đầu vào năm <b>1991</b>.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2275,
+        "completion_tokens": 38,
+        "total_tokens": 2313
+      },
+      "elapsed_seconds": 0.068
+    },
+    {
+      "id": 4,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Hành tinh nào có ngày dài nhất trong Hệ Mặt Trời (tính theo giờ Trái Đất)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "<b>Sao Kim (Venus)</b> có ngày dài nhất trong Hệ Mặt Trời nếu tính theo thời gian tự quay quanh trục: một vòng quay hết khoảng <b>5.832 giờ Trái Đất</b> (~243 ngày Trái Đất), và nó còn quay ngược chiều so với hầu hết các hành tinh khác.\n\nTuy nhiên, nếu bạn hỏi về \"ngày mặt trời\" (thời gian từ lúc mặt trời mọc đến lần mọc tiếp theo) thì <b>Sao Thủy</b> mới giữ kỷ lục — khoảng <b>4.222,6 giờ Trái Đất</b> (~176 ngày Trái Đất), do nó quay chậm nhưng lại quay cùng chiều quỹ đạo nên phải đợi rất lâu mặt trời mới trở lại vị trí cũ trên bầu trời.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2281,
+        "completion_tokens": 166,
+        "total_tokens": 2447
+      },
+      "elapsed_seconds": 0.072
+    },
+    {
+      "id": 5,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Great Barrier Reef length km along Queensland coast Wikipedia",
+          "results": [
+            {
+              "url": "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.britannica.com/place/Great-Barrier-Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.wikiwand.com/en/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia “Great Barrier Reef”, rạn san hô trải dài khoảng bao nhiêu km dọc bờ biển Queensland?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+        "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://www.britannica.com/place/Great-Barrier-Reef",
+        "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+        "https://www.wikiwand.com/en/Great_Barrier_Reef"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo Wikipedia và các nguồn địa lý, rạn san hô Great Barrier Reef trải dài khoảng <b>2.300 km</b> dọc bờ biển Queensland, Úc (từ mũi Cape York ở phía bắc đến khu vực Bundaberg ở phía nam).",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "snippet": ""
+        },
+        {
+          "title": "The Great Barrier Reef - Queensland's environments ...",
+          "url": "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+          "snippet": "The Great Barrier Reef extends for ~2300 km along the Queensland’s coast, from Cape York in the north to around Bundaberg in the south. The Great Barrier Reef was declared a Marine Park in 1975 and afforded World Heritage status in 1981 due to its ‘outstanding universal value’."
+        },
+        {
+          "title": "Great Barrier Reef | Map, Animals, Bleaching, & Facts ...Great Barrier Reef - WikiwandThe Great Barrier Reef - Queensland's environments ...Great Barrier Reef: Size, Biodiversity, Bleaching & Facts ...",
+          "url": "https://www.britannica.com/place/Great-Barrier-Reef",
+          "snippet": "1 day ago · Great Barrier Reef, world’s largest coral reef complex, located in the Pacific Ocean off northeastern Australia. It extends for more than 1,250 miles (2,000 km) in a northwest-southeast direction, and its width ranges from 37 to 155 miles (60 to 250 km). The Great Barrier Reef is the world's largest coral reef system, composed of over 2,900 individual reefs and 900 islands stretching f"
+        },
+        {
+          "title": "Great Barrier Reef: Size, Biodiversity, Bleaching & Facts ...",
+          "url": "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+          "snippet": "Mar 23, 2026 · The Great Barrier Reef is the largest living structure on Earth, stretching 2,300 kilometers along the northeastern coast of Australia from the tip of Cape York Peninsula to Bundaberg in Queensland."
+        },
+        {
+          "title": "Great Barrier Reef - Wikiwand",
+          "url": "https://www.wikiwand.com/en/Great_Barrier_Reef",
+          "snippet": "The Great Barrier Reef is the world's largest coral reef system, composed of over 2,900 individual reefs and 900 islands stretching for over 2,300 kilometres (1,400 mi) over an area of approximately 344,400 square kilometres (133,000 mi2)."
+        }
+      ],
+      "source_urls": [
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+        "https://www.britannica.com/place/Great-Barrier-Reef",
+        "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+        "https://www.wikiwand.com/en/Great_Barrier_Reef"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 13001,
+        "completion_tokens": 156,
+        "total_tokens": 13157
+      },
+      "elapsed_seconds": 20.408
+    },
+    {
+      "id": 6,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov",
+          "results": [
+            {
+              "url": "https://ntrs.nasa.gov/citations/20210022893",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iv",
+              "published_at": ""
+            },
+            {
+              "url": "https://www3.nasa.gov/specials/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/moon/exploration",
+              "published_at": ""
+            },
+            {
+              "url": "https://ntrs.nasa.gov/citations/20240012719",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iv",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/nasa-announces-winners-for-2026-human-lander-challenge",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/missions/2026/03/27/artemis-ii-crew-arrives-at-launch-site-shares-moon-mascot",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://ntrs.nasa.gov/citations/20210022893",
+        "https://ntrs.nasa.gov/citations/20240012719",
+        "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+        "https://science.nasa.gov/moon/exploration",
+        "https://www.nasa.gov/humans-in-space/artemis",
+        "https://www.nasa.gov/mission/artemis-iv",
+        "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+        "https://www3.nasa.gov/specials/artemis"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức của NASA, lần hạ cánh có phi hành đoàn đầu tiên trong chương trình Artemis dự kiến thuộc sứ mệnh <b>Artemis III</b>. Sứ mệnh này sẽ đưa các phi hành gia (bao gồm người phụ nữ đầu tiên và người da màu đầu tiên) quay lại bề mặt Mặt Trăng sau hơn 50 năm.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "NASA’s Artemis Human Landing Systems - NASA Technical Reports ...",
+          "url": "https://ntrs.nasa.gov/citations/20210022893",
+          "snippet": "The Human Landing System (HLS) is the mode of transportation that will take astronauts to the lunar surface in NASA's Artemis lunar exploration program. On early missions, the astronauts will live inside the pressurized crew cabin portion of the lander for up to a week."
+        }
+      ],
+      "source_urls": [
+        "https://ntrs.nasa.gov/citations/20210022893"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 6273,
+        "completion_tokens": 106,
+        "total_tokens": 6379
+      },
+      "elapsed_seconds": 37.276
+    },
+    {
+      "id": 7,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "buried",
+      "question": "Trong tiêu chuẩn ISO 8601, định dạng ngày “cơ bản” (basic format) viết thế nào so với định dạng “mở rộng” (extended)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Trong ISO 8601, định dạng <b>cơ bản</b> (basic) bỏ hết dấu gạch nối, còn định dạng <b>mở rộng</b> (extended) dùng dấu <code>-</code> để tách năm, tháng, ngày cho dễ đọc hơn.\n\nVí dụ cùng một ngày:\n• Cơ bản: <code>20261018</code>\n• Mở rộng: <code>2026-10-18</code>",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2298,
+        "completion_tokens": 108,
+        "total_tokens": 2406
+      },
+      "elapsed_seconds": 0.077
+    },
+    {
+      "id": 8,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Mount Everest official height 2020 Wikipedia",
+          "results": [
+            {
+              "url": "https://en.wikipedia.org/wiki/List_of_highest_mountains_on_Earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://reefbrief.com/features/mount-everest-peak-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://infoprimer.com/wiki/mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.wikiwand.com/en/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.britannica.com/place/Mount-Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://simple.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "Mount Everest official height 2020 Wikipedia 2026",
+          "results": [
+            {
+              "url": "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://reefbrief.com/features/mount-everest-peak-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://allnepalhiking.com/blog/mount-everest-height",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://explorevisionnepal.com/mount-everest-height",
+              "published_at": ""
+            },
+            {
+              "url": "https://infoprimer.com/wiki/mount-everest",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia về “Mount Everest”, độ cao chính thức mới nhất được công bố năm nào và là bao nhiêu mét?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/List_of_highest_mountains_on_Earth",
+        "https://en.wikipedia.org/wiki/Mount_Everest",
+        "https://infoprimer.com/wiki/mount-everest",
+        "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+        "https://reefbrief.com/features/mount-everest-peak-guide",
+        "https://simple.wikipedia.org/wiki/Mount_Everest",
+        "https://www.britannica.com/place/Mount-Everest",
+        "https://www.wikiwand.com/en/Mount_Everest"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo Wikipedia và các nguồn chính thức, độ cao mới nhất của đỉnh Everest được Nepal và Trung Quốc cùng công bố vào ngày <b>8 tháng 12 năm 2020</b>, là <b>8.848,86 mét</b>.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "List of highest mountains on Earth - WikipediaMount Everest - WikiwandMount Everest | Height, Map, Deaths, Facts, & Climbers ...Mount Everest: Height, History & Key FactsMount Everest - Simple English Wikipedia, the free encyclopedia",
+          "url": "https://en.wikipedia.org/wiki/List_of_highest_mountains_on_Earth",
+          "snippet": "Given the large differences between multiple \"definitive\" measurements of Mount Everest, the height agreed by China and Nepal on 8 December 2020 8,848.86 m (29,031.7 ft) is used for the rounded values. Dec 25, 2018 · In 2010, both sides agreed that the height of Everest is 8,848 m, and Nepal recognises China's claim that the rock height of Everest is 8,844 m. [41] On 8 December 2020, it was jointl"
+        },
+        {
+          "title": "Mount Everest Peak: Height, Temperature, Deaths, Cost & FAQs",
+          "url": "https://reefbrief.com/features/mount-everest-peak-guide",
+          "snippet": "Jun 23, 2026 · In December 2020, Nepal and China jointly announced a new official height for Mount Everest: 8,848.86 meters (29,031.7 feet). This measurement, conducted by survey teams from both countries, settled a long-standing discrepancy between Nepal’s previous figure of 8,848 m and China’s 8,844.43 m."
+        },
+        {
+          "title": "Mount Everest: Height, History & Key Facts",
+          "url": "https://infoprimer.com/wiki/mount-everest",
+          "snippet": "Sep 3, 2026 · Mount Everest, known as Sagarmāthā in Nepali and Chomolungma in Tibetan, is the highest mountain on Earth above sea level. Its summit reaches an elevation of 8,848.86 meters (29,031.7 feet), a figure established by a joint survey conducted by Nepalese and Chinese authorities in 2020."
+        },
+        {
+          "title": "Mount Everest - Wikiwand",
+          "url": "https://www.wikiwand.com/en/Mount_Everest",
+          "snippet": "Dec 25, 2018 · In 2010, both sides agreed that the height of Everest is 8,848 m, and Nepal recognises China's claim that the rock height of Everest is 8,844 m. [41] On 8 December 2020, it was jointly announced by the two countries that the new official height is 8,848.86 metres (29,031.7 ft). [42][43]"
+        },
+        {
+          "title": "Mount Everest | Height, Map, Deaths, Facts, & Climbers ...",
+          "url": "https://www.britannica.com/place/Mount-Everest",
+          "snippet": "Oct 11, 2026 · Mount Everest, mountain on the crest of the Great Himalayas of southern Asia that lies on the border between Nepal and the Tibet Autonomous Region of China. Reaching an elevation of 29,032 feet (8,849 meters), Mount Everest is the highest mountain in the world. It has long been revered by local peoples."
+        },
+        {
+          "title": "Everest Height - Official Mount Everest Height in Feet & Meters",
+          "url": "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+          "snippet": "Jun 25, 2026 · Mount Everest stands at an official height of 8,848.86 meters (29,031.7 feet) above sea level, making it the highest mountain on Earth. The current Mount Everest height was officially announced in 2020 following a joint survey conducted by Nepal and China, and it is now recognized worldwide."
+        }
+      ],
+      "source_urls": [
+        "https://en.wikipedia.org/wiki/List_of_highest_mountains_on_Earth",
+        "https://reefbrief.com/features/mount-everest-peak-guide",
+        "https://infoprimer.com/wiki/mount-everest",
+        "https://www.wikiwand.com/en/Mount_Everest",
+        "https://www.britannica.com/place/Mount-Everest",
+        "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 9980,
+        "completion_tokens": 116,
+        "total_tokens": 10096
+      },
+      "elapsed_seconds": 32.21
+    },
+    {
+      "id": 9,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh tốc độ tải tối đa lý thuyết của USB 3.2 Gen 2, Thunderbolt 4 và HDMI 2.1.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tốc độ tải tối đa lý thuyết của 3 chuẩn này như sau:\n\n- <b>USB 3.2 Gen 2:</b> 10 Gbps\n- <b>Thunderbolt 4:</b> 40 Gbps\n- <b>HDMI 2.1:</b> 48 Gbps\n\nVề bản chất, USB 3.2 Gen 2 và Thunderbolt 4 là chuẩn truyền dữ liệu, còn HDMI 2.1 chủ yếu dùng để xuất hình ảnh/âm thanh (dù nó cũng có thể mang dữ liệu qua kênh Ethernet). Nếu chỉ xét con số lý thuyết thì HDMI 2.1 cao nhất, gấp 4 lần USB 3.2 Gen 2 và nhỉnh hơn Thunderbolt 4 khoảng 20%.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2291,
+        "completion_tokens": 168,
+        "total_tokens": 2459
+      },
+      "elapsed_seconds": 0.092
+    },
+    {
+      "id": 10,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "Tổng hợp các mốc thời gian chính của chuẩn Wi-Fi (802.11n/ac/ax/be) và năm ra mắt.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Dưới đây là các mốc thời gian chính của chuẩn Wi-Fi (tên thương mại và mã IEEE):\n\n<b>Wi-Fi 4 (802.11n)</b>\nĐược phê duyệt chính thức vào năm <b>2009</b>. Chuẩn này giới thiệu công nghệ MIMO, hỗ trợ cả băng tần 2.4 GHz và 5 GHz, tốc độ lý thuyết tối đa lên đến 600 Mbps.\n\n<b>Wi-Fi 5 (802.11ac)</b>\nRa mắt năm <b>2014</b> (Wave 1) và mở rộng vào năm <b>2016</b> (Wave 2). Hoạt động trên băng tần 5 GHz, bổ sung MU-MIMO và tăng tốc độ lý thuyết lên hàng Gbps.\n\n<b>Wi-Fi 6 (802.11ax)</b>\nĐược phê duyệt năm <b>2021</b>, nhưng các thiết bị thực tế đã ra mắt từ năm <b>2019</b> dựa trên bản dự thảo. Điểm nhấn là công nghệ OFDMA giúp quản lý nhiều thiết bị cùng lúc hiệu quả hơn. Bản mở rộng <b>Wi-Fi 6E</b> (thêm băng tần 6 GHz) được giới thiệu vào năm 2020-2021.\n\n<b>Wi-Fi 7 (802.11be)</b>\nChuẩn IEEE 802.11be được phê duyệt chính thức vào cuối năm <b>2024</b>, dù các router và thiết bị đầu tiên đã bắt đầu xuất hiện trên thị trường từ đầu năm 2024. Hỗ trợ hoạt động đa liên kết (MLO) trên cả 3 băng tần 2.4/5/6 GHz, tốc độ lý thuyết tối đa có thể vượt 40 Gbps.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 4661,
+        "completion_tokens": 453,
+        "total_tokens": 5114
+      },
+      "elapsed_seconds": 18.862
+    },
+    {
+      "id": 11,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh định mức tiêu thụ điện của một máy tính để bàn phổ thông và một laptop phổ thông khi chạy tác vụ nhẹ.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khi chạy tác vụ nhẹ (lướt web, gõ văn bản), laptop phổ thông thường chỉ tiêu thụ khoảng <b>15–30W</b>, trong khi máy tính để bàn phổ thông (tính cả màn hình) dao động ở mức <b>60–120W</b>.\n\nNguyên nhân chính là laptop được thiết kế tối ưu pin nên dùng CPU điện áp thấp và linh kiện tiết kiệm điện. Còn PC để bàn dùng linh kiện hiệu năng cao hơn, cộng thêm màn hình rời cũng \"ngốn\" thêm cỡ 20–40W nữa.\n\nTóm lại, ở cùng một tác vụ nhẹ, PC để bàn thường tốn điện gấp khoảng <b>3–4 lần</b> so với laptop.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2287,
+        "completion_tokens": 159,
+        "total_tokens": 2446
+      },
+      "elapsed_seconds": 0.071
+    },
+    {
+      "id": 12,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "Liệt kê các khác biệt chính về hiệu năng giữa CPU và GPU cho tác vụ AI suy luận.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khác biệt chính về hiệu năng giữa CPU và GPU khi chạy AI suy luận (inference):\n\n<b>1. Kiến trúc xử lý</b>\nCPU có ít nhân nhưng mỗi nhân rất mạnh, tối ưu cho xử lý tuần tự và logic phức tạp. GPU có hàng ngàn nhân nhỏ hơn, thiết kế để chạy song song hàng loạt phép tính cùng lúc — đúng bản chất của các phép nhân ma trận trong neural network.\n\n<b>2. Thông lượng (throughput) vs Độ trễ (latency)</b>\nGPU vượt trội về thông lượng: xử lý nhiều request hoặc batch lớn cùng lúc nhanh hơn CPU rất nhiều. Tuy nhiên với một request đơn lẻ, kích thước nhỏ và không dùng batch, CPU đôi khi có độ trễ phản hồi đầu tiên (time-to-first-token) tốt hơn do không mất thời gian chép dữ liệu sang bộ nhớ GPU.\n\n<b>3. Băng thông bộ nhớ</b>\nSuy luận AI thường bị nghẽn ở băng thông bộ nhớ chứ không phải tốc độ tính toán. GPU dùng VRAM (như GDDR6X, HBM) có băng thông cao gấp 5–10 lần RAM DDR4/DDR5 của CPU, giúp đọc trọng số mô hình nhanh hơn hẳn.\n\n<b>4. Hỗ trợ kiểu dữ liệu</b>\nGPU hiện đại có nhân chuyên dụng (như Tensor Core) xử lý cực nhanh các kiểu dữ liệu suy luận phổ biến như FP16, INT8, INT4. CPU hỗ trợ các kiểu này qua tập lệnh AVX-512/VNNI nhưng tốc độ vẫn kém xa GPU.\n\nTóm lại: GPU là lựa chọn mặc định cho suy luận AI nhờ khả năng song song và băng thông lớn. CPU chỉ hợp lý khi triển khai mô hình rất nhỏ, chi phí thấp, hoặc chạy trên môi trường edge không có GPU.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2282,
+        "completion_tokens": 384,
+        "total_tokens": 2666
+      },
+      "elapsed_seconds": 0.078
+    },
+    {
+      "id": 13,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "fresh",
+      "question": "Phiên bản ổn định mới nhất của Python tính đến hôm nay là gì và phát hành khi nào?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://www.python.org/downloads/"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức python.org, tính đến hôm nay (18/10/2026), phiên bản Python mới nhất là <b>3.15.0</b>, phát hành ngày <b>9 tháng 10 năm 2026</b>.\n\nNếu bạn cần bản ổn định thuộc nhánh 3.14 thì bản mới nhất là <b>3.14.8</b>, ra ngày 30/09/2026.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://www.python.org/downloads/",
+          "url": "https://www.python.org/downloads",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://www.python.org/downloads"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 12386,
+        "completion_tokens": 163,
+        "total_tokens": 12549
+      },
+      "elapsed_seconds": 9.199
+    },
+    {
+      "id": 14,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "fresh",
+      "question": "Hiện tại ai là CEO của Microsoft?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Hiện tại CEO của Microsoft là <b>Satya Nadella</b>. Ông đã đảm nhiệm vị trí này từ tháng 2 năm 2014, thay thế cho Steve Ballmer.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 4611,
+        "completion_tokens": 69,
+        "total_tokens": 4680
+      },
+      "elapsed_seconds": 9.83
+    },
+    {
+      "id": 15,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "fresh",
+      "question": "Sự kiện công nghệ lớn nào diễn ra trong tháng này (tháng hiện tại của bạn)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tháng 10 thường có vài sự kiện công nghệ lớn theo lịch hàng năm, ví dụ như sự kiện ra mắt sản phẩm mới của Apple (thường giới thiệu MacBook/iPad) hay hội nghị AWS re:Invent chuẩn bị diễn ra. Tuy nhiên, hệ thống tìm kiếm đang gặp lỗi nên mình chưa kiểm tra được chính xác tháng 10/2026 này có sự kiện cụ thể nào vừa diễn ra hay sắp tổ chức.\n\nBạn thử search nhanh từ khóa \"tech events October 2026\" trên Google hoặc X nhé, nếu thấy link nào hay thì quăng vào đây mình đọc và tóm tắt cho!",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 10621,
+        "completion_tokens": 199,
+        "total_tokens": 10820
+      },
+      "elapsed_seconds": 8.52
+    },
+    {
+      "id": 16,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "conflicting",
+      "question": "Giá chính xác của một chiếc iPhone mới nhất tại Việt Nam hôm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Mình vừa thử tra cứu nhưng công cụ tìm kiếm đang gặp lỗi tạm thời nên chưa lấy được giá chính xác hôm nay cho bạn.\n\nDòng iPhone mới nhất hiện tại là <b>iPhone 17 series</b> (ra mắt tháng 9/2026). Để biết giá niêm yết chính xác theo từng phiên bản và dung lượng, bạn check nhanh trên trang chủ Apple Việt Nam hoặc các đại lý uỷ quyền như Thế Giới Di Động, FPT Shop, CellphoneS nhé — giá có thể chênh lệch tuỳ nơi và chương trình khuyến mãi đang chạy.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 10630,
+        "completion_tokens": 191,
+        "total_tokens": 10821
+      },
+      "elapsed_seconds": 10.987
+    },
+    {
+      "id": 17,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "conflicting",
+      "question": "Dân số chính xác của một xã miền núi nhỏ bất kỳ vào đêm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không ai có thể biết con số chính xác đó đâu bạn. Dân số thay đổi từng giây (sinh, tử, người đi/về), và không có hệ thống nào đếm realtime theo từng xã vào một đêm cụ thể cả.\n\nSố liệu dân số thường chỉ được ghi nhận qua các kỳ điều tra (như Tổng điều tra dân số) hoặc báo cáo định kỳ của địa phương, nên luôn là con số ước tính tại một thời điểm nhất định thôi.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2280,
+        "completion_tokens": 94,
+        "total_tokens": 2374
+      },
+      "elapsed_seconds": 9.097
+    },
+    {
+      "id": 18,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "mực nước biển dâng dự báo 5 mét trong 5 năm tới 2026 2031",
+          "results": [
+            {
+              "url": "https://zestlab.io/vi/trends/sea-level-rise-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://khoahocdoisong.vn/ts-pham-tien-dat-phan-tich-bien-dong-muc-nuoc-bien-doc-bo-bien-viet-nam-post2149067518.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://congdankhuyenhoc.vn/khi-hau-am-len-muc-nuoc-bien-dang-keo-theo-hau-qua-the-nao-179261006073313605.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.vietnam.vn/nuoc-bien-dang-nhanh-nhieu-quoc-gia-tang-cuong-ung-pho-ngap-lut-ven-bien",
+              "published_at": ""
+            },
+            {
+              "url": "https://baotuyenquang.com.vn/quoc-te/202609/lien-hop-quoc-thong-qua-nghi-quyet-ung-pho-voi-muc-nuoc-bien-dang-cao-b1d2434",
+              "published_at": ""
+            },
+            {
+              "url": "https://vn.biggo.com/news/202510210153_Sea-Level-Rise-Predictions-Uncertainty",
+              "published_at": ""
+            },
+            {
+              "url": "https://developers.google.com/earth-engine/datasets/catalog/IPCC_AR6_SLP?hl=vi",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "conflicting",
+      "question": "Có đúng là nước biển sẽ dâng 5 mét trong 5 năm tới không?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://baotuyenquang.com.vn/quoc-te/202609/lien-hop-quoc-thong-qua-nghi-quyet-ung-pho-voi-muc-nuoc-bien-dang-cao-b1d2434",
+        "https://congdankhuyenhoc.vn/khi-hau-am-len-muc-nuoc-bien-dang-keo-theo-hau-qua-the-nao-179261006073313605.htm",
+        "https://developers.google.com/earth-engine/datasets/catalog/IPCC_AR6_SLP?hl=vi",
+        "https://khoahocdoisong.vn/ts-pham-tien-dat-phan-tich-bien-dong-muc-nuoc-bien-doc-bo-bien-viet-nam-post2149067518.html",
+        "https://vn.biggo.com/news/202510210153_Sea-Level-Rise-Predictions-Uncertainty",
+        "https://www.vietnam.vn/nuoc-bien-dang-nhanh-nhieu-quoc-gia-tang-cuong-ung-pho-ngap-lut-ven-bien",
+        "https://zestlab.io/vi/trends/sea-level-rise-2026"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không đúng đâu. Mực nước biển toàn cầu đang dâng nhanh kỷ lục, nhưng con số 5 mét trong 5 năm tới là hoàn toàn sai thực tế.\n\nTheo dữ liệu vệ tinh, từ năm 1993 đến nay mực nước biển mới tăng tổng cộng khoảng 9 cm. Ngay cả sông băng Thwaites ở Nam Cực — nơi được gọi là \"sông băng tận thế\" vì quy mô khổng lồ — nếu tan chảy <i>hoàn toàn</i> cũng chỉ làm nước biển dâng thêm khoảng 65 cm, hoặc tối đa thêm 3 mét nếu kéo theo các sông băng lân cận sụp đổ. Quá trình này diễn ra trong nhiều thập kỷ đến hàng thế kỷ, chứ không thể xảy ra trong 5 năm (2026–2031).\n\nTóm lại: biến đổi khí hậu và nước biển dâng là mối đe dọa thật sự, đặc biệt với vùng ven biển Việt Nam nơi tốc độ dâng cao gấp 2–2,5 lần trung bình thế giới, nhưng mức 5 mét trong 5 năm là tin đồn thất thiệt.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Khủng Hoảng Mực Nước Biển Dâng 2026 - zestlab.io",
+          "url": "https://zestlab.io/vi/trends/sea-level-rise-2026",
+          "snippet": "Dữ liệu vệ tinh mới xác nhận mực nước biển dâng nhanh hơn năm 2026, đe dọa các thành phố ven biển từ Miami đến TP. Hồ Chí Minh."
+        },
+        {
+          "title": "Nghiên cứu về mực nước biển dâng nhanh tại Việt Nam và cảnh ...",
+          "url": "https://khoahocdoisong.vn/ts-pham-tien-dat-phan-tich-bien-dong-muc-nuoc-bien-doc-bo-bien-viet-nam-post2149067518.html",
+          "snippet": "Nov 10, 2025 · “Điểm đáng chú ý, tốc độ dâng mực nước biển dọc vùng ven bờ biển Việt Nam cao gấp 2–2,5 lần so với trung bình thế giới, nghĩa là Việt Nam nằm trong nhóm những nơi có tốc độ dâng nhanh nhất toàn cầu."
+        },
+        {
+          "title": "Khí hậu ấm lên, mực nước biển dâng kéo theo hậu quả thế nào?",
+          "url": "https://congdankhuyenhoc.vn/khi-hau-am-len-muc-nuoc-bien-dang-keo-theo-hau-qua-the-nao-179261006073313605.htm",
+          "snippet": "Oct 6, 2026 · Theo báo cáo do Liên hợp quốc công bố vào tháng 8/2026, mực nước biển trên thế giới đang dâng kỷ lục do hiện tượng ấm lên của đại dương và băng tan."
+        },
+        {
+          "title": "Nước biển dâng nhanh, nhiều quốc gia tăng cường ứng phó ngập ...",
+          "url": "https://www.vietnam.vn/nuoc-bien-dang-nhanh-nhieu-quoc-gia-tang-cuong-ung-pho-ngap-lut-ven-bien",
+          "snippet": "Oct 6, 2026 · Mực nước biển toàn cầu đang dâng nhanh hơn, làm gia tăng nguy cơ ngập lụt, xói lở và nhiễm mặn tại các vùng ven biển. Từ những quốc đảo Thái Bình Dương đến các đồng bằng đông dân ở châu Á, nhiều quốc gia đang phải đầu tư bảo vệ bờ biển, điều chỉnh quy hoạch ..."
+        },
+        {
+          "title": "Liên hợp quốc thông qua nghị quyết ứng phó với mực nước biển ...",
+          "url": "https://baotuyenquang.com.vn/quoc-te/202609/lien-hop-quoc-thong-qua-nghi-quyet-ung-pho-voi-muc-nuoc-bien-dang-cao-b1d2434",
+          "snippet": "Sep 25, 2026 · Liên hợp quốc thông qua nghị quyết ứng phó với mực nước biển dâng cao, nhấn mạnh mối đe dọa hiện hữu với các quốc đảo nhỏ và kêu gọi hành động mạnh mẽ chống biến đổi khí hậu."
+        },
+        {
+          "title": "Biển Cả Bất Định: Lý Do Các Nhà Khoa Học Vật Lộn Với Việc Dự ...",
+          "url": "https://vn.biggo.com/news/202510210153_Sea-Level-Rise-Predictions-Uncertainty",
+          "snippet": "Cuộc thảo luận xung quanh mực nước biển dâng phản ánh một sự thật rộng lớn hơn về biến đổi khí hậu: chúng ta đang điều hướng trong vùng biển chưa được vẽ bản đồ với những tấm bản đồ không hoàn hảo."
+        },
+        {
+          "title": "IPCC AR6 Sea Level Projections Regional (Medium Confidence)",
+          "url": "https://developers.google.com/earth-engine/datasets/catalog/IPCC_AR6_SLP?hl=vi",
+          "snippet": "Jan 1, 2020 · Bộ sưu tập này chứa các thành phần cho dự đoán mực nước biển dâng ở mức độ tin cậy trung bình. Tập dữ liệu này trải dài từ năm 2020 đến năm 2150 và bao gồm các dự đoán cho nhiều kịch bản..."
+        }
+      ],
+      "source_urls": [
+        "https://zestlab.io/vi/trends/sea-level-rise-2026",
+        "https://khoahocdoisong.vn/ts-pham-tien-dat-phan-tich-bien-dong-muc-nuoc-bien-doc-bo-bien-viet-nam-post2149067518.html",
+        "https://congdankhuyenhoc.vn/khi-hau-am-len-muc-nuoc-bien-dang-keo-theo-hau-qua-the-nao-179261006073313605.htm",
+        "https://www.vietnam.vn/nuoc-bien-dang-nhanh-nhieu-quoc-gia-tang-cuong-ung-pho-ngap-lut-ven-bien",
+        "https://baotuyenquang.com.vn/quoc-te/202609/lien-hop-quoc-thong-qua-nghi-quyet-ung-pho-voi-muc-nuoc-bien-dang-cao-b1d2434",
+        "https://vn.biggo.com/news/202510210153_Sea-Level-Rise-Predictions-Uncertainty",
+        "https://developers.google.com/earth-engine/datasets/catalog/IPCC_AR6_SLP?hl=vi"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7789,
+        "completion_tokens": 274,
+        "total_tokens": 8063
+      },
+      "elapsed_seconds": 27.547
+    },
+    {
+      "id": 19,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc trực tiếp URL https://example.com và cho biết trang nói gì (kiểm tra đường `fetch_url` trực tiếp; URL cố định để tái lập).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://example.com"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Trang <a href=\"https://example.com\">example.com</a> chỉ là một trang mẫu dùng cho mục đích tài liệu. Nội dung ghi rõ: domain này được tạo ra để làm ví dụ minh họa mà không cần xin phép, không phải là dịch vụ thực tế, và khuyên không nên dùng nó để test hay giám sát hệ thống.\n\nNói ngắn gọn thì đây là trang \"giữ chỗ\" của IANA, không có nội dung gì đặc biệt cả.",
+      "cited_urls": [
+        "https://example.com"
+      ],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://example.com",
+          "url": "https://example.com",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://example.com"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 1,
+        "allowed": 1,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 5915,
+        "completion_tokens": 123,
+        "total_tokens": 6038
+      },
+      "elapsed_seconds": 11.23
+    },
+    {
+      "id": 20,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Dùng image search cho truy vấn “Eiffel Tower” và mô tả 1–2 kết quả (kiểm tra đường image search không đổi).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://qaqooking.wiki/all/how-to/paris-at-night-eiffel-tower",
+        "https://www.freepik.com/premium-ai-image/eiffel-tower-night-view-paris-france_55536224.htm",
+        "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607/"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đã tìm xong ảnh \"Eiffel Tower\" cho bạn. Hệ thống sẽ tự gửi ảnh vào group, mình mô tả nhanh 2 kết quả nhìn thấy:\n\n- <b>Ảnh ban ngày</b> (kết quả số 2): Tháp Eiffel hiện rõ toàn bộ phần thân sắt màu nâu đặc trưng giữa nền trời sáng, có thể thấy các tầng và cấu trúc giàn thép chi tiết.\n- <b>Ảnh ban đêm</b> (kết quả số 3 hoặc 4): Tháp được chiếu sáng rực rỡ trong khung cảnh Paris về đêm, các đường nét kiến trúc nổi bật trên nền trời tối.\n\nLuồng image search hoạt động bình thường, không có gì thay đổi so với trước nha.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Paris attractions eiffel tower 60 photos - Morilly.com",
+          "url": "https://morilly.com/blog/paris-attractions-eiffel-tower",
+          "snippet": ""
+        },
+        {
+          "title": "Eiffel Tower in Paris during Daylight · Free Stock Photo",
+          "url": "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607",
+          "snippet": ""
+        },
+        {
+          "title": "Premium Photo | Eiffel tower night view Paris France",
+          "url": "https://www.freepik.com/premium-ai-image/eiffel-tower-night-view-paris-france_55536224.htm",
+          "snippet": ""
+        },
+        {
+          "title": "Paris At Night Eiffel Tower",
+          "url": "https://qaqooking.wiki/all/how-to/paris-at-night-eiffel-tower",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607",
+        "https://www.freepik.com/premium-ai-image/eiffel-tower-night-view-paris-france_55536224.htm",
+        "https://qaqooking.wiki/all/how-to/paris-at-night-eiffel-tower"
+      ],
+      "images_count": 4,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 5912,
+        "completion_tokens": 175,
+        "total_tokens": 6087
+      },
+      "elapsed_seconds": 11.081
+    },
+    {
+      "id": 21,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc URL X/Twitter status https://x.com/jack/status/20 bằng fetch_url mode=x_thread và tóm tắt nội dung; nếu không đọc được, nói rõ lỗi.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đọc được rồi. Đây là tweet của <b>Jack Dorsey</b> (tài khoản @jack) với nội dung:\n\n<blockquote>just setting up my twttr</blockquote>\n\nĐây chính là dòng tweet đầu tiên trong lịch sử Twitter, đăng ngày 21/3/2006. Thread chỉ có duy nhất một bài này, không có thêm reply nào khác từ tác giả.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://x.com/jack/status/20",
+          "url": "https://x.com/jack/status/20",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 5887,
+        "completion_tokens": 128,
+        "total_tokens": 6015
+      },
+      "elapsed_seconds": 9.846
+    }
+  ],
+  "v2_summary": {
+    "completed": 21,
+    "attempted": 21,
+    "latency_median_sec": 9.83,
+    "latency_p95_sec": 32.21,
+    "prompt_tokens_median": 5887,
+    "completion_tokens_median": 156,
+    "usage_reported_rows": 21
+  }
+}

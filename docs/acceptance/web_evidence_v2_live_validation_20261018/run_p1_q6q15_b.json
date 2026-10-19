@@ -1,0 +1,369 @@
+{
+  "created_utc": "2026-10-18T15:41:26.384361+00:00",
+  "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
+  "question_ids": [
+    6,
+    15
+  ],
+  "x_status_url": "https://x.com/jack/status/20",
+  "auto_fetch": true,
+  "quality_verdict": "NOT MEASURED",
+  "token_usage_note": "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token counts are unavailable for this row.",
+  "results": [
+    {
+      "id": 6,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://svs.gsfc.nasa.gov/5632",
+              "published_at": ""
+            },
+            {
+              "url": "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/missions/2026/04/01/live-artemis-ii-launch-day-updates",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026 2026 update",
+          "results": [
+            {
+              "url": "https://assets.science.nasa.gov/content/dam/science/missions/artemis/artemis-ii-prelimsci-report-/Artemis%20II_Lunar%20Science%20Operations%20Report_2Oct2026.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://ntrs.nasa.gov/api/citations/20260008717/downloads/HLS%20IAC%202026%20FINAL.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/news-release/nasa-to-discuss-artemis-acceleration-status-of-upcoming-moon-missions",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "NASA Artemis III crewed lunar landing mission site:nasa.gov",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/wp-content/uploads/2015/01/artemis-iii-science-definition-report-12042020c.pdf",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/news-release/nasa-marches-toward-artemis-iii-mission-in-2027-names-crew-members",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/blogs/missions/2026/08/05/nasa-joins-artemis-iii-orion-modules-rocket-hardware-update",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/our-artemis-iii-crew",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/how-nasas-artemis-iii-lander-test-will-pave-way-for-moon-landings",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://assets.science.nasa.gov/content/dam/science/missions/artemis/artemis-ii-prelimsci-report-/Artemis%20II_Lunar%20Science%20Operations%20Report_2Oct2026.pdf",
+        "https://go.nasa.gov/4mrIi7C",
+        "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+        "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+        "https://svs.gsfc.nasa.gov/5632",
+        "https://www.nasa.gov/blogs/missions/2026/08/05/nasa-joins-artemis-iii-orion-modules-rocket-hardware-update",
+        "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+        "https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/how-nasas-artemis-iii-lander-test-will-pave-way-for-moon-landings",
+        "https://www.nasa.gov/humans-in-space/artemis",
+        "https://www.nasa.gov/mission/artemis-ii",
+        "https://www.nasa.gov/mission/artemis-iii",
+        "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+        "https://www.nasa.gov/news-release/nasa-marches-toward-artemis-iii-mission-in-2027-names-crew-members",
+        "https://www.nasa.gov/our-artemis-iii-crew",
+        "https://www.nasa.gov/wp-content/uploads/2015/01/artemis-iii-science-definition-report-12042020c.pdf"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức của NASA, lần hạ cánh Mặt Trăng có phi hành đoàn đầu tiên trong chương trình Artemis dự kiến thuộc sứ mệnh <b>Artemis IV</b>.\n\nCụ thể, theo kế hoạch cập nhật trên trang <i>Moon to Mars</i> của NASA, sứ mệnh Artemis III (dự kiến năm 2027) sẽ thực hiện ghép nối tàu Orion với các tàu đổ bộ Mặt Trăng ở quỹ đạo thấp Trái Đất để kiểm tra hệ thống. Lần hạ cánh thực tế xuống bề mặt Mặt Trăng được NASA nhắm tới vào năm 2028, tức là sứ mệnh tiếp theo — Artemis IV.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Artemis II Mission Milestones: An Image and Video Recap - NASA",
+          "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+          "snippet": "21 thg 4, 2026 ... On April 1, 2026, Artemis II launched on a nearly 10-day voyage around the Moon, marking the first crewed flight of NASA's Orion."
+        }
+      ],
+      "source_urls": [
+        "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 15077,
+        "completion_tokens": 207,
+        "total_tokens": 15284
+      },
+      "elapsed_seconds": 39.567
+    },
+    {
+      "id": 15,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.vietnamplus.vn/semiexpo-viet-nam-2026-kien-tao-tuong-lai-nganh-ban-dan-viet-nam-post1139436.vnp",
+              "published_at": ""
+            },
+            {
+              "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+              "published_at": ""
+            },
+            {
+              "url": "https://itechexpo.com.vn",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026 2026 update",
+          "results": [
+            {
+              "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://tapchicongthuong.vn/khoi-dong-cac-san-pham-cong-nghe-chien-luoc-trong-nam-2026--bo-cong-thuong-quyet-tam-chuyen-tu-nghien-cuu-sang-ung-dung-thuc-tien-ben-vung-556559.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://sdragon.com.vn/events/lich-hoi-cho-trien-lam-viet-nam-nam-2026-cap-nhat-moi-nhat",
+              "published_at": ""
+            },
+            {
+              "url": "https://itechexpo.com.vn",
+              "published_at": ""
+            },
+            {
+              "url": "https://dx.moj.gov.vn/portal/tin-tuc/chi-tiet/chuyen-oi-so-quoc-gia-2026-huong-toi-ket-qua-thuc-chat-va-nang-cao-hieu-qua-quan-tri-tmj3qm29e5.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/thdevent/posts/-th%C3%A1ng-102026-vec-s%E1%BA%BD-tr%E1%BB%9F-th%C3%A0nh-%C4%91i%E1%BB%83m-h%E1%BA%B9n-c%E1%BB%A7a-h%C3%A0ng-lo%E1%BA%A1t-tri%E1%BB%83n-l%C3%A3m-l%E1%BB%9Bnt%E1%BB%AB-fb-an-ninh/122183780960809577",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.facebook.com/vec.expo/posts/kh%C3%B4ng-th%E1%BB%83-b%E1%BB%8F-l%E1%BB%A1-chu%E1%BB%97i-s%E1%BB%B1-ki%E1%BB%87n-s%C3%B4i-%C4%91%E1%BB%99ng-t%E1%BA%A1i-vec-th%C3%A1ng-102026-th%C3%A1ng-10-n%C3%A0y-trung-t/122179246016970844",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Sự kiện công nghệ lớn nào diễn ra trong tháng này (tháng hiện tại của bạn)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+        "https://itechexpo.com.vn",
+        "https://tapchicongthuong.vn/khoi-dong-cac-san-pham-cong-nghe-chien-luoc-trong-nam-2026--bo-cong-thuong-quyet-tam-chuyen-tu-nghien-cuu-sang-ung-dung-thuc-tien-ben-vung-556559.htm",
+        "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+        "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+        "https://www.vietnamplus.vn/semiexpo-viet-nam-2026-kien-tao-tuong-lai-nganh-ban-dan-viet-nam-post1139436.vnp"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tháng 10/2026 này có khá nhiều sự kiện công nghệ lớn diễn ra tại Việt Nam, đặc biệt tập trung ở Hà Nội và TP.HCM:\n\n- <b>GITEX Vietnam</b>: Triển lãm công nghệ quốc tế lần đầu tiên được tổ chức tại Hà Nội trong tháng này.\n- <b>Sự kiện công nghiệp tại VEC</b> (13–15/10): Chuỗi triển lãm tại Trung tâm Triển lãm Việt Nam (Đông Anh, Hà Nội) với hơn 300 đơn vị tham gia, bao gồm cả <b>Semiexpo Vietnam 2026</b> chuyên về ngành bán dẫn.\n- <b>MTA Hanoi</b>: Triển lãm về máy móc, tự động hóa và giải pháp sản xuất quay trở lại vào tháng 10.\n- <b>iTech Expo 2026</b>: Diễn ra tại TP.HCM đến hết ngày 02/10, trưng bày các sản phẩm và giải pháp công nghệ.\n\nNgoài ra, Bộ Công Thương cũng vừa khởi động hội nghị về 22 nhóm sản phẩm công nghệ chiến lược nhằm đẩy mạnh tự chủ công nghệ trong năm nay.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Sẵn sàng chào đón sự kiện công nghiệp lớn nhất năm 2026 tại Việt ...",
+          "url": "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+          "snippet": "5 ngày trước ... Từ ngày 13 đến 15/10/2026, Trung tâm Triển lãm Việt Nam (VEC), Đông Anh, Hà Nội sẽ trở thành tâm điểm hội tụ của hơn 300 đơn vị trưng bày đến từ ..."
+        },
+        {
+          "title": "Lịch sự kiện tại VEC 2026: Cập nhật đầy đủ, mới nhất",
+          "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+          "snippet": "Lịch sự kiện tháng 9/2026 ; 09–11/09. Tuần lễ Công nghiệp & Công nghệ Việt Nam 2026 (VITW 2026). VEC, Sở Công thương TP. Hà Nội, dmg events, Camel, COEX, ADPEX."
+        },
+        {
+          "title": "Semiexpo Viet Nam 2026: Kiến tạo tương lai ngành bán dẫn Việt Nam",
+          "url": "https://www.vietnamplus.vn/semiexpo-viet-nam-2026-kien-tao-tuong-lai-nganh-ban-dan-viet-nam-post1139436.vnp",
+          "snippet": "1 thg 10, 2026 ... Bên cạnh trưng bày công nghệ, sự kiện sẽ có các hoạt động kết nối nhà cung ứng với bên mua, đối thoại chính sách, trao đổi về xu hướng thị ..."
+        },
+        {
+          "title": "Triển lãm công nghệ GITEX Vietnam sẽ lần đầu tiên diễn ra tại Hà ...",
+          "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+          "snippet": "2 thg 5, 2025 ... VTV.vn - Hà Nội sẽ đăng cai tổ chức sự kiện công nghệ GITEX Vietnam vào tháng 10/2026. Đây là thông tin được thông báo tại GITEX ASIA x Ai ..."
+        },
+        {
+          "title": "MTA Hanoi chính thức quay trở lại vào tháng 10/2026",
+          "url": "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+          "snippet": "23 thg 3, 2026 ... Không chỉ giới thiệu các giải pháp sản xuất mới, những sự kiện này còn tạo cơ hội để doanh nghiệp trong nước gặp gỡ các thương hiệu công nghệ ..."
+        },
+        {
+          "title": "VEEW 2026: Cột mốc định hình nền kinh tế trải nghiệm Việt Nam",
+          "url": "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+          "snippet": "6 ngày trước ... Sự kiện sẽ diễn ra từ ngày 17 đến ngày 19 tháng 10 năm 2026 tại Trung tâm Triển lãm Việt Nam (VEC), Đông Anh, Hà Nội. Đây là công trình biểu ..."
+        },
+        {
+          "title": "iTech Expo 2026",
+          "url": "https://itechexpo.com.vn",
+          "snippet": "iTECH EXPO 2026 vẫn đang diễn ra đến hết ngày 02/10/2026 tại Queen Plaza Kỳ Hòa, TP.HCM. Hãy đến với sự kiện để trực tiếp khám phá các sản phẩm, giải pháp công ..."
+        }
+      ],
+      "source_urls": [
+        "https://www.facebook.com/lehoivietnam.com.vn/posts/s%E1%BA%B5n-s%C3%A0ng-ch%C3%A0o-%C4%91%C3%B3n-s%E1%BB%B1-ki%E1%BB%87n-c%C3%B4ng-nghi%E1%BB%87p-l%E1%BB%9Bn-nh%E1%BA%A5t-n%C4%83m-2026-t%E1%BA%A1i-vi%E1%BB%87t-nam-chu%E1%BB%97i-ba-tr/122184583466597936",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://www.vietnamplus.vn/semiexpo-viet-nam-2026-kien-tao-tuong-lai-nganh-ban-dan-viet-nam-post1139436.vnp",
+        "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+        "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+        "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+        "https://itechexpo.com.vn"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 8122,
+        "completion_tokens": 294,
+        "total_tokens": 8416
+      },
+      "elapsed_seconds": 27.583
+    }
+  ],
+  "search_preflight": {
+    "ok": true,
+    "result_count": 8,
+    "error_type": "",
+    "elapsed_seconds": 1.205
+  },
+  "v2_summary": {
+    "completed": 2,
+    "attempted": 2,
+    "latency_median_sec": 33.575,
+    "latency_p95_sec": 39.567,
+    "prompt_tokens_median": 11599.5,
+    "completion_tokens_median": 250.5,
+    "usage_reported_rows": 2
+  }
+}

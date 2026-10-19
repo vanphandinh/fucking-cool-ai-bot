@@ -1,0 +1,1687 @@
+{
+  "created_utc": "2026-10-18T15:13:31.154062+00:00",
+  "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
+  "question_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "x_status_url": "https://x.com/jack/status/20",
+  "auto_fetch": true,
+  "quality_verdict": "NOT MEASURED",
+  "token_usage_note": "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token counts are unavailable for this row.",
+  "results": [
+    {
+      "id": 1,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Wellington New Zealand population 2026",
+          "results": [
+            {
+              "url": "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+              "published_at": ""
+            },
+            {
+              "url": "https://populationstat.com/new-zealand/wellington",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulationreview.com/cities/new-zealand",
+              "published_at": ""
+            },
+            {
+              "url": "https://citypopulationdata.com/city/wellington-new-zealand",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulation.online/city/new-zealand/wellington",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.stats.govt.nz/topics/population-estimates-and-projections",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Wellington",
+              "published_at": ""
+            },
+            {
+              "url": "https://worldpopulationreview.com/cities/new-zealand/wellington",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "basic",
+      "question": "Thủ đô của New Zealand là gì, dân số khoảng bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://citypopulationdata.com/city/wellington-new-zealand",
+        "https://en.wikipedia.org/wiki/Wellington",
+        "https://populationstat.com/new-zealand/wellington",
+        "https://worldpopulation.online/city/new-zealand/wellington",
+        "https://worldpopulationreview.com/cities/new-zealand",
+        "https://worldpopulationreview.com/cities/new-zealand/wellington",
+        "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+        "https://www.stats.govt.nz/topics/population-estimates-and-projections"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Thủ đô của New Zealand là <b>Wellington</b>.\n\nVề dân số, nếu tính riêng khu vực nội thành thì khoảng 210.000 người (số liệu tháng 6/2025). Còn tính cả vùng đô thị mở rộng (gồm Lower Hutt, Porirua, Upper Hutt) thì khoảng hơn 430.000 người.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Wellington, New Zealand Metro Area Population (1950-2026)",
+          "url": "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+          "snippet": "Chart and table of population level and growth rate for the Wellington, New Zealand metro area from 1950 to 2026."
+        },
+        {
+          "title": "Wellington, New Zealand Population (2026) - Population Stat",
+          "url": "https://populationstat.com/new-zealand/wellington",
+          "snippet": "Map of Wellington, New Zealand All Biggest Cities in New Zealand Auckland 2 M Wellington 419 k"
+        },
+        {
+          "title": "New Zealand Cities by Population 2026 - World Population Review",
+          "url": "https://worldpopulationreview.com/cities/new-zealand",
+          "snippet": "Wellington is also the southernmost capital city of a sovereign state. The city is relatively small and has a population of 208K residents, making it the second-largest city in New Zealand. New Zealand 's most populous city is Auckland, with a population of 1.5M in its urban area."
+        },
+        {
+          "title": "Wellington Population 2026 — 216,200 People | Growth & Area",
+          "url": "https://citypopulationdata.com/city/wellington-new-zealand",
+          "snippet": "The population of Wellington, New Zealand is 216,200 in 2026. Explore live stats, growth rate, population density, area size, and see how Wellington ranks among other cities in New Zealand."
+        },
+        {
+          "title": "Wellington Population 2026 — Size, Rank & Location | WorldPopulation.online",
+          "url": "https://worldpopulation.online/city/new-zealand/wellington",
+          "snippet": "Wellington, New Zealand has a population of 381,900 in 2026, the #3 biggest city in New Zealand, located in Wellington Region. Map, nearby cities and facts."
+        },
+        {
+          "title": "Population estimates and projections | Stats NZ",
+          "url": "https://www.stats.govt.nz/topics/population-estimates-and-projections",
+          "snippet": "National population estimates: At 30 June 2026 National population estimates give the best available measure of the population, by age and sex, usually living in Aotearoa New Zealand."
+        },
+        {
+          "title": "Wellington - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Wellington",
+          "snippet": "The Wellington urban area, which only includes urbanised areas within Wellington City, has a population of 209,800 as of June 2025. [15] The wider Wellington metropolitan area, including the cities of Lower Hutt, Porirua and Upper Hutt, has a population of 433,900 as of June 2025. [15]"
+        }
+      ],
+      "source_urls": [
+        "https://www.macrotrends.net/global-metrics/cities/21962/wellington/population",
+        "https://populationstat.com/new-zealand/wellington",
+        "https://worldpopulationreview.com/cities/new-zealand",
+        "https://citypopulationdata.com/city/wellington-new-zealand",
+        "https://worldpopulation.online/city/new-zealand/wellington",
+        "https://www.stats.govt.nz/topics/population-estimates-and-projections",
+        "https://en.wikipedia.org/wiki/Wellington"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 8755,
+        "completion_tokens": 117,
+        "total_tokens": 8872
+      },
+      "elapsed_seconds": 20.992
+    },
+    {
+      "id": 2,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Nước sôi ở bao nhiêu độ C tại áp suất mực nước biển, và ở đỉnh Everest thì sao?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tại áp suất mực nước biển (1 atm), nước sôi ở <b>100°C</b>.\n\nTrên đỉnh Everest, áp suất khí quyển chỉ bằng khoảng 1/3 so với mực nước biển, nên nước sôi ở nhiệt độ thấp hơn nhiều, chỉ tầm <b>68–70°C</b>. Vì nước không đủ nóng nên việc nấu chín thức ăn trên đó khá khó khăn nếu không dùng nồi áp suất.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2283,
+        "completion_tokens": 93,
+        "total_tokens": 2376
+      },
+      "elapsed_seconds": 5.056
+    },
+    {
+      "id": 3,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Ngôn ngữ Python ra mắt năm nào và do ai tạo ra?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Ngôn ngữ Python được tạo ra bởi <b>Guido van Rossum</b> và chính thức ra mắt lần đầu vào năm <b>1991</b>.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2275,
+        "completion_tokens": 38,
+        "total_tokens": 2313
+      },
+      "elapsed_seconds": 4.449
+    },
+    {
+      "id": 4,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "basic",
+      "question": "Hành tinh nào có ngày dài nhất trong Hệ Mặt Trời (tính theo giờ Trái Đất)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "<b>Sao Kim (Venus)</b> có ngày dài nhất trong Hệ Mặt Trời nếu tính theo thời gian tự quay quanh trục: một vòng quay hết khoảng <b>5.832 giờ Trái Đất</b> (~243 ngày Trái Đất), và nó còn quay ngược chiều so với hầu hết các hành tinh khác.\n\nTuy nhiên, nếu bạn hỏi về \"ngày mặt trời\" (thời gian từ lúc mặt trời mọc đến lần mọc tiếp theo) thì <b>Sao Thủy</b> mới giữ kỷ lục — khoảng <b>4.222,6 giờ Trái Đất</b> (~176 ngày Trái Đất), do nó quay chậm nhưng lại quay cùng chiều quỹ đạo nên phải đợi rất lâu mặt trời mới trở lại vị trí cũ trên bầu trời.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2281,
+        "completion_tokens": 166,
+        "total_tokens": 2447
+      },
+      "elapsed_seconds": 6.679
+    },
+    {
+      "id": 5,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Great Barrier Reef length km along Queensland coast Wikipedia",
+          "results": [
+            {
+              "url": "https://www.citizendailypost.com/faq/how-far-off-the-coast-is-the-great-barrier-reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.britannica.com/place/Great-Barrier-Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.wikiwand.com/en/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia “Great Barrier Reef”, rạn san hô trải dài khoảng bao nhiêu km dọc bờ biển Queensland?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/Geography_of_Queensland",
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+        "https://simple.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://www.britannica.com/place/Great-Barrier-Reef",
+        "https://www.citizendailypost.com/faq/how-far-off-the-coast-is-the-great-barrier-reef",
+        "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+        "https://www.wikiwand.com/en/Great_Barrier_Reef"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo bài Wikipedia về Great Barrier Reef, rạn san hô này trải dài khoảng <b>2.300 km</b> dọc bờ biển Queensland (từ mũi Cape York ở phía bắc xuống đến khu vực Bundaberg ở phía nam).",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "snippet": ""
+        },
+        {
+          "title": "How far off the coast is the Great Barrier Reef?",
+          "url": "https://www.citizendailypost.com/faq/how-far-off-the-coast-is-the-great-barrier-reef",
+          "snippet": "What makes the reef even more special is its outrageously close proximity to the Aussie coast, ranging from a short 16 km to 160 km in the outer reef. The distance from the Australian mainland to the Great Barrier Reef varies significantly along the 2,300-kilometer length of the Queensland coast."
+        },
+        {
+          "title": "The Great Barrier Reef - Queensland's environments & biodiversity ...",
+          "url": "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+          "snippet": "The Great Barrier Reef extends for ~2300 km along the Queensland's coast, from Cape York in the north to around Bundaberg in the south. The Great Barrier Reef was declared a Marine Park in 1975 and afforded World Heritage status in 1981 due to its 'outstanding universal value'."
+        },
+        {
+          "title": "Great Barrier Reef: Size, Biodiversity, Bleaching & Facts | Geography ...",
+          "url": "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+          "snippet": "The Great Barrier Reef is the largest living structure on Earth, stretching 2,300 kilometers along the northeastern coast of Australia from the tip of Cape York Peninsula to Bundaberg in Queensland."
+        },
+        {
+          "title": "Great Barrier Reef | Map, Animals, Bleaching, & Facts | Britannica",
+          "url": "https://www.britannica.com/place/Great-Barrier-Reef",
+          "snippet": "Great Barrier Reef, world's largest coral reef complex, located in the Pacific Ocean off northeastern Australia. It extends for more than 1,250 miles (2,000 km) in a northwest-southeast direction, and its width ranges from 37 to 155 miles (60 to 250 km)."
+        },
+        {
+          "title": "Great Barrier Reef - Wikiwand",
+          "url": "https://www.wikiwand.com/en/Great_Barrier_Reef",
+          "snippet": "The Great Barrier Reef is the world's largest coral reef system, composed of over 2,900 individual reefs and 900 islands stretching for over 2,300 kilometres (1,400 mi) over an area of approximately 344,400 square kilometres (133,000 mi2)."
+        }
+      ],
+      "source_urls": [
+        "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+        "https://www.citizendailypost.com/faq/how-far-off-the-coast-is-the-great-barrier-reef",
+        "https://www.museum.qld.gov.au/learn-and-discover/queenslands-environments-and-biodiversity/the-great-barrier-reef",
+        "https://geographyworlds.com/blog/great-barrier-reef-geography-guide",
+        "https://www.britannica.com/place/Great-Barrier-Reef",
+        "https://www.wikiwand.com/en/Great_Barrier_Reef"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 15374,
+        "completion_tokens": 153,
+        "total_tokens": 15527
+      },
+      "elapsed_seconds": 29.122
+    },
+    {
+      "id": 6,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+              "published_at": ""
+            },
+            {
+              "url": "https://www3.nasa.gov/specials/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/resource/artemis-ii-to-the-moon-launch-to-splashdown",
+              "published_at": ""
+            },
+            {
+              "url": "https://svs.gsfc.nasa.gov/14934",
+              "published_at": ""
+            },
+            {
+              "url": "https://www3.nasa.gov/specials/artemis",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://www.nasa.gov/artemis/",
+        "https://www.nasa.gov/mission/artemis-iii/"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức của NASA, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh <b>Artemis III</b>.\n\nTrang Artemis III trên nasa.gov (cập nhật ngày 6/10/2026) có mục riêng cho \"Artemis III Crew\" và các hình ảnh chuẩn bị cho nhiệm vụ này, xác nhận đây là chuyến bay đưa người hạ cánh xuống Mặt Trăng.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://www.nasa.gov/artemis/",
+          "url": "https://www.nasa.gov/artemis",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://www.nasa.gov/artemis"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 21744,
+        "completion_tokens": 183,
+        "total_tokens": 21927
+      },
+      "elapsed_seconds": 31.165
+    },
+    {
+      "id": 7,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "buried",
+      "question": "Trong tiêu chuẩn ISO 8601, định dạng ngày “cơ bản” (basic format) viết thế nào so với định dạng “mở rộng” (extended)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Trong ISO 8601, định dạng <b>cơ bản</b> (basic) bỏ hết dấu gạch nối, còn định dạng <b>mở rộng</b> (extended) dùng dấu <code>-</code> để tách năm, tháng, ngày cho dễ đọc hơn.\n\nVí dụ cùng một ngày:\n• Cơ bản: <code>20261018</code>\n• Mở rộng: <code>2026-10-18</code>",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2298,
+        "completion_tokens": 108,
+        "total_tokens": 2406
+      },
+      "elapsed_seconds": 5.596
+    },
+    {
+      "id": 8,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Mount Everest official height Wikipedia latest announcement",
+          "results": [
+            {
+              "url": "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://himalayangeographic.com/its-official-mount-everest-just-got-a-little-bit-higher",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://geographyworlds.com/blog/how-tall-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.everesthikes.com/now-everest-is-officially-8848-86-m",
+              "published_at": ""
+            },
+            {
+              "url": "https://simple.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "Mount Everest official height Wikipedia latest announcement 2026",
+          "results": [
+            {
+              "url": "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://indexadventure.com/blog/mount-everest-height-in-feet-meters-and-km",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nepalhikingteam.com/where-is-mount-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://globalsummitguide.com/expedition-updates-everest",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.everesthikes.com/now-everest-is-officially-8848-86-m",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo bài Wikipedia về “Mount Everest”, độ cao chính thức mới nhất được công bố năm nào và là bao nhiêu mét?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/Mount_Everest",
+        "https://geographyworlds.com/blog/how-tall-is-mount-everest",
+        "https://himalayangeographic.com/its-official-mount-everest-just-got-a-little-bit-higher",
+        "https://indexadventure.com/blog/mount-everest-height-in-feet-meters-and-km",
+        "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+        "https://simple.wikipedia.org/wiki/Mount_Everest",
+        "https://www.everesthikes.com/now-everest-is-officially-8848-86-m",
+        "https://www.magicalnepal.com/blog/how-tall-is-mount-everest"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo bài Wikipedia về \"Mount Everest\", độ cao chính thức mới nhất được Nepal và Trung Quốc cùng công bố vào ngày <b>8 tháng 12 năm 2020</b>, là <b>8.848,86 mét</b> (khoảng 29.031,7 feet).",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Everest Height - Official Mount Everest Height in Feet & Meters",
+          "url": "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+          "snippet": "Jun 25, 2026 · Mount Everest stands at an official height of 8,848.86 meters (29,031.7 feet) above sea level, making it the highest mountain on Earth. The current Mount Everest height was officially announced in 2020 following a joint survey conducted by Nepal and China, and it is now recognized worldwide."
+        },
+        {
+          "title": "It’s official: Mount Everest just got a little bit higher",
+          "url": "https://himalayangeographic.com/its-official-mount-everest-just-got-a-little-bit-higher",
+          "snippet": "Dec 8, 2020 · KATHMANDU, Nepal — The world’s highest peak just became a tiny bit higher. Nepal and China, the two countries that share a border on Mount Everest, announced a new official measurement of the mountain’s height on Tuesday: 8,848.86 meters, or 29,031.69 feet."
+        },
+        {
+          "title": "How Tall is Mount Everest? Official Height in Feet and Meters",
+          "url": "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+          "snippet": "Sep 29, 2026 · Mount Everest is 8,848.86 metres (29,031.7 feet) above sea level. That figure was set on 8 December 2020, when Nepal and China jointly announced the result of the first survey the two countries had ever conducted and agreed on together."
+        },
+        {
+          "title": "How Tall Is Mount Everest? Official Height & How It's ...",
+          "url": "https://geographyworlds.com/blog/how-tall-is-mount-everest",
+          "snippet": "Mar 30, 2026 · This official height was announced jointly by China and Nepal on December 8, 2020, based on independent surveys by both countries that produced the same result — a rare moment of agreement between two nations that had long disputed the mountain's exact height."
+        },
+        {
+          "title": "Mount Everest - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+          "snippet": "In 2010, both sides agreed that the height of Everest is 8,848 m, and Nepal recognises China's claim that the rock height of Everest is 8,844 m. [41] On 8 December 2020, it was jointly announced by the two countries that the new official height is 8,848.86 metres (29,031.7 ft). [42][43]"
+        },
+        {
+          "title": "Now Everest is officially 8848.86 m - Everest Hikes",
+          "url": "https://www.everesthikes.com/now-everest-is-officially-8848-86-m",
+          "snippet": "May 13, 2026 · Nepal and China both countries jointly announced that the Everest is officially 8848.86 m above the sea level."
+        },
+        {
+          "title": "Mount Everest Height in Feetand KM: Monte Everest Elevation",
+          "url": "https://indexadventure.com/blog/mount-everest-height-in-feet-meters-and-km",
+          "snippet": "Mar 27, 2026 · The official Mount Everest height as of 2026 is 8,848.86 meters above sea level. That translates to 29,031.7 feet, or approximately 8.85 kilometers. Nepal and China jointly announced this figure on December 8, 2020, after completing the most technologically sophisticated survey of the mountain ever conducted."
+        }
+      ],
+      "source_urls": [
+        "https://pathfindertreks.com/how-tall-is-mount-everest-the-ultimate-guide",
+        "https://himalayangeographic.com/its-official-mount-everest-just-got-a-little-bit-higher",
+        "https://www.magicalnepal.com/blog/how-tall-is-mount-everest",
+        "https://geographyworlds.com/blog/how-tall-is-mount-everest",
+        "https://en.wikipedia.org/wiki/Mount_Everest",
+        "https://www.everesthikes.com/now-everest-is-officially-8848-86-m",
+        "https://indexadventure.com/blog/mount-everest-height-in-feet-meters-and-km"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7516,
+        "completion_tokens": 98,
+        "total_tokens": 7614
+      },
+      "elapsed_seconds": 27.577
+    },
+    {
+      "id": 9,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh tốc độ tải tối đa lý thuyết của USB 3.2 Gen 2, Thunderbolt 4 và HDMI 2.1.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tốc độ tải tối đa lý thuyết của 3 chuẩn này như sau:\n\n- <b>USB 3.2 Gen 2:</b> 10 Gbps\n- <b>Thunderbolt 4:</b> 40 Gbps\n- <b>HDMI 2.1:</b> 48 Gbps\n\nVề bản chất, USB 3.2 Gen 2 và Thunderbolt 4 là chuẩn truyền dữ liệu, còn HDMI 2.1 chủ yếu dùng để xuất hình ảnh/âm thanh (dù nó cũng có thể mang dữ liệu qua kênh Ethernet). Nếu chỉ xét con số lý thuyết thì HDMI 2.1 cao nhất, gấp 4 lần USB 3.2 Gen 2 và nhỉnh hơn Thunderbolt 4 khoảng 20%.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2291,
+        "completion_tokens": 168,
+        "total_tokens": 2459
+      },
+      "elapsed_seconds": 6.427
+    },
+    {
+      "id": 10,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "Wi-Fi 802.11n ac ax be release year timeline IEEE standard approval",
+          "results": [
+            {
+              "url": "https://standards.ieee.org/wp-content/uploads/interactive/web/wi-fi-timeline/index.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://wca.org/ufaq/what-are-the-official-release-dates-of-wi-fi-45-6-and-7",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/IEEE_802.11ac",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.timetoast.com/timelines/evolution-of-wifi-standards",
+              "published_at": ""
+            },
+            {
+              "url": "https://infishark.com/blogs/learn/the-802-11-timeline-from-1997-to-wifi-7",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.purple.ai/en-us/guides/the-definitive-timeline-of-wifi-from-alohanet-to-wifi-7-and-beyond",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/IEEE_802.11",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "multi_source",
+      "question": "Tổng hợp các mốc thời gian chính của chuẩn Wi-Fi (802.11n/ac/ax/be) và năm ra mắt.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://en.wikipedia.org/wiki/IEEE_802.11",
+        "https://en.wikipedia.org/wiki/IEEE_802.11ac",
+        "https://infishark.com/blogs/learn/the-802-11-timeline-from-1997-to-wifi-7",
+        "https://standards.ieee.org/wp-content/uploads/interactive/web/wi-fi-timeline/index.html",
+        "https://wca.org/ufaq/what-are-the-official-release-dates-of-wi-fi-45-6-and-7",
+        "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+        "https://www.purple.ai/en-us/guides/the-definitive-timeline-of-wifi-from-alohanet-to-wifi-7-and-beyond",
+        "https://www.timetoast.com/timelines/evolution-of-wifi-standards"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đây là các mốc thời gian chính theo chuẩn IEEE:\n\n• <b>802.11n (Wi-Fi 4)</b> — hoàn thiện tháng 10/2009. Giới thiệu MIMO, tăng tốc độ đáng kể so với thế hệ trước.\n• <b>802.11ac (Wi-Fi 5)</b> — hoàn thiện cuối 2013 / đầu 2014. Hoạt động trên băng tần 5 GHz, hỗ trợ kênh rộng hơn và nhiều spatial stream.\n• <b>802.11ax (Wi-Fi 6)</b> — hoàn thiện khoảng tháng 9/2019 (IEEE công bố chuẩn vào 2021). Tập trung vào hiệu suất trong môi trường đông thiết bị nhờ OFDMA và Target Wake Time.\n• <b>802.11be (Wi-Fi 7)</b> — dự kiến hoàn thiện khoảng 2024. Hướng tới tốc độ cao hơn nữa và giảm độ trễ, nhưng kết quả tìm kiếm hiện tại chưa xác nhận được ngày phê duyệt cuối cùng chính thức của IEEE.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "IEEE SA Wi-Fi Timeline",
+          "url": "https://standards.ieee.org/wp-content/uploads/interactive/web/wi-fi-timeline/index.html",
+          "snippet": "IEEE 802.11ac™, or Wi-Fi 5, was the first standard to enable the use of multiple input/multiple output technology so that multiple antennas could be used on both sending and receiving devices to reduce errors and boost speed."
+        },
+        {
+          "title": "What are the official release dates of Wi-Fi 4,5, 6, and 7? - WCA",
+          "url": "https://wca.org/ufaq/what-are-the-official-release-dates-of-wi-fi-45-6-and-7",
+          "snippet": "Expected Finalization: As of my last update in April 2023, Wi-Fi 7 (IEEE 802.11be) was still in development, with finalization expected around 2024. Wi-Fi 7 is expected to offer further improvements in terms of data rates, latency, and efficiency, continuing the evolution of Wi-Fi technology."
+        },
+        {
+          "title": "IEEE 802.11ac - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/IEEE_802.11ac",
+          "snippet": "IEEE 802.11ac, formally IEEE 802.11ac-2013 and also simply called 802.11ac, is a wireless networking standard in the IEEE 802.11 set of protocols (which is part of the Wi-Fi networking family), providing high-throughput wireless local area networks (WLANs) on the 5 GHz band."
+        },
+        {
+          "title": "Evolution of Wi-Fi Standards (IEEE 802.11 Set) - Timetoast",
+          "url": "https://www.timetoast.com/timelines/evolution-of-wifi-standards",
+          "snippet": "Use Timetoast to make dates, milestones, and turning points easier to understand in a clear visual format. Timetoast is a timeline maker for work, school, research, and stories."
+        },
+        {
+          "title": "The 802.11 Timeline: From 1997 to WiFi 7 - InfiShark Tech",
+          "url": "https://infishark.com/blogs/learn/the-802-11-timeline-from-1997-to-wifi-7",
+          "snippet": "The first 802.11 standard was ratified by the IEEE in 1997. It specified two physical layer options: Frequency Hopping Spread Spectrum (FHSS) and Direct Sequence Spread Spectrum (DSSS), both operating in the 2.4 GHz ISM band."
+        },
+        {
+          "title": "IEEE 802.11, The Working Group Setting the Standards for Wireless LANs",
+          "url": "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+          "snippet": "OFFICIAL IEEE 802.11 WORKING GROUP PROJECT TIMELINES - 2026-09-19"
+        },
+        {
+          "title": "WiFi timeline & roadmap: ALOHAnet to WiFi 7 & 8 | Purple",
+          "url": "https://www.purple.ai/en-us/guides/the-definitive-timeline-of-wifi-from-alohanet-to-wifi-7-and-beyond",
+          "snippet": "Explore the complete IEEE 802.11 WiFi standards evolution timeline from 1971 ALOHAnet to WiFi 7 & WiFi 8. Key specs, frequency bands, PHY rates, and roadmap."
+        }
+      ],
+      "source_urls": [
+        "https://standards.ieee.org/wp-content/uploads/interactive/web/wi-fi-timeline/index.html",
+        "https://wca.org/ufaq/what-are-the-official-release-dates-of-wi-fi-45-6-and-7",
+        "https://en.wikipedia.org/wiki/IEEE_802.11ac",
+        "https://www.timetoast.com/timelines/evolution-of-wifi-standards",
+        "https://infishark.com/blogs/learn/the-802-11-timeline-from-1997-to-wifi-7",
+        "https://www.ieee802.org/11/Reports/802.11_Timelines.htm",
+        "https://www.purple.ai/en-us/guides/the-definitive-timeline-of-wifi-from-alohanet-to-wifi-7-and-beyond"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 14517,
+        "completion_tokens": 326,
+        "total_tokens": 14843
+      },
+      "elapsed_seconds": 34.165
+    },
+    {
+      "id": 11,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "So sánh định mức tiêu thụ điện của một máy tính để bàn phổ thông và một laptop phổ thông khi chạy tác vụ nhẹ.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khi chạy tác vụ nhẹ (lướt web, gõ văn bản), laptop phổ thông thường chỉ tiêu thụ khoảng <b>15–30W</b>, trong khi máy tính để bàn phổ thông (tính cả màn hình) dao động ở mức <b>60–120W</b>.\n\nNguyên nhân chính là laptop được thiết kế tối ưu pin nên dùng CPU điện áp thấp và linh kiện tiết kiệm điện. Còn PC để bàn dùng linh kiện hiệu năng cao hơn, cộng thêm màn hình rời cũng \"ngốn\" thêm cỡ 20–40W nữa.\n\nTóm lại, ở cùng một tác vụ nhẹ, PC để bàn thường tốn điện gấp khoảng <b>3–4 lần</b> so với laptop.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2287,
+        "completion_tokens": 159,
+        "total_tokens": 2446
+      },
+      "elapsed_seconds": 6.287
+    },
+    {
+      "id": 12,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "multi_source",
+      "question": "Liệt kê các khác biệt chính về hiệu năng giữa CPU và GPU cho tác vụ AI suy luận.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Khác biệt chính về hiệu năng giữa CPU và GPU khi chạy AI suy luận (inference):\n\n<b>1. Kiến trúc xử lý</b>\nCPU có ít nhân nhưng mỗi nhân rất mạnh, tối ưu cho xử lý tuần tự và logic phức tạp. GPU có hàng ngàn nhân nhỏ hơn, thiết kế để chạy song song hàng loạt phép tính cùng lúc — đúng bản chất của các phép nhân ma trận trong neural network.\n\n<b>2. Thông lượng (throughput) vs Độ trễ (latency)</b>\nGPU vượt trội về thông lượng: xử lý nhiều request hoặc batch lớn cùng lúc nhanh hơn CPU rất nhiều. Tuy nhiên với một request đơn lẻ, kích thước nhỏ và không dùng batch, CPU đôi khi có độ trễ phản hồi đầu tiên (time-to-first-token) tốt hơn do không mất thời gian chép dữ liệu sang bộ nhớ GPU.\n\n<b>3. Băng thông bộ nhớ</b>\nSuy luận AI thường bị nghẽn ở băng thông bộ nhớ chứ không phải tốc độ tính toán. GPU dùng VRAM (như GDDR6X, HBM) có băng thông cao gấp 5–10 lần RAM DDR4/DDR5 của CPU, giúp đọc trọng số mô hình nhanh hơn hẳn.\n\n<b>4. Hỗ trợ kiểu dữ liệu</b>\nGPU hiện đại có nhân chuyên dụng (như Tensor Core) xử lý cực nhanh các kiểu dữ liệu suy luận phổ biến như FP16, INT8, INT4. CPU hỗ trợ các kiểu này qua tập lệnh AVX-512/VNNI nhưng tốc độ vẫn kém xa GPU.\n\nTóm lại: GPU là lựa chọn mặc định cho suy luận AI nhờ khả năng song song và băng thông lớn. CPU chỉ hợp lý khi triển khai mô hình rất nhỏ, chi phí thấp, hoặc chạy trên môi trường edge không có GPU.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2282,
+        "completion_tokens": 384,
+        "total_tokens": 2666
+      },
+      "elapsed_seconds": 11.46
+    },
+    {
+      "id": 13,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "fresh",
+      "question": "Phiên bản ổn định mới nhất của Python tính đến hôm nay là gì và phát hành khi nào?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://www.python.org/downloads/"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức python.org, tính đến hôm nay (18/10/2026), phiên bản Python mới nhất là <b>3.15.0</b>, phát hành ngày <b>9 tháng 10 năm 2026</b>.\n\nNếu bạn cần bản ổn định thuộc nhánh 3.14 thì bản mới nhất là <b>3.14.8</b>, ra ngày 30/09/2026.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://www.python.org/downloads/",
+          "url": "https://www.python.org/downloads",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://www.python.org/downloads"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 12386,
+        "completion_tokens": 163,
+        "total_tokens": 12549
+      },
+      "elapsed_seconds": 21.438
+    },
+    {
+      "id": 14,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "CEO of Microsoft 2026",
+          "results": [
+            {
+              "url": "https://www.clay.com/dossier/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+              "published_at": ""
+            },
+            {
+              "url": "https://digitaldefynd.com/IQ/executive-c-suite-team-of-microsoft",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.linkedin.com/pulse/satya-nadella-ceo-microsoft-frames-2026-moment-ai-transitions-ray-hbe7e",
+              "published_at": ""
+            },
+            {
+              "url": "https://derrick-app.com/company/microsoft/executives",
+              "published_at": ""
+            },
+            {
+              "url": "https://news.microsoft.com/source/leadership",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Satya_Nadella",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "CEO of Microsoft 2026 2026",
+          "results": [
+            {
+              "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.clay.com/dossier/microsoft-ceo",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.microsoft.com/en-us/investor/events/fy-2026/earnings-fy-2026-q4",
+              "published_at": ""
+            },
+            {
+              "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.cnbc.com/2026/10/10/microsoft-satya-nadella-ai-emergency-brake-safety.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://en.wikipedia.org/wiki/Satya_Nadella",
+              "published_at": ""
+            },
+            {
+              "url": "https://news.microsoft.com/build-2026",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Hiện tại ai là CEO của Microsoft?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://derrick-app.com/company/microsoft/executives",
+        "https://digitaldefynd.com/IQ/executive-c-suite-team-of-microsoft",
+        "https://news.microsoft.com/source/leadership",
+        "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+        "https://www.clay.com/dossier/microsoft-ceo",
+        "https://www.linkedin.com/pulse/satya-nadella-ceo-microsoft-frames-2026-moment-ai-transitions-ray-hbe7e",
+        "https://www.microsoft.com/en-us/investor/events/fy-2026/earnings-fy-2026-q4",
+        "https://www.unifygtm.com/insights/executives/microsoft-ceo"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Hiện tại CEO của Microsoft là <b>Satya Nadella</b>. Ông giữ vị trí này từ tháng 2/2014, thay thế Steve Ballmer, và đồng thời là Chủ tịch Hội đồng quản trị từ năm 2021.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Who is the CEO of Microsoft in 2026? Satya Nadella's Bio - Clay",
+          "url": "https://www.clay.com/dossier/microsoft-ceo",
+          "snippet": "Satya Nadella is the CEO and executive chairman of Microsoft, having taken the reins from Steve Ballmer in 2014. With a background in electrical engineering and computer science, Nadella has played a pivotal role in Microsoft's shift towards cloud computing and the acquisition of LinkedIn."
+        },
+        {
+          "title": "Who is the CEO of Microsoft in 2026? Satya Nadella | Unify",
+          "url": "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+          "snippet": "Satya Nadella is the Chief Executive Officer and Chairman of Microsoft, in the seat since February 2014. Unify tracks 1,600+ decision makers at Microsoft."
+        },
+        {
+          "title": "Who Is the Current CEO in Microsoft? - posts.terabox.com",
+          "url": "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+          "snippet": "As of September 2026, Satya Nadella is the Chairman and CEO of Microsoft. He took the helm as CEO on February 4, 2014, succeeding Steve Ballmer, and was later appointed Chairman of the Board in 2021."
+        },
+        {
+          "title": "Microsoft C-Suite Executive Team [2026] - DigitalDefynd",
+          "url": "https://digitaldefynd.com/IQ/executive-c-suite-team-of-microsoft",
+          "snippet": "Microsoft initially appointed her Executive Vice President and CEO of Microsoft Gaming in February 2026 before renaming the organization XBOX and updating her title to CEO XBOX in April 2026."
+        },
+        {
+          "title": "Satya Nadella, CEO of Microsoft, frames 2026 as the moment AI ...",
+          "url": "https://www.linkedin.com/pulse/satya-nadella-ceo-microsoft-frames-2026-moment-ai-transitions-ray-hbe7e",
+          "snippet": "Executive, forward-looking 2026 is shaping up to be the year AI moves from experimentation to durable impact."
+        },
+        {
+          "title": "Microsoft Leadership Team: 7 Executives (2026)",
+          "url": "https://derrick-app.com/company/microsoft/executives",
+          "snippet": "Microsoft's executive team includes 7 tracked leaders as of September 2026, led by Satya Nadella (Chairman and Chief Executive Officer). The org chart, per-leader profiles and full leadership list are below."
+        },
+        {
+          "title": "Leadership - Source - news.microsoft.com",
+          "url": "https://news.microsoft.com/source/leadership",
+          "snippet": "Executive Vice President and Chief Financial Officer, Walmart, Inc. Charles W. Scharf Chairman and Chief Executive Officer, Wells Fargo & Company John W. Stanton Founder and Chairman, Trilogy Partnerships Emma Walmsley Former Chief Executive Officer and Director, GSK plc July 2026 Microsoft FY26 Fourth Quarter Earnings Conference Call Satya ..."
+        }
+      ],
+      "source_urls": [
+        "https://www.clay.com/dossier/microsoft-ceo",
+        "https://www.unifygtm.com/insights/executives/microsoft-ceo",
+        "https://posts.terabox.com/hub/who-is-the-current-ceo-in-microsoft-and-how-has-leadership-evolved",
+        "https://digitaldefynd.com/IQ/executive-c-suite-team-of-microsoft",
+        "https://www.linkedin.com/pulse/satya-nadella-ceo-microsoft-frames-2026-moment-ai-transitions-ray-hbe7e",
+        "https://derrick-app.com/company/microsoft/executives",
+        "https://news.microsoft.com/source/leadership"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7703,
+        "completion_tokens": 83,
+        "total_tokens": 7786
+      },
+      "elapsed_seconds": 23.399
+    },
+    {
+      "id": 15,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673",
+              "published_at": ""
+            },
+            {
+              "url": "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+              "published_at": ""
+            },
+            {
+              "url": "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://expo.vietbest.vn/event/ai-summit-vietnam-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://10times.com/technology?month=october",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "major tech events October 2026",
+          "results": [
+            {
+              "url": "https://www.thecodew.com/2026/10/global-tech-events-2026-october-18.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://conventions.io/calendar/october-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://techmeetups.io/conferences/calendar/october-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://eventsindex.org/october-2026-major-events.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://eventify.io/blog/tech-conferences",
+              "published_at": ""
+            },
+            {
+              "url": "https://10times.com/technology?month=october",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thecodew.com/2026/10/global-tech-events-this-week-october-12-18-2026.html",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Sự kiện công nghệ lớn nào diễn ra trong tháng này (tháng hiện tại của bạn)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://10times.com/technology?month=october",
+        "https://conventions.io/calendar/october-2026",
+        "https://eventify.io/blog/tech-conferences",
+        "https://eventsindex.org/october-2026-major-events.html",
+        "https://techmeetups.io/conferences/calendar/october-2026",
+        "https://www.thecodew.com/2026/10/global-tech-events-2026-october-18.html",
+        "https://www.thecodew.com/2026/10/global-tech-events-this-week-october-12-18-2026.html"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tháng 10/2026 cực kỳ sôi động với khoảng hơn 100 sự kiện công nghệ lớn nhỏ trên toàn cầu. Các chủ đề nổi bật nhất bao gồm AI, DevOps, bảo mật (cybersecurity), cloud và phát triển ứng dụng di động/web.\n\nRiêng tuần này (12-18/10) đang diễn ra nhiều hội nghị về AI, bán dẫn, bảo mật và hạ tầng doanh nghiệp tại các thành phố như Rome, Dubai... Tuy nhiên kết quả tìm kiếm chỉ liệt kê theo chủ đề chung mà chưa nêu tên cụ thể từng sự kiện lớn.\n\nNếu bạn quan tâm một lĩnh vực nào đó (ví dụ AI hay bảo mật), mình có thể tìm chi tiết hơn cho bạn nhé.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Global Tech Events 2026: Remaining Calendar, October to ...",
+          "url": "https://www.thecodew.com/2026/10/global-tech-events-2026-october-18.html",
+          "snippet": "15 hours ago · Tech Events & Leadership Watch · October 18, 2026 Global Tech Events 2026 is The CODEW's calendar of the major technology conferences, summits, and exhibitions still to come this year, organized by month, sector, and region, with a confirmation status and official link for every entry."
+        },
+        {
+          "title": "Tech Conferences in October 2026: 103 Events | conventions.io",
+          "url": "https://conventions.io/calendar/october-2026",
+          "snippet": "Oct 1, 2026 · Complete list of 103 tech conferences in October 2026 — AI, DevOps, Security, Cloud and more, in Rome, Caceres, Dubai and worldwide. Verified dates, locations, formats and CFP deadlines."
+        },
+        {
+          "title": "Tech Conferences in October 2026 (26 Events) | TechMeetups.io",
+          "url": "https://techmeetups.io/conferences/calendar/october-2026",
+          "snippet": "Browse 26 tech conferences happening in October 2026. Compare dates, locations, and registration details."
+        },
+        {
+          "title": "Major Events in October 2026",
+          "url": "https://eventsindex.org/october-2026-major-events.html",
+          "snippet": "Oct 10, 2026 · Twenty-three major events take place between the 1st and the 30th across sixteen cities in fourteen countries, spanning generalist and applied AI, mobile and web developer technology, digital health, cybersecurity, sports business, data infrastructure, sales technology and sovereign capital."
+        },
+        {
+          "title": "Major Tech Conferences: Oct 2026 – Dec 2027 Guide",
+          "url": "https://eventify.io/blog/tech-conferences",
+          "snippet": "Sep 28, 2026 · Explore the top tech conferences from October 2026 through 2027, including dates, locations, pricing, and who should attend each event."
+        },
+        {
+          "title": "All IT & Technology Events in October 2026, List of all ...",
+          "url": "https://10times.com/technology?month=october",
+          "snippet": "Oct 1, 2026 · Explore a diverse array of Technology events in october 2026. Find & compare, Reviews, Ratings, Timings, Entry Ticket Fees, Schedule, Calendar, Discussion Topics, Venue, Speakers, Agenda, Visitors Profile, Exhibitor Information etc. for your convenience."
+        }
+      ],
+      "source_urls": [
+        "https://www.thecodew.com/2026/10/global-tech-events-2026-october-18.html",
+        "https://conventions.io/calendar/october-2026",
+        "https://techmeetups.io/conferences/calendar/october-2026",
+        "https://eventsindex.org/october-2026-major-events.html",
+        "https://eventify.io/blog/tech-conferences",
+        "https://10times.com/technology?month=october"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 10231,
+        "completion_tokens": 223,
+        "total_tokens": 10454
+      },
+      "elapsed_seconds": 39.949
+    },
+    {
+      "id": 16,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "giá iPhone mới nhất tại Việt Nam tháng 10 2026",
+          "results": [
+            {
+              "url": "https://thuthuatmobilehay.com/iphone-price-in-vietnam-dong",
+              "published_at": ""
+            },
+            {
+              "url": "https://fptshop.com.vn/tin-tuc/thu-thuat/tat-tan-tat-ve-bang-gia-iphone-moi-nhat-hien-nay-167738",
+              "published_at": ""
+            },
+            {
+              "url": "https://hoanghamobile.com/tin-tuc/gia-iphone-17-tai-viet-nam",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.xtmobile.vn/cap-nhat-bang-gia-iphone-moi-nhat",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+              "published_at": ""
+            },
+            {
+              "url": "https://cellphones.com.vn/sforum/bang-gia-cac-dong-dien-thoai-iphone-hien-nay",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.91mobiles.com/vn/bang-gia-dien-thoai-apple",
+              "published_at": ""
+            },
+            {
+              "url": "https://hoanghamobile.com/tin-tuc/bang-gia-iphone-hien-nay-2",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "giá iPhone 17 chính hãng Việt Nam hôm nay 2026",
+          "results": [
+            {
+              "url": "https://hoanghamobile.com/tin-tuc/gia-iphone-17-tai-viet-nam",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+              "published_at": ""
+            },
+            {
+              "url": "https://fptshop.com.vn/dien-thoai/iphone-17",
+              "published_at": ""
+            },
+            {
+              "url": "https://cellphones.com.vn/mobile/apple/iphone-17.html",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.apple.com/vn/shop/buy-iphone/iphone-17",
+              "published_at": ""
+            },
+            {
+              "url": "https://hoanghamobile.com/dien-thoai-di-dong/iphone/iphone-17-series",
+              "published_at": ""
+            },
+            {
+              "url": "https://cellphones.com.vn/iphone-17-512gb.html",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "conflicting",
+      "question": "Giá chính xác của một chiếc iPhone mới nhất tại Việt Nam hôm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://cellphones.com.vn/iphone-17-512gb.html",
+        "https://cellphones.com.vn/mobile/apple/iphone-17.html",
+        "https://fptshop.com.vn/dien-thoai/iphone-17",
+        "https://hoanghamobile.com/dien-thoai-di-dong/iphone/iphone-17-series",
+        "https://hoanghamobile.com/tin-tuc/gia-iphone-17-tai-viet-nam",
+        "https://www.apple.com/vn/shop/buy-iphone/iphone-17",
+        "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "iPhone mới nhất hiện tại là <b>iPhone 17 Series</b>, ra mắt tháng 9/2025. Giá chính hãng (VN/A) tham khảo hôm nay như sau:\n\n• <b>iPhone 17 tiêu chuẩn:</b> từ khoảng 25.490.000đ (256GB) đến 32.990.000đ (512GB) tại các đại lý như FPT Shop, CellphoneS — đang giảm khoảng 3-4 triệu so với giá niêm yết của Apple.\n• <b>iPhone 17 Pro Max bản cao nhất (2TB):</b> giá niêm yết Apple Việt Nam là 63.490.000đ.\n\nLưu ý giá thực tế có thể chênh lệch tùy màu sắc, chương trình khuyến mãi và từng cửa hàng. Bạn nên vào thẳng trang Apple VN hoặc các hệ thống lớn để xem giá đúng thời điểm mua nhé.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Bảng giá iPhone 17 Series tại Việt Nam hôm nay 07/10/2026",
+          "url": "https://hoanghamobile.com/tin-tuc/gia-iphone-17-tai-viet-nam",
+          "snippet": "Oct 7, 2026 · Các phiên bản iPhone 17 đang bán tại Việt Nam Bảng giá iPhone 17 tại Việt Nam theo từng phiên bản Bảng giá niêm yết chính hãng Apple Việt Nam (tham chiếu)"
+        },
+        {
+          "title": "Bảng giá iPhone hiện nay mới nhất 2026 (iPhone Mới - Cũ)",
+          "url": "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+          "snippet": "Oct 1, 2026 · Bạn đang muốn sở hữu cho mình một chiếc iPhone nhưng không biết nên lựa chọn phiên bản nào? Xem ngay bài viết tổng hợp bảng giá iPhone hiện nay mới nhất tháng 10/2026 để lựa chọn cho mình chiếc điện thoại phù hợp nhé!"
+        },
+        {
+          "title": "iPhone 17 256GB giá giảm đến 3.5 triệu, góp 0%, đủ màu",
+          "url": "https://fptshop.com.vn/dien-thoai/iphone-17",
+          "snippet": "Giá iPhone 17 thường chính hãng VN/A tại FPT Shop hiện từ 25.490.000 đồng cho bản 256GB và 32.990.000 đồng cho bản 512GB. So với giá niêm yết của Apple Việt Nam, bạn tiết kiệm khoảng 3-4 triệu đồng tùy phiên bản. Năm màu có cùng mức giá, nên bạn chỉ cần chọn dung lượng phù hợp."
+        },
+        {
+          "title": "iPhone 17 series giá giảm mạnh T10/2026, đủ màu",
+          "url": "https://cellphones.com.vn/mobile/apple/iphone-17.html",
+          "snippet": "Cả iPhone 17 và iPhone 17 Pro Max đều thuộc iPhone Series 17, cùng thế hệ chip A19 và màn hình ProMotion 120Hz. Điểm khác biệt nằm ở việc iPhone 17 hướng đến người dùng phổ thông, còn iPhone 17 Pro Max phục vụ nhu cầu hiệu năng và quay chụp chuyên sâu hơn."
+        },
+        {
+          "title": "Mua iPhone 17 - Apple (VN)",
+          "url": "https://www.apple.com/vn/shop/buy-iphone/iphone-17",
+          "snippet": "Nhận 4.700.000đ–17.900.000đ dưới hình thức điểm tín dụng để mua iPhone 17 bất kỳ khi bạn trao đổi iPhone 13 trở lên. Có hỗ trợ tài chính với lãi suất 0%. Mua ngay để được vận chuyển miễn phí."
+        }
+      ],
+      "source_urls": [
+        "https://hoanghamobile.com/tin-tuc/gia-iphone-17-tai-viet-nam",
+        "https://www.thegioididong.com/hoi-dap/tong-hop-bang-gia-iphone-hien-nay-moi-nhat-nam-1466393",
+        "https://fptshop.com.vn/dien-thoai/iphone-17",
+        "https://cellphones.com.vn/mobile/apple/iphone-17.html",
+        "https://www.apple.com/vn/shop/buy-iphone/iphone-17"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 10188,
+        "completion_tokens": 281,
+        "total_tokens": 10469
+      },
+      "elapsed_seconds": 44.951
+    },
+    {
+      "id": 17,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "conflicting",
+      "question": "Dân số chính xác của một xã miền núi nhỏ bất kỳ vào đêm nay là bao nhiêu?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không ai có thể biết con số chính xác đó đâu bạn. Dân số thay đổi từng giây (sinh, tử, người đi/về), và không có hệ thống nào đếm realtime theo từng xã vào một đêm cụ thể cả.\n\nSố liệu dân số thường chỉ được ghi nhận qua các kỳ điều tra (như Tổng điều tra dân số) hoặc báo cáo định kỳ của địa phương, nên luôn là con số ước tính tại một thời điểm nhất định thôi.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 2280,
+        "completion_tokens": 94,
+        "total_tokens": 2374
+      },
+      "elapsed_seconds": 0.083
+    },
+    {
+      "id": 18,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "conflicting",
+      "question": "Có đúng là nước biển sẽ dâng 5 mét trong 5 năm tới không?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Không, thông tin đó hoàn toàn sai.\n\nTheo các báo cáo khoa học uy tín (như của IPCC), mực nước biển trung bình toàn cầu hiện đang dâng với tốc độ khoảng vài milimet mỗi năm. Ngay cả trong những kịch bản biến đổi khí hậu tồi tệ nhất, mức dâng dự kiến đến cuối thế kỷ 21 cũng chỉ dao động từ khoảng 0,3 đến hơn 1 mét, chứ không thể lên tới 5 mét.\n\nViệc nước biển dâng 5 mét chỉ có thể xảy ra nếu các tảng băng khổng lồ ở Greenland hay Nam Cực sụp đổ gần như toàn bộ — một quá trình cần hàng trăm đến hàng nghìn năm, không phải 5 năm. Đây rất có thể là tin giả hoặc thông tin bị bóp méo lan truyền trên mạng.",
+      "cited_urls": [],
+      "searched": false,
+      "sources": [],
+      "source_urls": [],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 4646,
+        "completion_tokens": 206,
+        "total_tokens": 4852
+      },
+      "elapsed_seconds": 15.782
+    },
+    {
+      "id": 19,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc trực tiếp URL https://example.com và cho biết trang nói gì (kiểm tra đường `fetch_url` trực tiếp; URL cố định để tái lập).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://example.com"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Trang <a href=\"https://example.com\">example.com</a> chỉ là một trang mẫu dùng cho mục đích tài liệu. Nội dung ghi rõ: domain này được tạo ra để làm ví dụ minh họa mà không cần xin phép, không phải là dịch vụ thực tế, và khuyên không nên dùng nó để test hay giám sát hệ thống.\n\nNói ngắn gọn thì đây là trang \"giữ chỗ\" của IANA, không có nội dung gì đặc biệt cả.",
+      "cited_urls": [
+        "https://example.com"
+      ],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://example.com",
+          "url": "https://example.com",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://example.com"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 1,
+        "allowed": 1,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 5915,
+        "completion_tokens": 123,
+        "total_tokens": 6038
+      },
+      "elapsed_seconds": 3.872
+    },
+    {
+      "id": 20,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Dùng image search cho truy vấn “Eiffel Tower” và mô tả 1–2 kết quả (kiểm tra đường image search không đổi).",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://profileappmo.gumroad.com/l/cvvzf",
+        "https://www.alamy.com/stock-photo-paris-france-eiffel-tower-daytime-view-29667610.html",
+        "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607/"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đã tìm xong 4 ảnh tháp Eiffel cho bạn. Hệ thống sẽ tự gửi ảnh vào đây, mình mô tả nhanh 2 kết quả:\n\n- <b>Ảnh từ Pexels</b>: hình tháp Eiffel chụp ban ngày dưới ánh sáng tự nhiên — kiểu ảnh stock kinh điển, thấy rõ toàn bộ kết cấu sắt và bầu trời phía sau.\n- <b>Ảnh từ Gumroad</b>: cảnh tháp Eiffel về đêm — thường sẽ có hệ thống đèn chiếu sáng vàng đặc trưng, nhìn lung linh hơn hẳn so với ảnh ban ngày.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "Paris attractions eiffel tower 60 photos - Morilly.com",
+          "url": "https://morilly.com/blog/paris-attractions-eiffel-tower",
+          "snippet": "morilly.com"
+        },
+        {
+          "title": "Eiffel Tower in Paris during Daylight · Free Stock Photo",
+          "url": "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607",
+          "snippet": "pexels.com"
+        },
+        {
+          "title": "Paris Eiffel Tower Night View",
+          "url": "https://profileappmo.gumroad.com/l/cvvzf",
+          "snippet": "profileappmo.gumroad.com"
+        },
+        {
+          "title": "Paris, France, Eiffel Tower, Daytime, View Stock Photo - Alamy",
+          "url": "https://www.alamy.com/stock-photo-paris-france-eiffel-tower-daytime-view-29667610.html",
+          "snippet": "alamy.com"
+        }
+      ],
+      "source_urls": [
+        "https://morilly.com/blog/paris-attractions-eiffel-tower",
+        "https://www.pexels.com/photo/eiffel-tower-in-paris-during-daylight-32603607",
+        "https://profileappmo.gumroad.com/l/cvvzf",
+        "https://www.alamy.com/stock-photo-paris-france-eiffel-tower-daytime-view-29667610.html"
+      ],
+      "images_count": 4,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 4754,
+        "completion_tokens": 140,
+        "total_tokens": 4894
+      },
+      "elapsed_seconds": 8.648
+    },
+    {
+      "id": 21,
+      "mode": "v2",
+      "search_trace": [],
+      "category": "url_direct",
+      "question": "Đọc URL X/Twitter status https://x.com/jack/status/20 bằng fetch_url mode=x_thread và tóm tắt nội dung; nếu không đọc được, nói rõ lỗi.",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Đọc được rồi. Đây là tweet của <b>Jack Dorsey</b> (tài khoản @jack) với nội dung:\n\n<blockquote>just setting up my twttr</blockquote>\n\nĐây chính là dòng tweet đầu tiên trong lịch sử Twitter, đăng ngày 21/3/2006. Thread chỉ có duy nhất một bài này, không có thêm reply nào khác từ tác giả.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "https://x.com/jack/status/20",
+          "url": "https://x.com/jack/status/20",
+          "snippet": ""
+        }
+      ],
+      "source_urls": [
+        "https://x.com/jack/status/20"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 5887,
+        "completion_tokens": 128,
+        "total_tokens": 6015
+      },
+      "elapsed_seconds": 1.171
+    }
+  ],
+  "v2_summary": {
+    "completed": 21,
+    "attempted": 21,
+    "latency_median_sec": 11.46,
+    "latency_p95_sec": 39.949,
+    "prompt_tokens_median": 5887,
+    "completion_tokens_median": 153,
+    "usage_reported_rows": 21
+  }
+}

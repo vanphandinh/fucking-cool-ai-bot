@@ -21,6 +21,7 @@ from pathlib import Path
 from app.ai.router import build_provider_router
 from app.config import Settings
 from app.core.orchestrator import Orchestrator
+from app.search import service as search_service
 from app.search.crawl4ai_client import close_crawl4ai_client
 from app.search.runtime import close_search_runtimes
 
@@ -165,6 +166,29 @@ def _cited_urls(answer_text: str) -> list[str]:
     return _CITED_URL_RE.findall(answer_text or "")
 
 
+async def _search_preflight(settings: Settings, *, timeout: float = 25.0) -> dict:
+    """Prove a web backend works before spending any model call."""
+    started = time.perf_counter()
+    try:
+        results = await asyncio.wait_for(
+            search_service.search("NASA Artemis program", settings), timeout=timeout
+        )
+    except Exception as exc:  # noqa: BLE001 - report the failure, never die
+        return {
+            "ok": False,
+            "result_count": 0,
+            "error_type": type(exc).__name__,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+        }
+    items = [item for item in (results or ()) if isinstance(item, dict)]
+    return {
+        "ok": bool(items),
+        "result_count": len(items),
+        "error_type": "",
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+    }
+
+
 async def run(args: argparse.Namespace, records: list[dict]) -> int:
     modes = ("v2",)
     report: dict = {
@@ -177,6 +201,19 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
         "token_usage_note": _TOKEN_NOTE,
         "results": [],
     }
+    preflight = await _search_preflight(Settings())
+    report["search_preflight"] = preflight
+    if not preflight["ok"]:
+        _write(args.output, report)
+        print(
+            "SEARCH PREFLIGHT FAILED: no usable web search backend "
+            f"({preflight['error_type'] or 'empty result'}). No model calls were made. "
+            "Start SearXNG and point SEARXNG_URL at it "
+            "(see docker-compose.smoke.yml).",
+            flush=True,
+        )
+        await close_search_runtimes()
+        return 2
     exit_code = 0
     for mode in modes:
         await close_search_runtimes()
@@ -206,9 +243,42 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                     _log[_spy] = sorted(str(url) for url in (list(allowed_urls) or []))
                     return _real(text, allowed_urls)
 
+                search_traces: list[dict] = []
+                original_search = orchestrator_module.search_service.search
+
+                async def traced_search(query, *search_args, **search_kwargs):
+                    try:
+                        results = await original_search(
+                            query, *search_args, **search_kwargs
+                        )
+                    except Exception as exc:  # noqa: BLE001 - record, then re-raise
+                        search_traces.append(
+                            {
+                                "query": str(query)[:300],
+                                "results": [],
+                                "error": type(exc).__name__,
+                            }
+                        )
+                        raise
+                    search_traces.append(
+                        {
+                            "query": str(query)[:300],
+                            "results": [
+                                {
+                                    "url": str(item.get("url") or "")[:2048],
+                                    "published_at": str(item.get("published_at") or "")[:80],
+                                }
+                                for item in results or ()
+                                if isinstance(item, dict)
+                            ],
+                        }
+                    )
+                    return results
+
                 row = {
                     "id": num,
                     "mode": mode,
+                    "search_trace": search_traces,
                     "category": record["category"],
                     "question": question,
                     "pipeline": "v2",
@@ -216,8 +286,13 @@ async def run(args: argparse.Namespace, records: list[dict]) -> int:
                     "provider_models_configured": configured_models,
                 }
                 try:
-                    with unittest.mock.patch.object(
-                        orchestrator_module, "enforce_v2_citations", spy_enforce
+                    with (
+                        unittest.mock.patch.object(
+                            orchestrator_module, "enforce_v2_citations", spy_enforce
+                        ),
+                        unittest.mock.patch.object(
+                            orchestrator_module.search_service, "search", traced_search
+                        ),
                     ):
                         answer = await asyncio.wait_for(
                             orchestrator.ask(question), args.timeout

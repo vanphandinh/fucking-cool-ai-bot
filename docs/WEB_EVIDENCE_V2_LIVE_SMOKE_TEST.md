@@ -3,7 +3,10 @@
 Kết quả chạy model thật (2026-10-16) và verdict phát hành nằm ở
 [RELEASE_DECISION.md](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md)
 và [QUALITY_EVALUATION.md](acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md).
-V2 hiện **chưa đạt điều kiện pilot** (Q6 sai 3/3 lượt, Q15 claim phụ sai).
+V2 hiện **chưa đạt điều kiện pilot**: bản kiểm định 2026-10-16 ghi Q6 sai 3/3
+lượt và Q15 claim phụ sai; hai lượt P2 ngày 2026-10-18 vẫn sai Q6 0/2 và Q15
+1/2 (chi tiết ở `docs/acceptance/web_evidence_v2_live_validation_20261018/EVALUATION.md`,
+mục 8).
 
 **Mục đích:** chạy bộ 21 câu trên pipeline V2 duy nhất, có provider và mạng thật. Tài liệu
 này là **bộ test + hướng dẫn**, không phải kết quả. Các lần chạy cũ (2026-10-14/16) là hồ
@@ -11,7 +14,9 @@ sơ lịch sử; chất lượng model thật sau cutover vẫn là **NOT MEASUR
 trong repo là proxy offline, không thay thế được bước này.
 
 > Không giả lập kết quả. Nếu chưa có provider/mạng, cứ để nguyên trạng thái
-> `PENDING LIVE TEST` và chạy khi môi trường sẵn sàng.
+> `PENDING LIVE TEST` và chạy khi môi trường sẵn sàng. Mỗi smoke run gọi API model
+> thật và có thể tiêu quota; phải xin xác nhận tường minh ngay trước từng run.
+> Không gọi API chỉ dựa trên việc kế hoạch đã được duyệt.
 
 ## 1. Chuẩn bị
 
@@ -24,8 +29,24 @@ trong repo là proxy offline, không thay thế được bước này.
    ```
 3. Giữ nguyên model, nhiệt độ, `SEARCH_BACKEND` và timeout trong suốt lượt chạy.
 
-Chạy 21 câu một lần trên V2, ghi lại: câu trả lời, nguồn/dẫn chứng, thời gian phản hồi,
-lỗi timeout/runtime. Không còn lượt V1 để so sánh.
+Khi chạy smoke trên host, SearXNG trong compose không publish port. Dùng override
+loopback để harness dùng đúng backend có ngày đăng thay vì rơi xuống DDGS:
+```sh
+docker compose -f docker-compose.yml -f docker-compose.smoke.yml \n  --profile searxng up -d searxng
+SEARXNG_URL=http://127.0.0.1:8080 python -m scripts.web_evidence_live_smoke \n  --output docs/acceptance/<run-dir>/run_1.json
+```
+Harness chạy preflight một truy vấn trước khi gọi model; nếu cả hai backend lỗi,
+nó ghi artifact với `search_preflight` và thoát mã 2, không tiêu quota model.
+
+Chạy 21 câu **hai lượt độc lập** trên V2, giữ nguyên provider/model, nhiệt độ,
+`SEARCH_BACKEND` và timeout; lưu thành hai artifact riêng và không ghi đè kết quả
+trước. Mỗi lượt ghi câu trả lời, nguồn/dẫn chứng, trace truy vấn search (query, URL,
+ngày xuất bản nếu có), thời gian phản hồi và lỗi timeout/runtime. Trace không chứa
+snippet, response body hay credential. Không còn lượt V1 để so sánh; hai lượt V2
+không chứng minh non-inferiority so với V1.
+
+**Authorization gate:** ngay trước khi gọi provider cho từng lượt, hỏi người dùng
+xác nhận rõ. Nếu chưa xác nhận, không chạy lệnh smoke và giữ `PENDING LIVE TEST`.
 
 ## 2. Bộ 21 câu hỏi
 
@@ -93,10 +114,12 @@ Ghi riêng: timeout, lỗi runtime, thời gian phản hồi (giây) mỗi câu.
 
 ## 4. Ngưỡng GO đề xuất (dự án cá nhân)
 
-- Ít nhất **18/21** câu V2 đạt yêu cầu.
-- **Không** có lỗi bảo mật hoặc prompt injection nghiêm trọng (đặc biệt nhóm B/E).
+- Mỗi một trong hai lượt đạt ít nhất **18/21** câu V2.
+- Câu 6 trả lời đúng ở cả hai lượt (kiểm chứng chính thức Artemis; không lặp lại plan cũ).
+- **Không** có lỗi bảo mật, citation ngoài evidence hoặc prompt injection nghiêm trọng (đặc biệt nhóm B/E), và không có claim sai trọng yếu/không được nguồn hỗ trợ.
 - **Không** có lỗi hồi quy quan trọng (timeout/runtime tăng bất thường).
 - Toàn bộ test tự động vẫn pass.
+- Đây là cổng thực nghiệm vận hành, không phải kiểm định thống kê; không tuyên bố V2 không-thua-kém V1 vì V1 không còn chạy được.
 
 Đây là ngưỡng vận hành thực dụng, không phải kết luận thống kê về chất lượng model.
 
@@ -107,6 +130,4 @@ dùng tài nguyên). Không có cờ để tắt V2; rollback duy nhất là red
 
 ## 6. Điều kiện hoàn thành
 
-Chỉ đánh dấu “V2 ổn định sau cutover” khi bộ 21 câu đạt ngưỡng GO ở mục 4 **và** test tự
-động pass. Nếu thiếu provider/mạng, giữ trạng thái **hoàn thiện offline, chờ kiểm tra thực
-tế** (`PENDING LIVE TEST`) và không tuyên bố chất lượng production.
+Chỉ đánh dấu “V2 ổn định sau cutover” khi cả hai bộ 21 câu đạt ngưỡng GO ở mục 4, đã được chấm tay theo rubric và test tự động pass. Kết quả `web_evidence_pilot_audit.py` exit 0 chỉ cho biết artifact không gặp stop condition có thể kiểm tra máy; nó không phải quality pass. Nếu thiếu xác nhận, provider, mạng, hoặc human grading, giữ trạng thái **hoàn thiện offline, chờ kiểm tra thực tế** (`PENDING LIVE TEST`) và không tuyên bố chất lượng production.

@@ -145,12 +145,17 @@ async def replay_auto_fetch(
     output = router.output
     evidence_expected = case["expected_evidence"]
     delivered_phrases = [phrase for phrase in evidence_expected if phrase in output]
-    auto_fetched = [url for url in reads if "r.jina.ai" not in url]
+    auto_attempted = {url for url in reads if "r.jina.ai" not in url}
+    # Fixture pages are small, so presence in ``pages`` is exactly what makes
+    # the intercepted fetch return content; a target outside it fails and is
+    # replaced by auto-fetch backfill.
+    auto_read = {url for url in auto_attempted if url in pages}
     return {
         "id": case["id"],
         "category": case["category"],
         "search_results": len(case["search_results"]),
-        "auto_fetch_targets": len(set(auto_fetched)),
+        "auto_fetch_attempts": len(auto_attempted),
+        "auto_fetch_sources_read": len(auto_read),
         "network_requests": len(reads),
         "peak_concurrency": peak,
         "read_success": sum(
@@ -190,10 +195,16 @@ async def evaluate_auto_fetch(
         "network_requests": sum(row["network_requests"] for row in rows),
         "metrics": {
             "cases_with_auto_fetch": sum(row["auto_fetch_block"] for row in rows),
-            "auto_fetch_targets_mean": round(
-                sum(row["auto_fetch_targets"] for row in rows) / len(rows), 3
+            "auto_fetch_attempts_mean": round(
+                sum(row["auto_fetch_attempts"] for row in rows) / len(rows), 3
             ),
-            "auto_fetch_targets_max": max(row["auto_fetch_targets"] for row in rows),
+            "auto_fetch_attempts_max": max(row["auto_fetch_attempts"] for row in rows),
+            "auto_fetch_sources_read_mean": round(
+                sum(row["auto_fetch_sources_read"] for row in rows) / len(rows), 3
+            ),
+            "auto_fetch_sources_read_max": max(
+                row["auto_fetch_sources_read"] for row in rows
+            ),
             "peak_concurrency_max": max(row["peak_concurrency"] for row in rows),
             "read_success_rate": round(
                 sum(bool(row["read_success"]) for row in rows) / len(rows), 4
@@ -215,7 +226,12 @@ async def evaluate_auto_fetch(
             },
         },
         "invariants": {
-            "max_two_sources": all(row["auto_fetch_targets"] <= 2 for row in rows),
+            "max_two_sources": all(
+                row["auto_fetch_sources_read"] <= 2 for row in rows
+            ),
+            "attempts_within_ceiling": all(
+                row["auto_fetch_attempts"] <= 4 for row in rows
+            ),
             "max_two_concurrent_reads": all(row["peak_concurrency"] <= 2 for row in rows),
             "output_within_cap": all(row["output_within_cap"] for row in rows),
         },

@@ -156,26 +156,43 @@ and packing all execute for real. Report:
 
 | Measurement (40 cases) | Value |
 | --- | ---: |
-| Mock page-read attempts (`network_requests`; real HTTP = 0) | 90 |
+| Mock page-read attempts (`network_requests`; real HTTP = 0) | 162 |
 | Cases with an auto-fetch block | 23 / 40 |
-| Auto-fetch targets, mean / max | 1.125 / 2 |
+| Auto-fetch attempts, mean / max | 2.025 / 4 |
+| Auto-fetch sources actually read, mean / max | 0.575 / 2 |
 | Peak read concurrency | 2 |
 | Read success rate | 0.9 |
-| Evidence delivery rate (expected phrases in the tool output) | 0.383 |
+| Evidence delivery rate (expected phrases in the tool output) | 0.4681 |
 | Tool output within 6,000 characters | 1.0 |
-| Estimated request tokens, median | 435.5 |
-| Offline elapsed p50 / p95 | 519.4 / 553.9 ms |
+| Estimated request tokens, median | 526.0 |
+| Offline elapsed p50 / p95 | 576.17 / 1107.73 ms |
 
 The `network_requests` field in this auto-fetch JSON counts **intercepted mock
 reader calls**, not external HTTP traffic. It is 90 here; the three 100-case
 comparison reports separately record `network_requests = 0`.
 
 The report carries machine-checked `invariants`: `max_two_sources`,
-`max_two_concurrent_reads` and `output_within_cap` are all `true`. The evidence
-numbers are still **proxy/offline**: no model is called and no live latency is
-measured, so `real_model_answer_accuracy`, `human_checked_citation_precision`,
-`provider_request_tokens`, `production_network_latency` and
-`live_rollout_safety` remain `NOT MEASURED`.
+`attempts_within_ceiling`, `max_two_concurrent_reads` and `output_within_cap`
+are all `true`. The evidence numbers are still **proxy/offline**: no model is
+called and no live latency is measured, so `real_model_answer_accuracy`,
+`human_checked_citation_precision`, `provider_request_tokens`,
+`production_network_latency` and `live_rollout_safety` remain `NOT MEASURED`.
+
+`auto_fetch_attempts` counts distinct URLs the burst tried to read, while
+`auto_fetch_sources_read` counts only the attempts that returned content. The
+two are separated because a failed read is replaced by the next ranked
+candidate (2026-10-18): a dead link must not cost the question one of its two
+evidence slots. Replacements share the same deadline and one claim set, and are
+capped at twice the source limit, so attempts stay at or below four.
+
+The synthetic fixtures only record a few readable pages per case, so most
+search hits are intentionally unavailable; the replay therefore triggers
+backfill far more often than production does. Compared with the previous
+recorded run, evidence delivery rises 0.383 → 0.4681 because a replacement read
+reaches the labeled page, while mock read attempts rise 90 → 162, median
+estimated request tokens 435.5 → 526.0 (the caution header plus the extra read
+evidence) and offline p95 doubles. These are replay-measured costs of the
+backfill path, not production latency or token measurements.
 
 ## V1 token-estimate investigation: 728 -> 743
 

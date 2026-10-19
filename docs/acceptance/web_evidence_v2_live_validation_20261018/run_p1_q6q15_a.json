@@ -1,0 +1,331 @@
+{
+  "created_utc": "2026-10-18T15:37:22.135955+00:00",
+  "method": "real Orchestrator.ask and configured AI providers; manual grading pending",
+  "question_ids": [
+    6,
+    15
+  ],
+  "x_status_url": "https://x.com/jack/status/20",
+  "auto_fetch": true,
+  "quality_verdict": "NOT MEASURED",
+  "token_usage_note": "NOT REPORTED BY PROVIDER: the request returned no usage payload, so token counts are unavailable for this row.",
+  "results": [
+    {
+      "id": 6,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://www3.nasa.gov/specials/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://science.nasa.gov/resource/artemis-ii-to-the-moon-launch-to-splashdown",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "NASA Artemis program crewed landing mission site:nasa.gov 2026",
+          "results": [
+            {
+              "url": "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/humans-in-space/artemis",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-ii",
+              "published_at": ""
+            },
+            {
+              "url": "https://go.nasa.gov/4mrIi7C",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iv",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/mission/artemis-iii",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/gallery/return-to-earth",
+              "published_at": ""
+            },
+            {
+              "url": "https://www.nasa.gov/moonbase",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "buried",
+      "question": "Theo trang chính thức của NASA về chương trình Artemis, lần hạ cánh có phi hành đoàn dự kiến thuộc sứ mệnh Artemis số mấy?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://go.nasa.gov/4mrIi7C",
+        "https://plus.nasa.gov/scheduled-video/nasas-artemis-ii-crew-launches-to-the-moon-official-broadcast",
+        "https://science.nasa.gov/missions/artemis/artemis-2/nasas-artemis-ii-moon-mission-research-continues-on-earth",
+        "https://www.nasa.gov/centers-and-facilities/johnson/artemis-ii-mission-milestones-an-image-and-video-recap",
+        "https://www.nasa.gov/humans-in-space/artemis",
+        "https://www.nasa.gov/mission/artemis-ii",
+        "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+        "https://www3.nasa.gov/specials/artemis-ii"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Theo trang chính thức của NASA, lần hạ cánh xuống Mặt Trăng có phi hành đoàn đầu tiên thuộc chương trình Artemis dự kiến là sứ mệnh <b>Artemis III</b>.\n\nTuy nhiên, theo thông tin cập nhật tháng 5/2026 từ NASA, kế hoạch hiện tại đã thay đổi: Artemis III sẽ là chuyến bay có phi hành đoàn trong quỹ đạo Trái Đất để thử nghiệm ghép nối, còn mục tiêu hạ cánh xuống Mặt Trăng được dời sang năm <b>2028</b>.",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "NASA Outlines Preliminary Artemis III Mission Plans",
+          "url": "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans",
+          "snippet": "13 thg 5, 2026 ... NASA is moving quickly to define next year's Artemis III mission in Earth orbit, a crewed flight that will test rendezvous and docking ..."
+        }
+      ],
+      "source_urls": [
+        "https://www.nasa.gov/missions/artemis/artemis-3/nasa-outlines-preliminary-artemis-iii-mission-plans"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 7647,
+        "completion_tokens": 144,
+        "total_tokens": 7791
+      },
+      "elapsed_seconds": 28.363
+    },
+    {
+      "id": 15,
+      "mode": "v2",
+      "search_trace": [
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673",
+              "published_at": ""
+            },
+            {
+              "url": "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+              "published_at": ""
+            },
+            {
+              "url": "https://codegym.vn/tin-cong-nghe/ban-tin-cong-nghe-tuan-2-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+              "published_at": ""
+            }
+          ]
+        },
+        {
+          "query": "sự kiện công nghệ lớn tháng 10 năm 2026 2026",
+          "results": [
+            {
+              "url": "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673",
+              "published_at": ""
+            },
+            {
+              "url": "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://shtp.hochiminhcity.gov.vn/hoi-nghi-quoc-te-thuong-nien-kcnc-lan-8-nam-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+              "published_at": ""
+            },
+            {
+              "url": "https://vtv.vn/cong-nghe/trien-lam-cong-nghe-gitex-vietnam-se-lan-dau-tien-dien-ra-tai-ha-noi-vao-nam-2026-20250502111947403.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://tapchicongthuong.vn/mta-hanoi-chinh-thuc-quay-tro-lai-vao-thang-10-2026-494955.htm",
+              "published_at": ""
+            },
+            {
+              "url": "https://dep.com.vn/veew-2026-cot-moc-dinh-hinh-nen-kinh-te-trai-nghiem-viet-nam",
+              "published_at": ""
+            }
+          ]
+        }
+      ],
+      "category": "fresh",
+      "question": "Sự kiện công nghệ lớn nào diễn ra trong tháng này (tháng hiện tại của bạn)?",
+      "pipeline": "v2",
+      "auto_fetch": true,
+      "provider_models_configured": [
+        "cl/cline-free/mimo-v2.6-flash",
+        "cl/cline-free/muse-spark-1.3-contributor",
+        "qwen/qwen3.8-max:free"
+      ],
+      "guard_allowed_urls": [
+        "https://codegym.vn/tin-cong-nghe/ban-tin-cong-nghe-tuan-2-thang-10-2026",
+        "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+        "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+        "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+        "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+        "https://shtp.hochiminhcity.gov.vn/hoi-nghi-quoc-te-thuong-nien-kcnc-lan-8-nam-2026",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673"
+      ],
+      "status": "completed",
+      "provider": "xkiro",
+      "timeout_seconds": 180.0,
+      "answer": "Tháng 10/2026 có khá nhiều sự kiện công nghệ lớn, cả quốc tế lẫn trong nước. Nổi bật nhất là <b>OpenAI DevDay</b> (4/10) với màn ra mắt GPT-6 Astra, và <b>FPT TRANSFORM 2026</b> chủ đề \"Ship AI Live\" diễn ra hôm qua 17/10 tại Hà Nội, tập trung sâu vào AI, Cloud và Data.\n\nTrong nước còn có <b>Hội nghị Quốc tế thường niên Khu Công nghệ cao TP.HCM lần thứ 8</b> vừa tổ chức ngày 16/10, quy tụ hơn 500 đại biểu để bàn về đô thị công nghệ cao và đổi mới sáng tạo vùng Đông Nam Bộ. Ngoài ra đầu tháng có triển lãm <b>iTECH EXPO 2026</b> tại TP.HCM (30/9–2/10).",
+      "cited_urls": [],
+      "searched": true,
+      "sources": [
+        {
+          "title": "LỊCH SỰ KIỆN THÁNG 10: CÔNG NGHỆ,... - Triển lãm và Sự kiện ...",
+          "url": "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673",
+          "snippet": "Oct 5, 2026 · Cuối tháng, lịch tiếp tục với BIGBANG 2026–2027 World Tour tại Hà Nội và Vietnam Diecast Expo 2026 trong hai ngày 24–25/10. Từ hội nghị, workshop – triển lãm đến triển lãm quốc tế, hoạt động cộng đồng và concert, lịch tháng 10 đang trải trên nhiều loại hình và nhóm công chúng."
+        },
+        {
+          "title": "FPT tổ chức FPT TRANSFORM 2026 – sự kiện công nghệ quốc tế ...",
+          "url": "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+          "snippet": "Oct 1, 2026 · Sự kiện công nghệ quốc tế FPT TRANSFORM 2026 với chủ đề “Ship AI Live” dự kiến diễn ra ngày 17/10/2026 tại InterContinental Landmark 72, Hà Nội. Sự kiện mang đến không gian chuyên sâu về AI, Cloud và Data, nơi cộng đồng kỹ sư, nhà phát triển có thể cập nhật công nghệ mới, trao đổi kinh nghiệm triển khai và trực ..."
+        },
+        {
+          "title": "Bản Tin Công Nghệ Tuần 2 Tháng 10/2026: GPT-6 phủ sóng ...",
+          "url": "https://codegym.vn/tin-cong-nghe/ban-tin-cong-nghe-tuan-2-thang-10-2026",
+          "snippet": "Theo dõi ngay: Bản Tin Công Nghệ Tuần 2 Tháng 10/2026: GPT-6 phủ sóng ChatGPT, GitHub Copilot tăng tốc 18 lần và C# Dev Kit cải tiến mạnh về hiệu năng"
+        },
+        {
+          "title": "5 thiết bị công nghệ “gây bão” thị trường tháng 10/2026",
+          "url": "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+          "snippet": "Oct 6, 2026 · Tháng 10/2026 đón loạt thiết bị công nghệ mới làm khuấy đảo thị trường, từ smartphone gập đến tablet, tất cả đều có nhiều nâng cấp đáng chú ý."
+        },
+        {
+          "title": "Triển lãm Công nghệ Quốc tế iTECH EXPO 2026 | Lễ Hội Việt Nam",
+          "url": "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+          "snippet": "Triển lãm Công nghệ Quốc tế iTECH EXPO 2026, với chủ đề \"New Tech, Innovation Unleashed\", là một sự kiện công nghệ quy mô lớn dự kiến diễn ra từ ngày 30/9 đến 2/10/2026 tại TP."
+        },
+        {
+          "title": "Lịch sự kiện tại VEC 2026: Cập nhật đầy đủ, mới nhất",
+          "url": "https://vec.global/about/news/lich-su-kien-vec-2026",
+          "snippet": "Lịch sự kiện tháng 9/2026 ; 09–11/09. Tuần lễ Công nghiệp & Công nghệ Việt Nam 2026 (VITW 2026). VEC, Sở Công thương TP. Hà Nội, dmg events, Camel, COEX, ADPEX."
+        },
+        {
+          "title": "Tin tức AI mới nhất tháng 10 2026: GPT-6 Astra, Gemini 4 ...",
+          "url": "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+          "snippet": "Oct 5, 2026 · Sự kiện được mong chờ nhất mùa thu năm nay chính là sự kiện OpenAI DevDay diễn ra vào ngày 4/10/2026. Tại đây, OpenAI đã chính thức ra mắt GPT-6 Astra – cỗ máy trí tuệ hàng đầu tích hợp bộ API thế hệ mới và các công cụ bảo mật chuyên sâu dành cho cộng đồng lập trình ..."
+        },
+        {
+          "title": "Hội nghị quốc tế thường niên Khu Công Nghệ Cao lần 8 năm 2026",
+          "url": "https://shtp.hochiminhcity.gov.vn/hoi-nghi-quoc-te-thuong-nien-kcnc-lan-8-nam-2026",
+          "snippet": "Ngày 16 tháng 10 năm 2026, tại Khu Công nghệ cao TP. Hồ Chí Minh (Trường Đại học FPT), Hội nghị Quốc tế thường niên Khu Công nghệ cao lần thứ 8 năm 2026 và Ngày Nghiên cứu và Đổi mới sáng tạo Vùng Đông Nam Bộ sẽ chính thức diễn ra."
+        }
+      ],
+      "source_urls": [
+        "https://www.facebook.com/trienlamtaivietnam/posts/lịch-sự-kiện-tháng-10-công-nghệ-triển-lãm-và-cộng-đồng-cùng-tăng-nhịplịch-cập-nh/1789822909811673",
+        "https://fpt.com/vi/tin-tuc/fpt-to-chuc-fpt-transform-2026-su-kien-cong-nghe-quoc-te-chuyen-sau-ve-ai-cloud-va-data",
+        "https://codegym.vn/tin-cong-nghe/ban-tin-cong-nghe-tuan-2-thang-10-2026",
+        "https://genz.com.vn/5-thiet-bi-cong-nghe-gay-bao-thi-truong-thang-10-2026",
+        "https://lehoivietnam.com.vn/vi/su-kien/6457-e6457-trien-lam-cong-nghe-quoc-te-itech-expo-2026",
+        "https://vec.global/about/news/lich-su-kien-vec-2026",
+        "https://deaitinh.com/tin-tuc-ai-moi-nhat-thang-10-2026",
+        "https://shtp.hochiminhcity.gov.vn/hoi-nghi-quoc-te-thuong-nien-kcnc-lan-8-nam-2026"
+      ],
+      "images_count": 0,
+      "fallbacks": [],
+      "citation_diagnostics": {
+        "detected": 0,
+        "allowed": 0,
+        "removed": 0,
+        "reasons": {},
+        "error": ""
+      },
+      "provider_token_usage": {
+        "prompt_tokens": 8058,
+        "completion_tokens": 244,
+        "total_tokens": 8302
+      },
+      "elapsed_seconds": 41.012
+    }
+  ],
+  "search_preflight": {
+    "ok": true,
+    "result_count": 8,
+    "error_type": "",
+    "elapsed_seconds": 1.148
+  },
+  "v2_summary": {
+    "completed": 2,
+    "attempted": 2,
+    "latency_median_sec": 34.6875,
+    "latency_p95_sec": 41.012,
+    "prompt_tokens_median": 7852.5,
+    "completion_tokens_median": 194.0,
+    "usage_reported_rows": 2
+  }
+}

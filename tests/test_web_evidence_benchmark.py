@@ -145,17 +145,23 @@ class AutoFetchReplayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertGreater(report["network_requests"], 0)
         self.assertTrue(report["invariants"]["max_two_sources"])
+        self.assertTrue(report["invariants"]["attempts_within_ceiling"])
         self.assertTrue(report["invariants"]["max_two_concurrent_reads"])
         self.assertTrue(report["invariants"]["output_within_cap"])
         self.assertEqual(report["metrics"]["peak_concurrency_max"], 2)
-        self.assertLessEqual(report["metrics"]["auto_fetch_targets_max"], 2)
+        self.assertLessEqual(report["metrics"]["auto_fetch_sources_read_max"], 2)
+        self.assertLessEqual(report["metrics"]["auto_fetch_attempts_max"], 4)
         self.assertGreater(report["metrics"]["cases_with_auto_fetch"], 0)
         self.assertNotIn("conditional_auto_fetch", report["not_measured"])
 
     async def test_auto_fetch_replay_row_shape(self) -> None:
         case = load_cases()[0]
         row = await replay_auto_fetch(case)
-        self.assertLessEqual(row["auto_fetch_targets"], 2)
+        self.assertLessEqual(row["auto_fetch_sources_read"], 2)
+        self.assertLessEqual(row["auto_fetch_attempts"], 4)
+        self.assertGreaterEqual(
+            row["auto_fetch_attempts"], row["auto_fetch_sources_read"]
+        )
         self.assertLessEqual(row["peak_concurrency"], 2)
         self.assertTrue(row["output_within_cap"])
 
