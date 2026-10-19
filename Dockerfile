@@ -12,7 +12,10 @@ WORKDIR /app
 # cùng commit có thể lấy version mới hơn mà không có diff nào giải thích.
 # --no-deps: lock đã liệt kê đủ closure, và pip sẽ không tự nâng cấp ngoài lock.
 COPY requirements.lock.txt .
-RUN python -m pip install --no-cache-dir --upgrade 'pip>=26.2' \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --upgrade 'pip>=26.2' \
     && python -m pip install --no-cache-dir --no-deps -r requirements.lock.txt
 
 # Copy mã nguồn và provider catalog runtime

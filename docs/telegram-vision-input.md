@@ -103,6 +103,10 @@ Chainnode và xKiro đều dùng stable provider key riêng; text/vision slots �
 
 `VISION_ENABLED=0` tắt vision nhưng không tắt text.
 
+## Video input (mention-only)
+
+Bot đọc video (`video`/`animation`/`video_note`, kể cả từ tin nhắn forward) **chỉ khi được tag/mention** — filter `TriggeredMessage` giữ nguyên, không có xử lý tự động. Mỗi video thành đúng 1 frame JPEG giữa video qua `ffmpeg` (`app/bot/video_frames.py`), fallback thumbnail Telegram khi thiếu ffmpeg/lỗi. Giới hạn: `VISION_VIDEO_ENABLED=1`, `MAX_VIDEO_BYTES=15728640` (< 20MB hạn download Bot API hosted), `MAX_VIDEO_DURATION_SEC=180`, `VIDEO_FFMPEG_TIMEOUT_SEC=15`. Nguồn media: tin hiện tại + `reply_to_message` + `external_reply` (chỉ media, không quoted). Story forward không có `file_id` nên Bot API không lấy được.
+
 Nếu không có configured/capable vision provider, user nhận generic `NoCapableProvider` UX. Image request không fallback sang text-only slot.
 
 xKiro vision chỉ nên được bật sau khi candidate vượt live `/v1/models` hard gates và image/tool qualification trong `scripts/probe_xkiro.py`; model ID không hard-code trong runtime.

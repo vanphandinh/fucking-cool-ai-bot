@@ -294,6 +294,10 @@ async def submit_controlled_question(
         except UnsupportedImageFormat as exc:
             raise UserFacingJobError("Hiện mình chỉ đọc JPEG, PNG hoặc WebP.") from exc
         except ImageTooLarge as exc:
+            if str(exc).startswith("Video"):
+                raise UserFacingJobError(
+                    f"{exc}. Bạn gửi video ngắn/nhẹ hơn nhé."
+                ) from exc
             raise UserFacingJobError("Ảnh quá lớn để phân tích.") from exc
         except MediaValidationError as exc:
             if "Quá nhiều ảnh" in str(exc):

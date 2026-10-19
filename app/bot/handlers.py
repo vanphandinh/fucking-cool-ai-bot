@@ -39,12 +39,13 @@ from .media import (
 logger = logging.getLogger(__name__)
 
 _HELP_TEXT = (
-    "🤖 Mình là trợ lý AI của group (AI + tìm kiếm web/ảnh + đọc ảnh).\n\n"
+    "🤖 Mình là trợ lý AI của group (AI + tìm kiếm web/ảnh + đọc ảnh/video).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi.\n"
     "- Có thể yêu cầu tìm/xem hình ảnh từ Internet.\n"
     "- Gửi ảnh JPEG/PNG/WebP kèm caption có @{bot}.\n"
-    "- Reply ảnh rồi tag @{bot}, hoặc dùng /ask <câu hỏi>.\n"
+    "- Gửi/forward video kèm caption có @{bot} để mình xem 1 frame giữa video.\n"
+    "- Reply ảnh/video rồi tag @{bot}, hoặc dùng /ask <câu hỏi>.\n"
     "- Lệnh: /ask, /help, /status (admin).\n\n"
     "Giới hạn {limit} câu/phút/người để tránh spam."
 )
@@ -452,8 +453,11 @@ async def _handle_question(
                 except UnsupportedImageFormat:
                     await message.reply("Hiện mình chỉ đọc JPEG, PNG hoặc WebP.")
                     return
-                except ImageTooLarge:
-                    await message.reply("Ảnh quá lớn để phân tích.")
+                except ImageTooLarge as exc:
+                    if str(exc).startswith("Video"):
+                        await message.reply(f"{exc}. Bạn gửi video ngắn/nhẹ hơn nhé.")
+                    else:
+                        await message.reply("Ảnh quá lớn để phân tích.")
                     return
                 except MediaValidationError as exc:
                     if "Quá nhiều ảnh" in str(exc):

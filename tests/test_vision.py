@@ -247,6 +247,160 @@ class TelegramMediaSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed_writes, [1])
 
 
+class ForwardedVideoTests(unittest.IsolatedAsyncioTestCase):
+    """Video (kể cả forward) chỉ xử lý khi đã tag — loader cover 3 nguồn media."""
+
+    def _video_message(self, bot, **overrides):
+        base = {
+            "photo": None,
+            "document": None,
+            "video": SimpleNamespace(
+                file_id="vid1",
+                file_size=100,
+                duration=10,
+                thumbnail=SimpleNamespace(file_id="thumb1", file_size=10),
+            ),
+            "animation": None,
+            "video_note": None,
+            "reply_to_message": None,
+            "external_reply": None,
+            "forward_origin": SimpleNamespace(type="channel"),
+            "bot": bot,
+        }
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def _bot(self, payloads):
+        class FakeBot:
+            async def download(self, file_id: str, destination) -> None:
+                destination.write(payloads.get(file_id, b"x"))
+
+        return FakeBot()
+
+    async def test_forwarded_video_becomes_one_jpeg_frame(self) -> None:
+        from unittest.mock import patch
+
+        bot = self._bot({"vid1": b"video-bytes", "thumb1": b"thumb"})
+        message = self._video_message(bot)
+        loader = TelegramMediaLoader(Settings(_env_file=None))
+        with patch(
+            "app.bot.media.extract_middle_frame", return_value=b"frame-jpeg"
+        ):
+            images = await loader.load(message)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].mime_type, "image/jpeg")
+        self.assertEqual(images[0].data, b"frame-jpeg")
+        self.assertEqual(images[0].source, "current")
+
+    async def test_reply_to_forwarded_video_reads_reply_source(self) -> None:
+        from unittest.mock import patch
+
+        bot = self._bot({"vid1": b"video-bytes"})
+        reply = self._video_message(bot)
+        message = SimpleNamespace(
+            photo=None,
+            document=None,
+            video=None,
+            animation=None,
+            video_note=None,
+            text="@FuckingCoolAIbot video này nói gì?",
+            reply_to_message=reply,
+            external_reply=None,
+            bot=bot,
+        )
+        loader = TelegramMediaLoader(Settings(_env_file=None))
+        with patch(
+            "app.bot.media.extract_middle_frame", return_value=b"frame-jpeg"
+        ):
+            images = await loader.load(message)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].source, "reply")
+
+    async def test_external_reply_video_is_read(self) -> None:
+        from unittest.mock import patch
+
+        bot = self._bot({"vid1": b"video-bytes"})
+        external = self._video_message(bot)
+        external.reply_to_message = None
+        message = SimpleNamespace(
+            photo=None,
+            document=None,
+            video=None,
+            animation=None,
+            video_note=None,
+            text="@FuckingCoolAIbot xem giúp",
+            reply_to_message=None,
+            external_reply=external,
+            bot=bot,
+        )
+        loader = TelegramMediaLoader(Settings(_env_file=None))
+        with patch(
+            "app.bot.media.extract_middle_frame", return_value=b"frame-jpeg"
+        ):
+            images = await loader.load(message)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].source, "reply")
+
+    async def test_oversize_video_rejected_before_download(self) -> None:
+        downloaded: list[str] = []
+
+        class FakeBot:
+            async def download(self, file_id: str, destination) -> None:
+                downloaded.append(file_id)
+                destination.write(b"x")
+
+        message = self._video_message(FakeBot())
+        loader = TelegramMediaLoader(Settings(_env_file=None, max_video_bytes=10))
+        with self.assertRaises(ImageTooLarge) as ctx:
+            await loader.load(message)
+        self.assertIn("Video", str(ctx.exception))
+        self.assertEqual(downloaded, [])
+
+    async def test_overlong_video_rejected(self) -> None:
+        bot = self._bot({})
+        message = self._video_message(bot)
+        loader = TelegramMediaLoader(
+            Settings(_env_file=None, max_video_duration_sec=5)
+        )
+        with self.assertRaises(ImageTooLarge) as ctx:
+            await loader.load(message)
+        self.assertIn("dài", str(ctx.exception))
+
+    async def test_ffmpeg_failure_falls_back_to_thumbnail(self) -> None:
+        from unittest.mock import patch
+
+        from app.bot.video_frames import VideoFrameError
+
+        bot = self._bot({"thumb1": b"thumb-bytes"})
+        message = self._video_message(bot)
+        loader = TelegramMediaLoader(Settings(_env_file=None))
+        with patch(
+            "app.bot.media.extract_middle_frame",
+            side_effect=VideoFrameError("no ffmpeg"),
+        ):
+            images = await loader.load(message)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].data, b"thumb-bytes")
+
+    async def test_video_disabled_returns_no_images(self) -> None:
+        bot = self._bot({})
+        message = self._video_message(bot)
+        loader = TelegramMediaLoader(
+            Settings(_env_file=None, vision_video_enabled=False)
+        )
+        self.assertEqual(await loader.load(message), ())
+
+    async def test_forward_without_tag_does_not_trigger(self) -> None:
+        from app.bot.filters import TriggeredMessage
+
+        settings = Settings(_env_file=None, bot_username="@FuckingCoolAIbot")
+        filt = TriggeredMessage(settings)
+        message = SimpleNamespace(
+            text=None, caption=None, reply_to_message=None
+        )
+        self.assertFalse(await filt(message))
+
+
 async def _close_router(router) -> None:
     for provider in router.providers:
         await provider.aclose()
