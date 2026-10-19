@@ -12,10 +12,11 @@ from .media import TelegramMediaLoader
 from .question_runner import submit_controlled_question
 
 _HELP_TEXT = (
-    "🤖 Mình là trợ lý AI của group (AI + tìm kiếm web/ảnh + đọc ảnh).\n\n"
+    "🤖 Mình là trợ lý AI của group (AI + tìm kiếm web/ảnh + đọc ảnh/video).\n\n"
     "Cách dùng:\n"
     "- Gõ @{bot} + câu hỏi, hoặc /ask <câu hỏi>.\n"
     "- Có thể gửi/reply ảnh JPEG, PNG hoặc WebP.\n"
+    "- Gửi/forward video kèm tag @{bot} để mình xem 1 frame giữa video.\n"
     "- Với tác vụ dài, bot cập nhật tiến độ thật và sẽ hỏi Tiếp tục/Dừng thay vì "
     "tự hủy toàn bộ câu hỏi.\n"
     "- Lệnh: /ask, /help, /status (admin).\n\n"

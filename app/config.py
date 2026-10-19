@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
+    # Video understanding (mention-only): trích 1 frame giữa video qua ffmpeg.
+    # Bot API hosted giới hạn download 20MB nên MAX_VIDEO_BYTES phải < 20MB.
+    vision_video_enabled: bool = True
+    max_video_bytes: int = Field(default=15728640, ge=1, le=20000000)
+    max_video_duration_sec: float = Field(default=180.0, gt=0, allow_inf_nan=False)
+    video_ffmpeg_timeout_sec: float = Field(default=15.0, gt=0, allow_inf_nan=False)
 
     # Unified free/self-hosted-first search policy for both text and image search.
     search_backend: str = "auto"
