@@ -17,7 +17,7 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 - [`CRAWL4AI_INTEGRATION.md`](CRAWL4AI_INTEGRATION.md) — optional Crawl4AI URL rendering backend, gated production activation and rollback runbook.
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — strict `.env` synchronization, canonical provider contract và secret-file permissions.
-- [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — chạy lại toàn bộ gate trên VPS, redeploy và các điểm kiểm tra sau cutover.
+- [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — nâng cấp từ image cũ hơn, chạy lại toàn bộ gate trên VPS, redeploy và các điểm kiểm tra sau cutover.
 - [`WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md) — bộ 21 câu live smoke V2 và cách chấm (`scripts/web_evidence_live_smoke.py` đọc trực tiếp file này).
 - [`benchmarks/README.md`](benchmarks/README.md) — offline replay, fixture và giới hạn của các proxy metric.
 
