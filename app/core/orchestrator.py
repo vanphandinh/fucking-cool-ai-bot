@@ -17,6 +17,7 @@ from ..search import auto_fetch, image_service, service as search_service, url_s
 from ..search.citation_guard import CitationDiagnostics, enforce_v2_citations
 from ..search.evidence import neutralize_untrusted
 from ..search.router import RoutedSearchError
+from ..search.service import SearchError
 from ..search.source_ranking import publication_age_days
 from .request import UserRequest
 from .source_policy import canonicalize_source_url, select_diverse_sources
@@ -39,6 +40,9 @@ _SEARCH_TITLE_LIMIT = 160
 _SEARCH_SNIPPET_LIMIT = 300
 _SEARCH_HINT = (
     "Hãy dựa vào các kết quả trên để trả lời; nếu không đủ thì nói rõ."
+)
+_FRESHNESS_BOOST_FAILURE_NOTE = (
+    "Chưa kiểm chứng được nguồn cập nhật (tìm bổ sung không thành công)."
 )
 _URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
@@ -473,24 +477,33 @@ class Orchestrator:
                         "Web search unavailable; returning a no-evidence marker"
                     )
                     return _search_unavailable(q)
+                freshness_boost_failed = False
                 if verification_context and not freshness_boost_used:
                     freshness_boost_used = True
                     if not _has_recent_source(results):
                         # A bare current year often returns the same stale pages.
                         # "update" surfaces announcement-style pages for plan
                         # changes without hardcoding a topic or a domain.
-                        extra = await search_service.search(
-                            f"{q} {datetime.now(_VN_TZ).year} update",
-                            settings,
-                            operations=operations,
-                            verification_context=True,
-                        )
-                        results = _merge_search_results(
-                            results,
-                            extra,
-                            search_service.MAX_RESULTS,
-                            reserve_slot=True,
-                        )
+                        try:
+                            extra = await search_service.search(
+                                f"{q} {datetime.now(_VN_TZ).year} update",
+                                settings,
+                                operations=operations,
+                                verification_context=True,
+                            )
+                        except (RoutedSearchError, SearchError, TimeoutError) as exc:
+                            logger.warning(
+                                "Freshness discovery unavailable; keeping primary evidence (%s)",
+                                type(exc).__name__,
+                            )
+                            freshness_boost_failed = True
+                        else:
+                            results = _merge_search_results(
+                                results,
+                                extra,
+                                search_service.MAX_RESULTS,
+                                reserve_slot=True,
+                            )
                 sources.extend(
                     {
                         key: value
@@ -504,12 +517,19 @@ class Orchestrator:
                 # listing can never starve the auto-fetch evidence. Without an
                 # auto-fetch target the listing may use the whole tool budget.
                 targets, candidates = await reserve_auto_fetch_targets(q, results)
+                freshness_note = (
+                    f"\n{_FRESHNESS_BOOST_FAILURE_NOTE}"
+                    if freshness_boost_failed
+                    else ""
+                )
+                listing_cap = SEARCH_LISTING_MAX_CHARS if targets else _TOOL_OUTPUT_CAP
                 payload = _format_search_results(
                     q,
                     results,
-                    max_chars=SEARCH_LISTING_MAX_CHARS if targets else _TOOL_OUTPUT_CAP,
+                    max_chars=max(0, listing_cap - len(freshness_note)),
                     include_publication_dates=True,
                 )
+                payload += freshness_note
                 if not targets:
                     return payload
                 extra = await auto_fetch_evidence(q, targets, payload, candidates)

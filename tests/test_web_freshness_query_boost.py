@@ -10,13 +10,20 @@ source.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
-from app.ai.router import CompletionResult
+from app.ai.contracts import ChatResponse, ToolCallPart, ToolResultPart
+from app.ai.router import AIProviderRouter, CompletionResult
 from app.config import Settings
+from app.core.job_control import JobControl
+from app.core.job_operations import OperationRunner
+from app.search.router import RoutedSearchError
+from app.search.service import SearchError
+from tests.provider_fakes import ScriptedProvider
 from app.core.orchestrator import (
     _VN_TZ,
     Orchestrator,
@@ -111,6 +118,144 @@ class MergeHelpersTests(unittest.TestCase):
 
 
 class FreshnessBoostWiringTests(unittest.IsolatedAsyncioTestCase):
+    def _provider_router(self) -> tuple[ScriptedProvider, AIProviderRouter]:
+        provider = ScriptedProvider(
+            "freshness-test",
+            [
+                ChatResponse(
+                    tool_calls=(
+                        ToolCallPart(
+                            id="search-primary",
+                            name="web_search",
+                            arguments={"query": QUERY},
+                        ),
+                    )
+                ),
+                ChatResponse(content="answer based on available evidence"),
+            ],
+        )
+        return provider, AIProviderRouter([provider])
+
+    async def _assert_boost_failure_keeps_primary_evidence(
+        self, failure: Exception, *, controlled: bool
+    ) -> None:
+        provider, router = self._provider_router()
+        searches: list[str] = []
+
+        async def search(query, _settings, *, operations=None, **_kwargs):
+            searches.append(query)
+
+            async def run_search():
+                if len(searches) == 1:
+                    return [dict(_OLD)]
+                raise failure
+
+            if operations is not None:
+                return await operations.run(
+                    "fake web search", run_search, timeout_sec=1.0
+                )
+            return await run_search()
+
+        operations = (
+            OperationRunner(JobControl(renewal_sec=30), asyncio.Semaphore(1), lambda _event: None)
+            if controlled
+            else None
+        )
+        with patch("app.core.orchestrator.search_service.search", new=search):
+            answer = await Orchestrator(self._settings(), router).ask(
+                QUERY, operations=operations
+            )
+
+        model_evidence = [
+            part.content
+            for request in provider.requests
+            for message in request.messages
+            for part in message.parts
+            if isinstance(part, ToolResultPart)
+        ]
+        self.assertEqual(len(searches), 2)
+        self.assertIn(f"{QUERY} {datetime.now(_VN_TZ).year} update", searches)
+        self.assertTrue(answer.searched)
+        self.assertEqual([item["url"] for item in answer.sources], [_OLD["url"]])
+        self.assertEqual(len(model_evidence), 1)
+        self.assertIn(_OLD["url"], model_evidence[0])
+        self.assertIn("Chưa kiểm chứng được nguồn cập nhật", model_evidence[0])
+        self.assertLessEqual(len(model_evidence[0]), 6000)
+        self.assertEqual(provider.requests[-1].messages[-1].parts[0].content, model_evidence[0])
+
+    async def test_boost_failure_keeps_primary_evidence_with_real_provider_router(self):
+        await self._assert_boost_failure_keeps_primary_evidence(
+            RoutedSearchError("discovery unavailable"), controlled=False
+        )
+
+    async def test_boost_timeout_keeps_primary_evidence_with_controlled_operations(self):
+        await self._assert_boost_failure_keeps_primary_evidence(
+            TimeoutError("discovery timed out"), controlled=True
+        )
+
+    async def test_search_service_error_in_boost_keeps_primary_evidence(self):
+        await self._assert_boost_failure_keeps_primary_evidence(
+            SearchError("discovery unavailable"), controlled=False
+        )
+
+    async def test_empty_boost_retains_primary_evidence(self):
+        provider, router = self._provider_router()
+        searches: list[str] = []
+
+        async def search(query, _settings, **_kwargs):
+            searches.append(query)
+            return [dict(_OLD)] if len(searches) == 1 else []
+
+        with patch("app.core.orchestrator.search_service.search", new=search):
+            answer = await Orchestrator(self._settings(), router).ask(QUERY)
+
+        evidence = provider.requests[-1].messages[-1].parts[0].content
+        self.assertIn(_OLD["url"], evidence)
+        self.assertEqual([item["url"] for item in answer.sources], [_OLD["url"]])
+
+    async def test_primary_search_failure_keeps_no_evidence_marker(self):
+        provider, router = self._provider_router()
+
+        async def search(_query, _settings, **_kwargs):
+            raise RoutedSearchError("primary unavailable")
+
+        with patch("app.core.orchestrator.search_service.search", new=search):
+            answer = await Orchestrator(self._settings(), router).ask(QUERY)
+
+        output = provider.requests[-1].messages[-1].parts[0].content
+        self.assertIn("KHÔNG có bằng chứng mới", output)
+        self.assertFalse(answer.searched)
+        self.assertEqual(answer.sources, [])
+
+    async def test_cancellation_during_boost_propagates_without_read_dispatch(self):
+        provider, router = self._provider_router()
+        boost_started = asyncio.Event()
+        calls: list[str] = []
+        reads = AsyncMock()
+
+        async def search(query, _settings, **_kwargs):
+            calls.append(query)
+            if len(calls) == 1:
+                return [dict(_OLD)]
+            boost_started.set()
+            await asyncio.Event().wait()
+
+        with (
+            patch("app.core.orchestrator.search_service.search", new=search),
+            patch("app.core.orchestrator.url_service.read_url", new=reads),
+        ):
+            task = asyncio.create_task(
+                Orchestrator(self._settings(), router).ask(QUERY)
+            )
+            await boost_started.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(provider.requests), 1)
+        reads.assert_not_awaited()
+
     def _settings(self) -> Settings:
         return Settings(
             _env_file=None, search_backend="ddgs"
