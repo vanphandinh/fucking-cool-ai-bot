@@ -185,6 +185,14 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
             [stale["url"]],
         )
 
+    async def test_change_language_regex_matches_only_word_bounded_terms(self):
+        for title in ("Latest update", "NASA announced a change", "cập nhật mới"):
+            with self.subTest(title=title):
+                self.assertEqual(auto_fetch._change_language(_hit("https://n.example/x", title)), 1)
+        for title in ("unannouncedness", "latestupdates", "unchanged", "garden notes"):
+            with self.subTest(title=title):
+                self.assertEqual(auto_fetch._change_language(_hit("https://n.example/x", title)), 0)
+
     async def test_change_announcing_discovery_page_is_read_first(self):
         query = "verify NASA Artemis program crewed landing mission 2026"
         stale = _hit(
@@ -193,13 +201,13 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
             "Artemis program crewed landing mission",
         )
         recap = _hit(
-            "https://www.nasa.gov/centers/recap",
-            "Artemis II mission milestones recap",
-            "Artemis mission recap",
+            "https://news.example.net/recap",
+            "Artemis program crewed landing mission 2026 overview",
+            "NASA Artemis program crewed landing mission",
         )
         announcement = _hit(
             "https://www.nasa.gov/news-release/artemis-update",
-            "NASA Strengthens Artemis, Adds Mission",
+            "Announced Artemis mission update",
             "Artemis mission update",
         )
         recap["_discovery"] = True
@@ -208,6 +216,7 @@ class AutoFetchPolicyTests(unittest.IsolatedAsyncioTestCase):
             query, [stale, recap, announcement], limit=2, verification_context=True
         )
         self.assertEqual(targets[0], announcement["url"])
+        self.assertEqual(targets[1], recap["url"])
 
     async def test_pack_evidence_reports_single_source_and_declared_update(self):
         packed = auto_fetch.pack_evidence(

@@ -38,10 +38,10 @@ DISCOVERY_MIN_SCORE = 0.10
 # page to read for a question about a plan that may have changed, and never
 # decides whether a claim is true.
 _CHANGE_LANGUAGE_RE = re.compile(
-    r"(update|updated|updates|announce|announced|adds|added|new|"
+    r"\b(update|updated|updates|announce|announced|adds|added|new|"
     r"change|changed|revises?|revised|refines?|refined|strengthens?|"
     r"confirms?|confirmed|latest|cap nhat|cập nhật|thay doi|thay đổi|"
-    r"cong bo|công bố|moi|mới)",
+    r"cong bo|công bố|moi|mới)\b",
     re.IGNORECASE,
 )
 
@@ -49,6 +49,8 @@ _CHANGE_LANGUAGE_RE = re.compile(
 def _change_language(item: dict) -> int:
     text = f"{item.get('title') or ''} {item.get('snippet') or ''}"
     return 1 if _CHANGE_LANGUAGE_RE.search(text) else 0
+
+
 # Room kept for the "sources that did not fit" note so it is never dropped.
 _SKIP_NOTE_RESERVE = 80
 # A question may auto-fetch at most this many sources in parallel.
