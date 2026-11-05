@@ -136,6 +136,19 @@ class OpenRouterCatalogTests(unittest.TestCase):
         errors = probe.qualification_errors(model, require_vision=True)
         self.assertTrue(any("image" in error for error in errors))
 
+    def test_catalog_summary_omits_removed_access_fields(self) -> None:
+        summary = probe.catalog_summary(FREE_TEXT_MODEL)
+        self.assertEqual(
+            summary,
+            {
+                "id": "free-text",
+                "pricing": {"prompt": "0", "completion": 0},
+                "context_length": 131072,
+            },
+        )
+        self.assertNotIn("capabilities", summary)
+        self.assertNotIn("access_tier", summary)
+
 
 class OpenRouterProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
     def test_provider_preferences_are_read_from_canonical_env(self) -> None:

@@ -340,22 +340,11 @@ async def fetch_catalog(client: httpx.AsyncClient) -> dict:
 
 def catalog_summary(model: dict) -> dict:
     pricing = model.get("pricing") if isinstance(model.get("pricing"), dict) else {}
-    supported = model.get("supported_parameters")
-    architecture = model.get("architecture")
-    modalities = (
-        architecture.get("input_modalities")
-        if isinstance(architecture, dict)
-        else None
-    )
     return {
         "id": model.get("id"),
         "pricing": {
             "prompt": pricing.get("prompt"),
             "completion": pricing.get("completion"),
-        },
-        "capabilities": {
-            "tools": isinstance(supported, list) and "tools" in supported,
-            "vision": isinstance(modalities, list) and "image" in modalities,
         },
         "context_length": model.get("context_length"),
     }
