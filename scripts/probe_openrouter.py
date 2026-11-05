@@ -16,6 +16,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import re
 import secrets
 import sys
 from typing import Any
@@ -29,6 +30,7 @@ import httpx  # noqa: E402
 
 DEFAULT_VISION_EXPECT = "47-GREEN-CIRCLE"
 DEFAULT_MAX_RETRY_AFTER = 60.0
+_PROVIDER_SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
 TOOL_RESULT = "OPENROUTER_TOOL_PROBE_OK"
 TOOL_SCHEMA = {
     "type": "function",
@@ -95,6 +97,11 @@ def provider_preferences() -> dict | None:
         value = part.strip()
         if not value or value in seen:
             continue
+        if _PROVIDER_SLUG_RE.fullmatch(value) is None:
+            raise ValueError(
+                "AI_PROVIDERS__OPENROUTER__PROVIDER must be a comma-separated "
+                "list of provider slugs"
+            )
         seen.add(value)
         slugs.append(value)
     if not slugs:
@@ -500,7 +507,12 @@ async def run_probe(args: argparse.Namespace) -> int:
         )
         return 2
 
-    provider = provider_preferences()
+    try:
+        provider = provider_preferences()
+    except ValueError as exc:
+        emit("error", compatible=False, error=str(exc))
+        return 2
+
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(args.timeout)
     async with httpx.AsyncClient(

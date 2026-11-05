@@ -87,6 +87,24 @@ class OpenRouterProfileTests(unittest.TestCase):
                 vision_enabled=False,
             )
 
+    def test_provider_option_is_rejected_for_unused_non_opted_in_provider(self) -> None:
+        with self.assertRaisesRegex(
+            ValidationError,
+            "AI_PROVIDERS__CHAINNODE__PROVIDER",
+        ):
+            Settings(
+                _env_file=None,
+                ai_providers={
+                    "chainnode": {
+                        "api_keys": "key",
+                        "provider": "deepinfra",
+                    }
+                },
+                text_provider_order="",
+                vision_provider_order="",
+                vision_enabled=False,
+            )
+
     def _text_target(self, *, provider: str):
         settings = Settings(
             _env_file=None,

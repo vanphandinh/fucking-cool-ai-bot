@@ -157,6 +157,31 @@ class OpenRouterProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             )
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(probe.provider_preferences())
+        with patch.dict(
+            os.environ,
+            {"AI_PROVIDERS__OPENROUTER__PROVIDER": "bad slug"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "provider slugs"):
+                probe.provider_preferences()
+
+    async def test_probe_rejects_invalid_provider_slug_before_network(self) -> None:
+        args = probe.parse_args(["--text-model", "free-text"])
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret",
+                "AI_PROVIDERS__OPENROUTER__PROVIDER": "bad slug",
+            },
+            clear=True,
+        ):
+            with patch.object(probe, "fetch_catalog", new=AsyncMock()) as fetch:
+                with patch.object(probe, "emit") as emit:
+                    result = await probe.run_probe(args)
+
+        self.assertEqual(result, 2)
+        fetch.assert_not_awaited()
+        self.assertIn("PROVIDER", emit.call_args.kwargs["error"])
 
     def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
         with patch.dict(
@@ -186,6 +211,35 @@ class OpenRouterProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             emit.call_args_list[-1].kwargs,
             {"compatible": False, "error": "stop-after-auth"},
         )
+
+    async def test_live_probe_threads_provider_routing(self) -> None:
+        args = probe.parse_args(["--text-model", "free-text"])
+        catalog = {"data": [FREE_TEXT_MODEL]}
+        expected = {"only": ["deepinfra"], "order": ["deepinfra"]}
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret",
+                "AI_PROVIDERS__OPENROUTER__PROVIDER": "deepinfra",
+            },
+            clear=True,
+        ):
+            with patch.object(
+                probe,
+                "fetch_catalog",
+                new=AsyncMock(return_value=catalog),
+            ):
+                with patch.object(probe, "_probe_plain", new=AsyncMock()) as plain:
+                    with patch.object(
+                        probe,
+                        "_probe_tool_flow",
+                        new=AsyncMock(),
+                    ) as tool_flow:
+                        result = await probe.run_probe(args)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(plain.await_args.kwargs["provider"], expected)
+        self.assertEqual(tool_flow.await_args.kwargs["provider"], expected)
 
     async def test_all_catalog_gates_run_before_live_probe(self) -> None:
         args = probe.parse_args(

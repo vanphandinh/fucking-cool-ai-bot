@@ -186,9 +186,11 @@ class Settings(BaseSettings):
         for provider_id in referenced:
             catalog.require(provider_id)
 
-        target_count = 0
-        for provider_id in referenced:
-            profile = catalog.require(provider_id)
+        configured = tuple(dict.fromkeys((*referenced, *self.ai_providers)))
+        for provider_id in configured:
+            profile = catalog.providers.get(provider_id)
+            if profile is None:
+                continue
             runtime = provider_runtime(self, provider_id)
             if (
                 runtime.provider_slugs_list
@@ -199,6 +201,11 @@ class Settings(BaseSettings):
                     "by providers that declare driver_options.provider_preferences "
                     "in config/ai-providers.toml"
                 )
+
+        target_count = 0
+        for provider_id in referenced:
+            profile = catalog.require(provider_id)
+            runtime = provider_runtime(self, provider_id)
             credentials = runtime.api_keys_list
             if not credentials:
                 continue
