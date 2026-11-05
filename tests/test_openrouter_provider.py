@@ -120,6 +120,30 @@ class OpenRouterProfileTests(unittest.TestCase):
         )
         return build_provider_targets(settings, ["openrouter"])[0]
 
+    def test_builder_omits_provider_preferences_for_non_opted_in_profile(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            ai_providers={
+                "chainnode": {
+                    "api_keys": "key",
+                    "text_models": "text-model",
+                }
+            },
+            text_provider_order="chainnode",
+            vision_enabled=False,
+        )
+        # Settings validation rejects this combination; isolate the builder's
+        # own opt-in guard with the already-validated runtime object.
+        settings.ai_providers["chainnode"].provider = "deepinfra"
+
+        targets = build_provider_targets(settings, ["chainnode"])
+        try:
+            self.assertEqual(len(targets), 1)
+            self.assertEqual(targets[0].spec.provider_preferences, ())
+        finally:
+            for target in targets:
+                asyncio.run(target.aclose())
+
     def test_provider_preferences_are_sent_with_every_request(self) -> None:
         captured: list[dict] = []
 
