@@ -56,7 +56,7 @@ class ChainnodeProfileTests(unittest.TestCase):
                     "vision_models": VISION_MODEL,
                 }
             },
-            text_provider_order="xkiro",
+            text_provider_order="openrouter",
             vision_provider_order="chainnode",
         )
         targets = build_provider_targets(settings, ["chainnode"])

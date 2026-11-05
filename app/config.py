@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     learn_group_id_mode: bool = False
 
     ai_providers: dict[str, ProviderRuntimeSettings] = Field(default_factory=dict)
-    text_provider_order: str = "chainnode,xkiro"
+    text_provider_order: str = "chainnode,openrouter"
     provider_retry_max_consecutive: int = Field(default=2, ge=1, le=5)
     provider_retry_max_per_provider: int = Field(default=3, ge=1, le=10)
     provider_retry_max_per_request: int = Field(default=5, ge=1, le=20)
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
-    vision_provider_order: str = "chainnode,xkiro"
+    vision_provider_order: str = "chainnode,openrouter"
     max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)
@@ -190,6 +190,15 @@ class Settings(BaseSettings):
         for provider_id in referenced:
             profile = catalog.require(provider_id)
             runtime = provider_runtime(self, provider_id)
+            if (
+                runtime.provider_slugs_list
+                and profile.driver_options.get("provider_preferences") is not True
+            ):
+                raise ValueError(
+                    f"AI_PROVIDERS__{provider_id.upper()}__PROVIDER is only supported "
+                    "by providers that declare driver_options.provider_preferences "
+                    "in config/ai-providers.toml"
+                )
             credentials = runtime.api_keys_list
             if not credentials:
                 continue

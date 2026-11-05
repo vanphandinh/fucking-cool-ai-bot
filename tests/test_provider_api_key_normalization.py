@@ -25,12 +25,12 @@ class ProviderApiKeyNormalizationTests(unittest.TestCase):
         return build_provider_targets(settings, [provider_id])
 
     def test_whitespace_only_key_builds_no_targets(self) -> None:
-        for provider_id in ("chainnode", "xkiro"):
+        for provider_id in ("chainnode", "openrouter"):
             with self.subTest(provider_id=provider_id):
                 self.assertEqual(self._build(provider_id, "   "), [])
 
     def test_builder_strips_credential_before_authorization_header(self) -> None:
-        for provider_id in ("chainnode", "xkiro"):
+        for provider_id in ("chainnode", "openrouter"):
             targets = self._build(provider_id, "  test-key  ")
             try:
                 self.assertEqual(

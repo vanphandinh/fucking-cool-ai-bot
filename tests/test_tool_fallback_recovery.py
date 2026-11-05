@@ -13,7 +13,7 @@ from tests.openai_target_fakes import make_catalog_target
 from tests.provider_fakes import fetch_url_definition, text_request
 
 
-class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
+class OpenRouterNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_retry_omits_tools_and_tool_choice(self) -> None:
         requests: list[dict] = []
 
@@ -34,7 +34,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("tool_choice", requests[0])
         self.assertNotIn("tools", requests[0])
 
-    async def test_router_recovers_from_tool_budget_with_fresh_xkiro_pass(self) -> None:
+    async def test_router_recovers_from_tool_budget_with_fresh_openrouter_pass(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -81,12 +81,12 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("recovered from tool result", "xkiro", ()),
+            CompletionResult("recovered from tool result", "openrouter", ()),
         )
         self.assertEqual(executed, ["fetch_url"])
         self.assertEqual(len(requests), 2)
 
-    async def test_round_budget_switches_next_xkiro_turn_to_synthesis_only(self) -> None:
+    async def test_round_budget_switches_next_openrouter_turn_to_synthesis_only(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -113,14 +113,14 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, CompletionResult("synthesized", "xkiro", ()))
+        self.assertEqual(result, CompletionResult("synthesized", "openrouter", ()))
         self.assertEqual(executed, ["fetch_url"] * 3)
         self.assertEqual(len(requests), 4)
         self.assertTrue(all("tools" in payload for payload in requests[:3]))
         self.assertNotIn("tools", requests[3])
         self.assertNotIn("tool_choice", requests[3])
 
-    async def test_local_tool_policy_failure_does_not_cool_down_xkiro_vision(self) -> None:
+    async def test_local_tool_policy_failure_does_not_cool_down_openrouter_vision(self) -> None:
         requests: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -154,13 +154,13 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(provider.health.available())
         self.assertEqual(provider.health.consecutive_transient_failures, 0)
 
-    async def test_xkiro_synthesis_tool_call_ends_without_same_provider_retry(self) -> None:
+    async def test_openrouter_synthesis_tool_call_ends_without_same_provider_retry(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
         def respond(request: httpx.Request) -> httpx.Response:
             requests.append(json.loads(request.content))
-            return _tool_response(request, f"xkiro_call_{len(requests)}")
+            return _tool_response(request, f"openrouter_call_{len(requests)}")
 
         provider = _make_target()
         await provider.aclose()
@@ -218,7 +218,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("twelve-call synthesis", "xkiro", ()),
+            CompletionResult("twelve-call synthesis", "openrouter", ()),
         )
         self.assertEqual(executed, ["fetch_url"] * 12)
         self.assertEqual(len(requests), 2)
@@ -257,7 +257,7 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("synthesized without overflow", "xkiro", ()),
+            CompletionResult("synthesized without overflow", "openrouter", ()),
         )
         self.assertEqual(executed, [])
         self.assertEqual(len(requests), 2)
@@ -287,28 +287,28 @@ class XKiroNoToolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await provider.aclose()
 
-        self.assertEqual(result, CompletionResult("plain only", "xkiro", ()))
+        self.assertEqual(result, CompletionResult("plain only", "openrouter", ()))
         self.assertEqual(len(requests), 1)
         self.assertNotIn("tools", requests[0])
         self.assertNotIn("tool_choice", requests[0])
 
 
 def _make_target():
-    return make_catalog_target("xkiro", model="test-text-model")
+    return make_catalog_target("openrouter", model="test-text-model")
 
 
 def _make_vision_target():
     return make_catalog_target(
-        "xkiro",
+        "openrouter",
         route="vision",
         model="test-vision-model",
-        target_id="xkiro:vision:m1:c1",
+        target_id="openrouter:vision:m1:c1",
     )
 
 
 def _mock_client(responder) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url="https://api.xkiro.com/v1/",
+        base_url="https://openrouter.ai/api/v1/",
         transport=httpx.MockTransport(responder),
     )
 

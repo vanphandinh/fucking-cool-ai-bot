@@ -46,7 +46,7 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings(_env_file=None)
 
-        self.assertIsNone(provider_runtime(settings, "xkiro").request_timeout_sec)
+        self.assertIsNone(provider_runtime(settings, "openrouter").request_timeout_sec)
         self.assertIsNone(provider_runtime(settings, "chainnode").request_timeout_sec)
 
     async def test_connect_error_is_classified_without_adapter_retry(self) -> None:

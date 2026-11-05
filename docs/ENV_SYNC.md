@@ -30,14 +30,15 @@ AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-AI_PROVIDERS__XKIRO__API_KEYS=
-AI_PROVIDERS__XKIRO__BASE_URL=https://api.xkiro.com/v1
-AI_PROVIDERS__XKIRO__TEXT_MODELS=
-AI_PROVIDERS__XKIRO__VISION_MODELS=
-AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__OPENROUTER__API_KEYS=
+AI_PROVIDERS__OPENROUTER__BASE_URL=https://openrouter.ai/api/v1
+AI_PROVIDERS__OPENROUTER__TEXT_MODELS=
+AI_PROVIDERS__OPENROUTER__VISION_MODELS=
+AI_PROVIDERS__OPENROUTER__REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__OPENROUTER__PROVIDER=
 
-TEXT_PROVIDER_ORDER=chainnode,xkiro
-VISION_PROVIDER_ORDER=chainnode,xkiro
+TEXT_PROVIDER_ORDER=chainnode,openrouter
+VISION_PROVIDER_ORDER=chainnode,openrouter
 
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
@@ -45,7 +46,7 @@ PROVIDER_RETRY_MAX_PER_REQUEST=5
 PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả Chainnode và xKiro mở rộng target theo deterministic model-major × credential order. `AI_PROVIDERS__XKIRO__BASE_URL` mặc định là `https://api.xkiro.com/v1` và được dùng chung bởi runtime và qualification probe.
+Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả Chainnode và OpenRouter mở rộng target theo deterministic model-major × credential order. `AI_PROVIDERS__OPENROUTER__BASE_URL` mặc định là `https://openrouter.ai/api/v1` và được dùng chung bởi runtime và qualification probe. `AI_PROVIDERS__OPENROUTER__PROVIDER` (danh sách slug ngăn bằng dấu phẩy, có thể để trống) giới hạn và ưu tiên đúng các upstream provider OpenRouter; chỉ OpenRouter khai báo hỗ trợ thuộc tính này trong catalog.
 
 ## Deployment sequence
 
@@ -79,9 +80,9 @@ grep -E '^(AI_PROVIDERS__|PROVIDER_RETRY_|PROVIDER_RECOVERY_|TEXT_PROVIDER_ORDER
 stat -c '%a %n' .env
 ```
 
-Xác nhận provider orders chỉ chứa provider hiện hành, route đang bật có credential/model tương ứng, xKiro chỉ được bật sau khi model đã live-qualified, và lần sync thứ hai không thay đổi nội dung.
+Xác nhận provider orders chỉ chứa provider hiện hành, route đang bật có credential/model tương ứng, OpenRouter chỉ được bật sau khi model đã live-qualified, và lần sync thứ hai không thay đổi nội dung.
 
-Nếu muốn tạm thời vô hiệu hóa xKiro fallback mà không thay config pool:
+Nếu muốn tạm thời vô hiệu hóa OpenRouter fallback mà không thay config pool:
 
 ```env
 TEXT_PROVIDER_ORDER=chainnode

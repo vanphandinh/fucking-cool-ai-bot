@@ -218,6 +218,11 @@ def _provider_profile(raw: object) -> ProviderProfile:
     raw_options = raw.get("driver_options", {})
     if not isinstance(raw_options, dict):
         raise ValueError(f"provider {provider_id} driver_options must be a table")
+    raw_preferences = raw_options.get("provider_preferences")
+    if raw_preferences is not None and type(raw_preferences) is not bool:
+        raise ValueError(
+            f"provider {provider_id} driver_options.provider_preferences must be boolean"
+        )
 
     return ProviderProfile(
         id=provider_id,

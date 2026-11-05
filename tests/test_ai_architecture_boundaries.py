@@ -44,11 +44,11 @@ class AIArchitectureBoundaryTests(unittest.TestCase):
     def test_recovery_policy_has_no_provider_family_branches(self) -> None:
         source = _source("app/ai/recovery.py").lower()
         self.assertNotIn("chainnode", source)
-        self.assertNotIn("xkiro", source)
+        self.assertNotIn("openrouter", source)
 
     def test_runtime_config_has_no_provider_specific_ai_settings(self) -> None:
         source = _source("app/config.py").lower()
-        families = ("chain" + "node", "x" + "kiro")
+        families = ("chain" + "node", "open" + "router")
         suffixes = (
             "api_" + "key",
             "api_" + "keys",
@@ -81,9 +81,9 @@ class AIArchitectureBoundaryTests(unittest.TestCase):
     def test_ai_runtime_has_no_direct_family_equality_branches(self) -> None:
         provider_specific = (
             'family == "chainnode"',
-            'family == "xkiro"',
+            'family == "openrouter"',
             "family == 'chainnode'",
-            "family == 'xkiro'",
+            "family == 'openrouter'",
         )
         for path in (_ROOT / "app" / "ai").rglob("*.py"):
             source = path.read_text(encoding="utf-8")

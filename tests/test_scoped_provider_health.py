@@ -17,11 +17,11 @@ def target(
     target_id: str | None = None,
 ) -> ProviderTargetIdentity:
     return ProviderTargetIdentity(
-        family="xkiro",
+        family="openrouter",
         route=route,
         model=model,
         credential_id=credential_id,
-        target_id=target_id or f"xkiro:{route}:{model}:{credential_id}",
+        target_id=target_id or f"openrouter:{route}:{model}:{credential_id}",
     )
 
 

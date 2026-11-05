@@ -8,7 +8,7 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 
 - [`../README.md`](../README.md) — kiến trúc tổng quan, cấu hình chính, quick start và verification.
 - [`../DEPLOY_SEARXNG_VPS.md`](../DEPLOY_SEARXNG_VPS.md) — triển khai SearXNG private trên VPS.
-- [`XKIRO.md`](XKIRO.md) — xKiro declarative provider profile, live qualification, rollout và rollback.
+- [`OPENROUTER.md`](OPENROUTER.md) — OpenRouter declarative provider profile, live qualification, rollout và rollback.
 - [`CHAINNODE.md`](CHAINNODE.md) — Chainnode declarative primary profile, model pools và operational probes.
 - [`telegram-vision-input.md`](telegram-vision-input.md) — Telegram image input, limits và capability-aware vision routing.
 - [`TELEGRAM_FORMATTING.md`](TELEGRAM_FORMATTING.md) — Telegram-native HTML formatting, splitting và delivery fallback.
@@ -40,10 +40,10 @@ Active documentation không được dạy superseded environment/provider contr
 
 ## Current runtime snapshot
 
-- Text provider order mặc định: `chainnode,xkiro`; Chainnode primary, xKiro fallback khi có credential + qualified model pool.
-- Vision provider order mặc định: `chainnode,xkiro`; current vision targets advertise tối đa một image/request.
+- Text provider order mặc định: `chainnode,openrouter`; Chainnode primary, OpenRouter fallback khi có credential + qualified model pool.
+- Vision provider order mặc định: `chainnode,openrouter`; current vision targets advertise tối đa một image/request.
 - Chainnode production defaults dùng `AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS` và `AI_PROVIDERS__CHAINNODE__VISION_MODELS`.
-- xKiro runtime và qualification probe dùng canonical `AI_PROVIDERS__XKIRO__API_KEYS`; runtime còn dùng `AI_PROVIDERS__XKIRO__TEXT_MODELS`, `AI_PROVIDERS__XKIRO__VISION_MODELS` và shared `AI_PROVIDERS__XKIRO__BASE_URL`; runtime model IDs không hard-code trong source.
+- OpenRouter runtime và qualification probe dùng canonical `AI_PROVIDERS__OPENROUTER__API_KEYS`; runtime còn dùng `AI_PROVIDERS__OPENROUTER__TEXT_MODELS`, `AI_PROVIDERS__OPENROUTER__VISION_MODELS`, shared `AI_PROVIDERS__OPENROUTER__BASE_URL` và allowlist `AI_PROVIDERS__OPENROUTER__PROVIDER` (trống = routing mặc định của OpenRouter); runtime model IDs không hard-code trong source.
 - Canonical retry fields là `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; recovery-hop field là `PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST`.
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
 - Controlled multipart delivery có terminal `PARTIALLY_DELIVERED` khi Telegram xác nhận một số phần, nhưng chưa đủ; lưu prefix có đánh dấu và chỉ đếm partial metric. Không có auto-replay.

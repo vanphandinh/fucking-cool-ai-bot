@@ -69,6 +69,23 @@ class OpenAIChatDriverTests(unittest.TestCase):
         self.assertEqual(payload["messages"][3]["tool_call_id"], "c1")
         self.assertEqual(payload["tools"][0]["function"]["name"], "fetch_url")
 
+    def test_serializer_adds_provider_routing_preferences(self) -> None:
+        request = ChatRequest(messages=(ChatMessage("user", (TextPart("hi"),)),))
+        payload = serialize_request(
+            request,
+            "model",
+            False,
+            provider_preferences=("deepinfra", "together"),
+        )
+        self.assertEqual(
+            payload["provider"],
+            {"only": ["deepinfra", "together"], "order": ["deepinfra", "together"]},
+        )
+
+    def test_serializer_omits_provider_without_preferences(self) -> None:
+        request = ChatRequest(messages=(ChatMessage("user", (TextPart("hi"),)),))
+        self.assertNotIn("provider", serialize_request(request, "model", False))
+
     def test_provider_state_is_not_synthesized_when_absent(self) -> None:
         request = ChatRequest(
             messages=(

@@ -2,12 +2,12 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Default AI route: Chainnode primary -> xKiro fallback.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
+**Default AI route: Chainnode primary -> OpenRouter fallback.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
 
 ## Tài liệu chính
 
 - [Chainnode primary provider](docs/CHAINNODE.md)
-- [xKiro fallback provider](docs/XKIRO.md)
+- [OpenRouter fallback provider](docs/OPENROUTER.md)
 - [Đồng bộ `.env`](docs/ENV_SYNC.md)
 - [Telegram vision input](docs/telegram-vision-input.md)
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md)
@@ -43,12 +43,12 @@ AIProviderRouter
           ├─ Chainnode target pool
           │    ├─ text model × credential targets
           │    └─ vision model × credential targets
-          └─ xKiro target pool
+          └─ OpenRouter target pool
                ├─ text model × credential targets
                └─ vision model × credential targets
 ```
 
-Chainnode và xKiro là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả hai dùng `openai-chat` driver. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
+Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả hai dùng `openai-chat` driver. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
 
 ### Thêm OpenAI-compatible provider chỉ bằng config/catalog
 
@@ -77,14 +77,15 @@ AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-AI_PROVIDERS__XKIRO__API_KEYS=
-AI_PROVIDERS__XKIRO__BASE_URL=https://api.xkiro.com/v1
-AI_PROVIDERS__XKIRO__TEXT_MODELS=
-AI_PROVIDERS__XKIRO__VISION_MODELS=
-AI_PROVIDERS__XKIRO__REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__OPENROUTER__API_KEYS=
+AI_PROVIDERS__OPENROUTER__BASE_URL=https://openrouter.ai/api/v1
+AI_PROVIDERS__OPENROUTER__TEXT_MODELS=
+AI_PROVIDERS__OPENROUTER__VISION_MODELS=
+AI_PROVIDERS__OPENROUTER__REQUEST_TIMEOUT_SEC=60.0
+AI_PROVIDERS__OPENROUTER__PROVIDER=
 
-TEXT_PROVIDER_ORDER=chainnode,xkiro
-VISION_PROVIDER_ORDER=chainnode,xkiro
+TEXT_PROVIDER_ORDER=chainnode,openrouter
+VISION_PROVIDER_ORDER=chainnode,openrouter
 
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
@@ -92,9 +93,11 @@ PROVIDER_RETRY_MAX_PER_REQUEST=5
 PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Một phần tử trong plural pool là hợp lệ. Chainnode text/vision pools có qualified defaults; xKiro model pools cố ý để trống cho tới khi current candidate pass live qualification. Runtime không query model catalog khi startup hoặc mỗi request.
+Một phần tử trong plural pool là hợp lệ. Chainnode text/vision pools có qualified defaults; OpenRouter model pools cố ý để trống cho tới khi current candidate pass live qualification. Runtime không query model catalog khi startup hoặc mỗi request.
 
-`AI_PROVIDERS__XKIRO__BASE_URL` dùng chung current endpoint contract giữa runtime và retained qualification probe, default `https://api.xkiro.com/v1`.
+`AI_PROVIDERS__OPENROUTER__BASE_URL` dùng chung current endpoint contract giữa runtime và retained qualification probe, default `https://openrouter.ai/api/v1`.
+
+`AI_PROVIDERS__OPENROUTER__PROVIDER` là allowlist upstream provider của OpenRouter: danh sách slug ngăn bằng dấu phẩy, ví dụ `deepinfra,together`. Runtime gửi `provider: {"only": [...], "order": [...]}` để giới hạn đúng danh sách và ưu tiên theo thứ tự khai báo; để trống giữ routing mặc định của OpenRouter. Thuộc tính chỉ hợp lệ với provider khai báo `driver_options.provider_preferences = true` trong catalog.
 
 ## Strict `.env` synchronization
 
@@ -108,37 +111,36 @@ Synchronizer giữ value hiện có chỉ cho keys có trong `.env.example`, th�
 
 Trước khi deploy canonical-only revision, remove mọi assignment không có trong deployed `.env.example`; xem [docs/ENV_SYNC.md](docs/ENV_SYNC.md) cho deployment sequence đầy đủ.
 
-## xKiro live qualification
+## OpenRouter live qualification
 
-`GET <AI_PROVIDERS__XKIRO__BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code xKiro runtime model IDs trong source.
+`GET <AI_PROVIDERS__OPENROUTER__BASE_URL>/models` là source of truth cho candidate hiện tại. Không hard-code OpenRouter runtime model IDs trong source.
 
 Text candidate phải pass:
 
 ```text
 exact model ID exists
-access_tier == free
-pricing.input == 0
-pricing.output == 0
-capabilities.tools == true
+pricing.prompt == 0
+pricing.completion == 0
+supported_parameters includes "tools"
 plain non-stream chat
 structured tool call
 tool continuation
 ```
 
-Vision candidate còn phải pass `capabilities.vision == true`, known-image understanding và vision/tool flow.
+Vision candidate còn phải có `"image"` trong `architecture.input_modalities`, known-image understanding và vision/tool flow.
 
 Probe dùng canonical credential pool và lấy credential non-blank đầu tiên cho single-credential qualification run:
 
 ```bash
-export AI_PROVIDERS__XKIRO__API_KEYS='...'
-export AI_PROVIDERS__XKIRO__BASE_URL='https://api.xkiro.com/v1'
-python scripts/probe_xkiro.py \
+export AI_PROVIDERS__OPENROUTER__API_KEYS='...'
+export AI_PROVIDERS__OPENROUTER__BASE_URL='https://openrouter.ai/api/v1'
+python scripts/probe_openrouter.py \
   --text-model '<candidate-text-id>' \
   --vision-model '<candidate-vision-id>' \
   --image './known-test-image.png'
 ```
 
-Sau khi candidate pass, cấu hình IDs vào `AI_PROVIDERS__XKIRO__TEXT_MODELS` / `AI_PROVIDERS__XKIRO__VISION_MODELS`; runtime dùng cùng canonical `AI_PROVIDERS__XKIRO__API_KEYS` pool.
+Sau khi candidate pass, cấu hình IDs vào `AI_PROVIDERS__OPENROUTER__TEXT_MODELS` / `AI_PROVIDERS__OPENROUTER__VISION_MODELS`; runtime dùng cùng canonical `AI_PROVIDERS__OPENROUTER__API_KEYS` pool. Probe cũng gửi kèm `AI_PROVIDERS__OPENROUTER__PROVIDER` khi biến này được cấu hình.
 
 ## Retry, recovery and tool state
 
@@ -220,13 +222,13 @@ BOT_TOKEN=...
 AI_PROVIDERS__CHAINNODE__API_KEYS=...
 AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-TEXT_PROVIDER_ORDER=chainnode,xkiro
-VISION_PROVIDER_ORDER=chainnode,xkiro
+TEXT_PROVIDER_ORDER=chainnode,openrouter
+VISION_PROVIDER_ORDER=chainnode,openrouter
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
 
-Không cần xKiro credential để Chainnode hoạt động. Khi `AI_PROVIDERS__XKIRO__API_KEYS` trống, xKiro có zero active targets.
+Không cần OpenRouter credential để Chainnode hoạt động. Khi `AI_PROVIDERS__OPENROUTER__API_KEYS` trống, OpenRouter có zero active targets.
 
 ## Production smoke
 
@@ -238,9 +240,9 @@ Sau deploy:
 4. smoke text request qua Chainnode primary;
 5. smoke one-image request qua Chainnode vision primary;
 6. smoke structured tools/continuation;
-7. nếu xKiro đã qualified/configured, thực hiện controlled fallback rồi khôi phục Chainnode.
+7. nếu OpenRouter đã qualified/configured, thực hiện controlled fallback rồi khôi phục Chainnode.
 
-Operational rollback để tắt xKiro fallback:
+Operational rollback để tắt OpenRouter fallback:
 
 ```env
 TEXT_PROVIDER_ORDER=chainnode

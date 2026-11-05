@@ -139,7 +139,7 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
             ask=AsyncMock(
                 side_effect=AllProvidersFailed(
                     "failed",
-                    fallbacks=("xkiro",),
+                    fallbacks=("openrouter",),
                     target_rotations=3,
                     model_rotations=2,
                     credential_failovers=1,
@@ -187,18 +187,18 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("B.AI text", lines)
 
     async def test_status_reports_scoped_target_unavailability_without_secrets(self) -> None:
-        denied = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        denied = ScriptedProvider("openrouter", [ChatResponse(content="unused")])
         denied.model = "model-a"
         denied.credential_id = "cred-1"
-        denied.target_id = "xkiro:text:m1:c1"
+        denied.target_id = "openrouter:text:m1:c1"
         denied.api_key = "RAW-SECRET-MUST-NOT-LEAK"
-        sibling = ScriptedProvider("xkiro", [ChatResponse(content="unused")])
+        sibling = ScriptedProvider("openrouter", [ChatResponse(content="unused")])
         sibling.model = "model-a"
         sibling.credential_id = "cred-2"
-        sibling.target_id = "xkiro:text:m1:c2"
+        sibling.target_id = "openrouter:text:m1:c2"
         router = AIProviderRouter(
             [denied, sibling],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
         )
         router.scoped_health.record_effect(
@@ -210,8 +210,8 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
 
         lines = "\n".join(_provider_status_lines(router, Stats()))
 
-        self.assertIn("xkiro:text:m1:c1=scoped-disabled", lines)
-        self.assertNotIn("xkiro:text:m1:c2=", lines)
+        self.assertIn("openrouter:text:m1:c1=scoped-disabled", lines)
+        self.assertNotIn("openrouter:text:m1:c2=", lines)
         self.assertNotIn("RAW-SECRET-MUST-NOT-LEAK", lines)
 
 

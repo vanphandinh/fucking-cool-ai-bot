@@ -39,8 +39,8 @@ def _target(
 def _router(
     providers: list[ScriptedProvider],
     *,
-    text_order: tuple[str, ...] = ("chainnode", "xkiro"),
-    vision_order: tuple[str, ...] = ("chainnode", "xkiro"),
+    text_order: tuple[str, ...] = ("chainnode", "openrouter"),
+    vision_order: tuple[str, ...] = ("chainnode", "openrouter"),
     recovery_hops: int = 5,
 ) -> AIProviderRouter:
     policy = SimpleNamespace(
@@ -99,12 +99,12 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             model="cn-model-b",
             target_id="chainnode:text:m2:c1",
         )
-        xkiro = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="unused")]),
+        openrouter = _target(
+            ScriptedProvider("openrouter", [ChatResponse(content="unused")]),
             model="x-model",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
-        router = _router([model_a, model_b, xkiro])
+        router = _router([model_a, model_b, openrouter])
 
         result = await router.complete(_request(), noop_tool)
 
@@ -117,9 +117,9 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(len(model_a.requests), 1)
         self.assertEqual(len(model_b.requests), 1)
-        self.assertEqual(xkiro.requests, [])
+        self.assertEqual(openrouter.requests, [])
 
-    async def test_chainnode_two_429s_then_falls_back_to_xkiro(self) -> None:
+    async def test_chainnode_two_429s_then_falls_back_to_openrouter(self) -> None:
         a = _target(
             ScriptedProvider(
                 "chainnode", [ProviderError("quota-a", status_code=429, transient=True)]
@@ -134,25 +134,25 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             model="cn-b",
             target_id="chainnode:text:m2:c1",
         )
-        xkiro = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="fallback")]),
+        openrouter = _target(
+            ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
             model="x-model",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
-        router = _router([a, b, xkiro])
+        router = _router([a, b, openrouter])
 
         result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
-            ("fallback", "xkiro", ("xkiro",)),
+            ("fallback", "openrouter", ("openrouter",)),
         )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
         self.assertEqual(result.credential_failovers, 0)
         self.assertEqual(len(a.requests), 1)
         self.assertEqual(len(b.requests), 1)
-        self.assertEqual(len(xkiro.requests), 1)
+        self.assertEqual(len(openrouter.requests), 1)
 
     async def test_transport_then_429_then_sibling_transport_flushes_correct_target(self) -> None:
         first = _target(
@@ -175,46 +175,46 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             target_id="chainnode:text:m2:c1",
         )
         fallback = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="fallback")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
             model="m1",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         router = _router([first, sibling, fallback])
 
         result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result.content, "fallback")
-        self.assertEqual(result.provider, "xkiro")
+        self.assertEqual(result.provider, "openrouter")
         self.assertGreater(first.health.cooldown_seconds(), 0)
         self.assertEqual(first.health.last_error, "rate-limit")
         self.assertEqual(sibling.health.consecutive_transient_failures, 1)
         self.assertIn("read-timeout", sibling.health.last_error or "")
         self.assertEqual(len(fallback.requests), 1)
 
-    async def test_xkiro_429_rotates_credential_before_model(self) -> None:
+    async def test_openrouter_429_rotates_credential_before_model(self) -> None:
         key1 = _target(
             ScriptedProvider(
-                "xkiro", [ProviderError("quota", status_code=429, transient=True)]
+                "openrouter", [ProviderError("quota", status_code=429, transient=True)]
             ),
             model="x-model-a",
             credential_id="cred-1",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         key2 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="same-model-key2")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="same-model-key2")]),
             model="x-model-a",
             credential_id="cred-2",
-            target_id="xkiro:text:m1:c2",
+            target_id="openrouter:text:m1:c2",
         )
         model_b_key1 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="wrong-order")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="wrong-order")]),
             model="x-model-b",
             credential_id="cred-1",
-            target_id="xkiro:text:m2:c1",
+            target_id="openrouter:text:m2:c1",
         )
         router = _router(
             [key1, key2, model_b_key1],
-            text_order=("xkiro",),
+            text_order=("openrouter",),
             vision_order=(),
         )
 
@@ -222,7 +222,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
-            ("same-model-key2", "xkiro", ()),
+            ("same-model-key2", "openrouter", ()),
         )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 0)
@@ -231,48 +231,48 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(key2.requests), 1)
         self.assertEqual(model_b_key1.requests, [])
 
-    async def test_xkiro_401_disables_credential_across_text_and_vision(self) -> None:
+    async def test_openrouter_401_disables_credential_across_text_and_vision(self) -> None:
         text_key1 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ProviderError("auth", status_code=401, transient=False)],
             ),
             model="x-text",
             credential_id="cred-1",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         text_key2 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="text-ok")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="text-ok")]),
             model="x-text",
             credential_id="cred-2",
-            target_id="xkiro:text:m1:c2",
+            target_id="openrouter:text:m1:c2",
         )
         vision_key1 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ChatResponse(content="must-not-run")],
                 route="vision",
                 max_images=1,
             ),
             model="x-vision",
             credential_id="cred-1",
-            target_id="xkiro:vision:m1:c1",
+            target_id="openrouter:vision:m1:c1",
         )
         vision_key2 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ChatResponse(content="vision-ok")],
                 route="vision",
                 max_images=1,
             ),
             model="x-vision",
             credential_id="cred-2",
-            target_id="xkiro:vision:m1:c2",
+            target_id="openrouter:vision:m1:c2",
         )
         router = _router(
             [text_key1, text_key2, vision_key1, vision_key2],
-            text_order=("xkiro",),
-            vision_order=("xkiro",),
+            text_order=("openrouter",),
+            vision_order=("openrouter",),
         )
 
         text = await router.complete(_request(), noop_tool)
@@ -298,32 +298,32 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             model="cn-b",
             target_id="chainnode:text:m2:c1",
         )
-        xkiro = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="fallback")]),
+        openrouter = _target(
+            ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
             model="x-model",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
-        router = _router([a, sibling, xkiro])
+        router = _router([a, sibling, openrouter])
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result, CompletionResult("fallback", "xkiro", ("xkiro",)))
+        self.assertEqual(result, CompletionResult("fallback", "openrouter", ("openrouter",)))
         self.assertEqual(sibling.requests, [])
 
-    async def test_xkiro_503_falls_back_without_sibling_credential_spray(self) -> None:
+    async def test_openrouter_503_falls_back_without_sibling_credential_spray(self) -> None:
         key1 = _target(
             ScriptedProvider(
-                "xkiro", [ProviderError("down", status_code=503, transient=True)]
+                "openrouter", [ProviderError("down", status_code=503, transient=True)]
             ),
             model="x-model",
             credential_id="cred-1",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         key2 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="must-not-run")]),
             model="x-model",
             credential_id="cred-2",
-            target_id="xkiro:text:m1:c2",
+            target_id="openrouter:text:m1:c2",
         )
         backup = _target(
             ScriptedProvider("backup", [ChatResponse(content="backup")]),
@@ -332,7 +332,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router(
             [key1, key2, backup],
-            text_order=("xkiro", "backup"),
+            text_order=("openrouter", "backup"),
             vision_order=(),
         )
 
@@ -363,16 +363,16 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             )
             for index in range(2, 8)
         ]
-        xkiro = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="fallback")]),
+        openrouter = _target(
+            ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
             model="x-model",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
-        router = _router([first, *siblings, xkiro])
+        router = _router([first, *siblings, openrouter])
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result.provider, "xkiro")
+        self.assertEqual(result.provider, "openrouter")
         self.assertEqual(len(first.requests), 2)
         self.assertTrue(all(not sibling.requests for sibling in siblings))
 
@@ -540,13 +540,13 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
             target_id="chainnode:text:m2:c1",
         )
         backup = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="must-not-run")]),
             model="x-model",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         router = _router(
             [first, sibling, backup],
-            text_order=("chainnode", "xkiro"),
+            text_order=("chainnode", "openrouter"),
             vision_order=(),
             recovery_hops=1,
         )

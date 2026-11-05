@@ -121,7 +121,7 @@ class ProviderRecoveryPolicyTests(unittest.TestCase):
             Path(__file__).parents[1] / "app" / "ai" / "recovery.py"
         ).read_text(encoding="utf-8").lower()
         self.assertNotIn("chainnode", source)
-        self.assertNotIn("xkiro", source)
+        self.assertNotIn("openrouter", source)
 
 
 if __name__ == "__main__":

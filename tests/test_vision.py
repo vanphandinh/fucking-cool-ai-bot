@@ -124,10 +124,10 @@ class HealthTests(unittest.TestCase):
 
 
 class VisionConfigTests(unittest.TestCase):
-    def _xkiro_settings(self, **overrides) -> Settings:
+    def _openrouter_settings(self, **overrides) -> Settings:
         values = {
             "ai_providers": {
-                "xkiro": {
+                "openrouter": {
                     "api_keys": "test-key",
                     "text_models": "test-text-model",
                     "vision_models": "test-vision-model",
@@ -138,27 +138,27 @@ class VisionConfigTests(unittest.TestCase):
         return Settings(_env_file=None, **values)
 
     def test_defaults_and_disable_switch(self) -> None:
-        router = build_provider_router(self._xkiro_settings())
+        router = build_provider_router(self._openrouter_settings())
         try:
-            self.assertEqual(router.configured_provider_names(True), ("xkiro",))
+            self.assertEqual(router.configured_provider_names(True), ("openrouter",))
             self.assertEqual(router.max_supported_images(), 1)
         finally:
             asyncio.run(_close_router(router))
 
-        disabled = build_provider_router(self._xkiro_settings(vision_enabled=False))
+        disabled = build_provider_router(self._openrouter_settings(vision_enabled=False))
         try:
             self.assertEqual(disabled.configured_provider_names(True), ())
             self.assertEqual(disabled.max_supported_images(), 0)
         finally:
             asyncio.run(_close_router(disabled))
 
-    def test_missing_xkiro_key_has_no_vision_provider(self) -> None:
+    def test_missing_openrouter_key_has_no_vision_provider(self) -> None:
         router = build_provider_router(Settings(_env_file=None))
         self.assertEqual(router.configured_provider_names(True), ())
         self.assertEqual(router.max_supported_images(), 0)
 
-    def test_current_xkiro_vision_route_rejects_two_images(self) -> None:
-        router = build_provider_router(self._xkiro_settings())
+    def test_current_openrouter_vision_route_rejects_two_images(self) -> None:
+        router = build_provider_router(self._openrouter_settings())
         try:
             self.assertEqual(
                 [
@@ -168,7 +168,7 @@ class VisionConfigTests(unittest.TestCase):
                         image_count=1,
                     )
                 ],
-                ["xkiro"],
+                ["openrouter"],
             )
             self.assertEqual(
                 router.capable_providers(requires_vision=True, image_count=2),

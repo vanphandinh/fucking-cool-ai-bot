@@ -26,8 +26,8 @@ class ProviderConstructionRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unused_vision_slot_is_not_validated_or_built(self) -> None:
         settings = Settings(
             _env_file=None,
-            ai_providers={"xkiro":{"api_keys":"test-key","text_models":"test-text-model","vision_models":""}},
-            text_provider_order="xkiro", vision_provider_order="", vision_enabled=True,
+            ai_providers={"openrouter":{"api_keys":"test-key","text_models":"test-text-model","vision_models":""}},
+            text_provider_order="openrouter", vision_provider_order="", vision_enabled=True,
         )
 
         try:
@@ -46,8 +46,8 @@ class ProviderConstructionRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unused_text_slot_is_not_validated_or_built(self) -> None:
         settings = Settings(
             _env_file=None,
-            ai_providers={"xkiro":{"api_keys":"test-key","text_models":"","vision_models":"test-vision-model"}},
-            text_provider_order="", vision_provider_order="xkiro", vision_enabled=True,
+            ai_providers={"openrouter":{"api_keys":"test-key","text_models":"","vision_models":"test-vision-model"}},
+            text_provider_order="", vision_provider_order="openrouter", vision_enabled=True,
         )
 
         try:
@@ -74,7 +74,7 @@ class VisionAdmissionRegressionTests(unittest.IsolatedAsyncioTestCase):
         provider_router = SimpleNamespace(max_supported_images=lambda: 1)
         orchestrator = SimpleNamespace(
             router=provider_router,
-            ask=AsyncMock(return_value=Answer("should not reach AI", "xkiro")),
+            ask=AsyncMock(return_value=Answer("should not reach AI", "openrouter")),
         )
         message = SimpleNamespace(
             from_user=SimpleNamespace(id=42),
@@ -141,11 +141,11 @@ class ShutdownRegressionTests(unittest.IsolatedAsyncioTestCase):
                 close=AsyncMock(side_effect=RuntimeError("telegram close failed"))
             ),
         )
-        provider = SimpleNamespace(name="xkiro", aclose=AsyncMock())
+        provider = SimpleNamespace(name="openrouter", aclose=AsyncMock())
         provider_router = SimpleNamespace(
             providers=[provider],
             configured_provider_names=lambda requires_vision: (
-                () if requires_vision else ("xkiro",)
+                () if requires_vision else ("openrouter",)
             ),
         )
         close_crawl = AsyncMock()
@@ -163,7 +163,7 @@ class ShutdownRegressionTests(unittest.IsolatedAsyncioTestCase):
                     Settings(
                         _env_file=None,
                         bot_token="123:test",
-                        ai_providers={"xkiro":{"api_keys":"test-key","text_models":"test-text-model"}},
+                        ai_providers={"openrouter":{"api_keys":"test-key","text_models":"test-text-model"}},
                         vision_enabled=False,
                     )
                 )

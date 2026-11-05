@@ -102,7 +102,7 @@ async def _close_router(router: AIProviderRouter) -> None:
 class ProviderContractTests(unittest.TestCase):
     def test_provider_family_runtime_modules_are_removed(self) -> None:
         self.assertIsNone(importlib.util.find_spec("app.ai.chainnode"))
-        self.assertIsNone(importlib.util.find_spec("app.ai.xkiro"))
+        self.assertIsNone(importlib.util.find_spec("app.ai.openrouter"))
         self.assertIsNone(importlib.util.find_spec("app.ai.registry"))
 
     def test_non_openai_fake_satisfies_provider_protocol(self) -> None:
@@ -131,24 +131,24 @@ class ProviderContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown AI provider"):
             build_provider_targets(Settings(_env_file=None), ["missing"])
 
-    def test_xkiro_generic_builder_returns_text_and_vision_targets(self) -> None:
+    def test_openrouter_generic_builder_returns_text_and_vision_targets(self) -> None:
         targets = build_provider_targets(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "xkiro": {
+                    "openrouter": {
                         "api_keys": "test-key",
                         "text_models": "test-text-model",
                         "vision_models": "test-vision-model",
                     }
                 },
-                text_provider_order="xkiro",
-                vision_provider_order="xkiro",
+                text_provider_order="openrouter",
+                vision_provider_order="openrouter",
             ),
-            ["xkiro"],
+            ["openrouter"],
         )
         try:
-            self.assertEqual([target.name for target in targets], ["xkiro", "xkiro"])
+            self.assertEqual([target.name for target in targets], ["openrouter", "openrouter"])
             self.assertEqual(
                 [target.capabilities.route for target in targets],
                 ["text", "vision"],
@@ -158,17 +158,17 @@ class ProviderContractTests(unittest.TestCase):
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_provider_orders_default_to_chainnode_then_xkiro(self) -> None:
+    def test_provider_orders_default_to_chainnode_then_openrouter(self) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(settings.text_provider_order_list, ["chainnode", "openrouter"])
+        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "openrouter"])
 
     def test_orders_reject_unknown_catalog_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown AI provider"):
             Settings(
                 _env_file=None,
-                text_provider_order="foo,xkiro",
-                vision_provider_order="xkiro",
+                text_provider_order="foo,openrouter",
+                vision_provider_order="openrouter",
             )
 
     def test_text_and_vision_orders_route_independently(self) -> None:
@@ -188,7 +188,7 @@ class ProviderOrderTests(unittest.TestCase):
         self.assertEqual([provider.name for provider in text], ["first", "second"])
         self.assertEqual([provider.name for provider in vision], ["second", "first"])
 
-    def test_production_router_keeps_chainnode_primary_and_xkiro_fallback(self) -> None:
+    def test_production_router_keeps_chainnode_primary_and_openrouter_fallback(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
@@ -198,24 +198,24 @@ class ProviderOrderTests(unittest.TestCase):
                         "text_models": "test-chainnode-text",
                         "vision_models": "test-chainnode-vision",
                     },
-                    "xkiro": {
-                        "api_keys": "test-xkiro-key",
-                        "text_models": "test-xkiro-text",
-                        "vision_models": "test-xkiro-vision",
+                    "openrouter": {
+                        "api_keys": "test-openrouter-key",
+                        "text_models": "test-openrouter-text",
+                        "vision_models": "test-openrouter-vision",
                     },
                 },
             )
         )
         try:
-            self.assertEqual(router.provider_order(False), ("chainnode", "xkiro"))
-            self.assertEqual(router.provider_order(True), ("chainnode", "xkiro"))
+            self.assertEqual(router.provider_order(False), ("chainnode", "openrouter"))
+            self.assertEqual(router.provider_order(True), ("chainnode", "openrouter"))
             self.assertEqual(
                 router.configured_provider_names(False),
-                ("chainnode", "xkiro"),
+                ("chainnode", "openrouter"),
             )
             self.assertEqual(
                 router.configured_provider_names(True),
-                ("chainnode", "xkiro"),
+                ("chainnode", "openrouter"),
             )
             self.assertEqual(router.max_supported_images(), 1)
         finally:

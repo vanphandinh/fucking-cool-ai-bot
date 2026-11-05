@@ -84,6 +84,11 @@ def build_provider_targets(
     for profile, runtime, credentials, selected_routes in prepared:
         driver = get_driver(profile.driver)
         policy = _recovery_policy(profile)
+        provider_preferences = (
+            tuple(runtime.provider_slugs_list)
+            if profile.driver_options.get("provider_preferences") is True
+            else ()
+        )
         for route, models, route_profile in selected_routes:
             capabilities = ProviderCapabilities(
                 route=route,
@@ -111,6 +116,7 @@ def build_provider_targets(
                         request_timeout_sec=runtime.resolve_timeout(profile),
                         recovery_policy=policy,
                         driver_options=profile.driver_options,
+                        provider_preferences=provider_preferences,
                     )
                     targets.append(driver.build_target(spec, credential=credential))
     return targets

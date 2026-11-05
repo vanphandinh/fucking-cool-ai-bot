@@ -15,10 +15,10 @@ _END = "[/DỮ LIỆU NGHIÊN CỨU]"
 
 
 async def _make_target(responder):
-    provider = make_catalog_target("xkiro", model="test-text-model")
+    provider = make_catalog_target("openrouter", model="test-text-model")
     await provider.aclose()
     provider._client = httpx.AsyncClient(
-        base_url="https://api.xkiro.com/v1/",
+        base_url="https://openrouter.ai/api/v1/",
         transport=httpx.MockTransport(responder),
     )
     return provider
@@ -90,7 +90,7 @@ def _evidence_section_length(message: str) -> int:
 
 
 class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_hype_pattern_stays_on_xkiro_with_generic_fresh_synthesis(self) -> None:
+    async def test_hype_pattern_stays_on_openrouter_with_generic_fresh_synthesis(self) -> None:
         requests: list[dict] = []
         executed: list[str] = []
 
@@ -139,7 +139,7 @@ class FreshSynthesisRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("HYPE synthesis from collected evidence", "xkiro", ()),
+            CompletionResult("HYPE synthesis from collected evidence", "openrouter", ()),
         )
         self.assertEqual(len(executed), 7)
         self.assertEqual(len(requests), 4)

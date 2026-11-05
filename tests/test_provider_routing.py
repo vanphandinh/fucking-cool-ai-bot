@@ -123,23 +123,23 @@ class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.requests, [])
 
     def test_duplicate_exact_target_is_rejected(self) -> None:
-        first = ScriptedProvider("xkiro", [], target_id="xkiro:text:m1:c1")
-        duplicate = ScriptedProvider("xkiro", [], target_id="xkiro:text:m1:c1")
+        first = ScriptedProvider("openrouter", [], target_id="openrouter:text:m1:c1")
+        duplicate = ScriptedProvider("openrouter", [], target_id="openrouter:text:m1:c1")
 
         with self.assertRaisesRegex(ValueError, "duplicate provider target"):
             AIProviderRouter(
                 [first, duplicate],
-                text_provider_order=("xkiro",),
+                text_provider_order=("openrouter",),
             )
 
     def test_same_name_text_and_vision_slots_are_allowed(self) -> None:
-        text = ScriptedProvider("xkiro", [], route="text")
-        vision = ScriptedProvider("xkiro", [], route="vision", max_images=1)
+        text = ScriptedProvider("openrouter", [], route="text")
+        vision = ScriptedProvider("openrouter", [], route="vision", max_images=1)
 
         router = AIProviderRouter(
             [text, vision],
-            text_provider_order=("xkiro",),
-            vision_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
+            vision_provider_order=("openrouter",),
         )
 
         self.assertEqual(

@@ -163,10 +163,10 @@ class ProviderFailurePrivacyRegressionTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "xkiro",
+            "openrouter",
             model="privacy-model",
             credential="fake",
-            target_id="xkiro:text:privacy:c1",
+            target_id="openrouter:text:privacy:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(

@@ -37,7 +37,7 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        provider = _provider("xkiro", respond)
+        provider = _provider("openrouter", respond)
         router = AIProviderRouter([provider], max_tool_rounds=5)
 
         async def execute(_name: str, args: dict) -> str:
@@ -69,7 +69,7 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
                 return _tool_response_many(request, 13)
             return _tool_response_many(request, 1)
 
-        provider = _provider("xkiro", respond)
+        provider = _provider("openrouter", respond)
         router = AIProviderRouter([provider], max_tool_rounds=10)
 
         async def execute(_name: str, _args: dict) -> str:
@@ -91,10 +91,10 @@ class ToolBudgetSynthesisTests(unittest.IsolatedAsyncioTestCase):
 
 def _provider(name: str, responder):
     provider = make_catalog_target(
-        "xkiro",
+        "openrouter",
         model="model",
         credential="fake",
-        target_id=f"xkiro:text:{name}:c1",
+        target_id=f"openrouter:text:{name}:c1",
     )
     provider._client = httpx.AsyncClient(
         base_url=f"https://{name}.test/v1/",

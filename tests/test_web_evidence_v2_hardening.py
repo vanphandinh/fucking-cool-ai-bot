@@ -490,7 +490,7 @@ class _ToolThenAnswer:
 class SynthesisWiringTests(unittest.IsolatedAsyncioTestCase):
     async def test_router_uses_the_v2_packer_and_grounding_instruction(self) -> None:
         provider = ScriptedProvider(
-            "xkiro",
+            "openrouter",
             [
                 tool_response(1),
                 ChatResponse(content="done"),

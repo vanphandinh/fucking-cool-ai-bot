@@ -11,6 +11,7 @@ import base64
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -384,6 +385,7 @@ def serialize_request(
     request: ChatRequest,
     model: str,
     supports_tools: bool,
+    provider_preferences: Sequence[str] = (),
 ) -> dict:
     """Serialize canonical request state to OpenAI chat-completions JSON."""
 
@@ -393,6 +395,9 @@ def serialize_request(
     }
     if request.tools and supports_tools:
         payload["tools"] = [_serialize_tool_definition(tool) for tool in request.tools]
+    slugs = list(provider_preferences)
+    if slugs:
+        payload["provider"] = {"only": slugs, "order": list(slugs)}
     return payload
 
 
@@ -403,6 +408,7 @@ class OpenAIChatTarget:
     def __init__(self, spec: TargetSpec, *, credential: str) -> None:
         self.spec = spec
         self.health = ProviderHealth()
+        self.provider_preferences = tuple(spec.provider_preferences)
         self.explicit_stream = spec.driver_options.get("explicit_stream", False)
         self._request_timeout = spec.request_timeout_sec
         headers = {"Authorization": f"Bearer {credential.strip()}"}
@@ -448,7 +454,12 @@ class OpenAIChatTarget:
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """Send one canonical request through the OpenAI chat-completions protocol."""
 
-        payload = serialize_request(request, self.model, self.supports_tools)
+        payload = serialize_request(
+            request,
+            self.model,
+            self.supports_tools,
+            provider_preferences=self.provider_preferences,
+        )
         if self.explicit_stream is not None:
             payload["stream"] = self.explicit_stream
 

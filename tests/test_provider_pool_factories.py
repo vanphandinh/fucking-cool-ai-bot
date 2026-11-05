@@ -51,28 +51,28 @@ class ProviderPoolFactoryTests(unittest.TestCase):
         finally:
             self._close(targets)
 
-    def test_xkiro_uses_same_generic_builder(self) -> None:
+    def test_openrouter_uses_same_generic_builder(self) -> None:
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "xkiro": {
+                "openrouter": {
                     "api_keys": "KeyOne,KeyTwo",
                     "text_models": "ModelA",
                     "vision_models": "VisionA",
                 }
             },
-            text_provider_order="xkiro",
-            vision_provider_order="xkiro",
+            text_provider_order="openrouter",
+            vision_provider_order="openrouter",
         )
-        targets = build_provider_targets(settings, ["xkiro"])
+        targets = build_provider_targets(settings, ["openrouter"])
         try:
             self.assertEqual(
                 [target.spec.identity.target_id for target in targets],
                 [
-                    "xkiro:text:m1:c1",
-                    "xkiro:text:m1:c2",
-                    "xkiro:vision:m1:c1",
-                    "xkiro:vision:m1:c2",
+                    "openrouter:text:m1:c1",
+                    "openrouter:text:m1:c2",
+                    "openrouter:vision:m1:c1",
+                    "openrouter:vision:m1:c2",
                 ],
             )
         finally:

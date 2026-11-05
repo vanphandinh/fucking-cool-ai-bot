@@ -72,7 +72,7 @@ class DriverUsageParsingTests(unittest.TestCase):
 class RouterUsageAggregationTests(unittest.IsolatedAsyncioTestCase):
     async def _complete(self, usage: dict | None) -> CompletionResult:
         provider = ScriptedProvider(
-            "xkiro",
+            "openrouter",
             [tool_response(1), ChatResponse(content="done", usage=usage)],
         )
         provider.supports_tools = True
@@ -101,7 +101,7 @@ async def _unused() -> str:
 class RouterMultiRoundUsageTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_round_tokens_are_added_to_the_final_response(self):
         provider = ScriptedProvider(
-            "xkiro",
+            "openrouter",
             [
                 ChatResponse(
                     tool_calls=tool_response(1).tool_calls,

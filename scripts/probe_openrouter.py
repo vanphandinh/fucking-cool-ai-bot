@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Live xKiro catalog and OpenAI-compatible qualification probe.
+"""Live OpenRouter catalog and OpenAI-compatible qualification probe.
 
 The probe intentionally keeps model IDs out of source code. Operators supply
-candidate IDs, while GET /models remains the source of truth for free-tier,
-pricing, tools, and vision capability gates.
+candidate IDs, while GET /models remains the source of truth for zero-price,
+tools, and vision capability gates.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import httpx  # noqa: E402
 
 DEFAULT_VISION_EXPECT = "47-GREEN-CIRCLE"
 DEFAULT_MAX_RETRY_AFTER = 60.0
-TOOL_RESULT = "XKIRO_TOOL_PROBE_OK"
+TOOL_RESULT = "OPENROUTER_TOOL_PROBE_OK"
 TOOL_SCHEMA = {
     "type": "function",
     "function": {
@@ -46,16 +46,16 @@ TOOL_SCHEMA = {
 
 
 def provider_base_url() -> str:
-    default_base_url = "https://api.xkiro.com/v1"
+    default_base_url = "https://openrouter.ai/api/v1"
     configured = os.getenv(
-        "AI_PROVIDERS__XKIRO__BASE_URL",
+        "AI_PROVIDERS__OPENROUTER__BASE_URL",
         default_base_url,
     ).strip()
     return (configured or default_base_url).rstrip("/")
 
 
-def xkiro_probe_credential() -> str:
-    for part in os.environ.get("AI_PROVIDERS__XKIRO__API_KEYS", "").split(","):
+def openrouter_probe_credential() -> str:
+    for part in os.environ.get("AI_PROVIDERS__OPENROUTER__API_KEYS", "").split(","):
         value = part.strip()
         if value:
             return value
@@ -85,28 +85,50 @@ def _is_zero_price(value: object) -> bool:
         return False
 
 
+def provider_preferences() -> dict | None:
+    """Read the optional OpenRouter upstream-provider allowlist from env."""
+
+    slugs: list[str] = []
+    seen: set[str] = set()
+    raw = os.environ.get("AI_PROVIDERS__OPENROUTER__PROVIDER", "")
+    for part in raw.split(","):
+        value = part.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        slugs.append(value)
+    if not slugs:
+        return None
+    return {"only": slugs, "order": list(slugs)}
+
+
 def qualification_errors(model: dict, *, require_vision: bool) -> list[str]:
     errors: list[str] = []
-    if model.get("access_tier") != "free":
-        errors.append("access_tier must be free")
-
     pricing = model.get("pricing")
     if not isinstance(pricing, dict):
         errors.append("pricing object is missing")
     else:
-        if not _is_zero_price(pricing.get("input")):
-            errors.append("pricing.input must be zero")
-        if not _is_zero_price(pricing.get("output")):
-            errors.append("pricing.output must be zero")
+        if not _is_zero_price(pricing.get("prompt")):
+            errors.append("pricing.prompt must be zero")
+        if not _is_zero_price(pricing.get("completion")):
+            errors.append("pricing.completion must be zero")
 
-    capabilities = model.get("capabilities")
-    if not isinstance(capabilities, dict):
-        errors.append("capabilities object is missing")
-    else:
-        if capabilities.get("tools") is not True:
-            errors.append("capabilities.tools must be true")
-        if require_vision and capabilities.get("vision") is not True:
-            errors.append("capabilities.vision must be true")
+    supported = model.get("supported_parameters")
+    if not isinstance(supported, list):
+        errors.append("supported_parameters array is missing")
+    elif "tools" not in supported:
+        errors.append("supported_parameters must include tools")
+
+    architecture = model.get("architecture")
+    modalities = (
+        architecture.get("input_modalities")
+        if isinstance(architecture, dict)
+        else None
+    )
+    if require_vision and (
+        not isinstance(modalities, list) or "image" not in modalities
+    ):
+        errors.append("architecture.input_modalities must include image")
     return errors
 
 
@@ -115,6 +137,7 @@ def build_chat_payload(
     messages: list[dict],
     *,
     tools: list[dict] | None = None,
+    provider: dict | None = None,
 ) -> dict:
     payload: dict = {
         "model": model,
@@ -123,6 +146,8 @@ def build_chat_payload(
     }
     if tools:
         payload["tools"] = tools
+    if provider:
+        payload["provider"] = provider
     return payload
 
 
@@ -180,7 +205,7 @@ def extract_tool_call(data: dict) -> dict:
         raise ValueError("structured tool call arguments are missing")
     if not isinstance(arguments, dict):
         raise ValueError("structured tool call arguments must be an object")
-    if arguments.get("value") != "XKIRO_TOOL_PROBE":
+    if arguments.get("value") != "OPENROUTER_TOOL_PROBE":
         raise ValueError("structured tool call returned the wrong probe value")
     return call
 
@@ -192,6 +217,7 @@ def build_tool_continuation(
     tool_call: dict,
     *,
     tool_result: str = TOOL_RESULT,
+    provider: dict | None = None,
 ) -> dict:
     call_id = str(tool_call.get("id") or "").strip()
     if not call_id:
@@ -205,7 +231,7 @@ def build_tool_continuation(
             "content": tool_result,
         },
     ]
-    return build_chat_payload(model, messages, tools=[TOOL_SCHEMA])
+    return build_chat_payload(model, messages, tools=[TOOL_SCHEMA], provider=provider)
 
 
 def image_data_url(path: Path) -> str:
@@ -238,7 +264,7 @@ def vision_tool_message(data_url: str) -> dict:
                 "type": "text",
                 "text": (
                     "Inspect the image, then call echo_probe exactly once with "
-                    'value="XKIRO_TOOL_PROBE".'
+                    'value="OPENROUTER_TOOL_PROBE".'
                 ),
             },
             {"type": "image_url", "image_url": {"url": data_url}},
@@ -307,21 +333,22 @@ async def fetch_catalog(client: httpx.AsyncClient) -> dict:
 
 def catalog_summary(model: dict) -> dict:
     pricing = model.get("pricing") if isinstance(model.get("pricing"), dict) else {}
-    caps = (
-        model.get("capabilities")
-        if isinstance(model.get("capabilities"), dict)
-        else {}
+    supported = model.get("supported_parameters")
+    architecture = model.get("architecture")
+    modalities = (
+        architecture.get("input_modalities")
+        if isinstance(architecture, dict)
+        else None
     )
     return {
         "id": model.get("id"),
-        "access_tier": model.get("access_tier"),
         "pricing": {
-            "input": pricing.get("input"),
-            "output": pricing.get("output"),
+            "prompt": pricing.get("prompt"),
+            "completion": pricing.get("completion"),
         },
         "capabilities": {
-            "tools": caps.get("tools"),
-            "vision": caps.get("vision"),
+            "tools": isinstance(supported, list) and "tools" in supported,
+            "vision": isinstance(modalities, list) and "image" in modalities,
         },
         "context_length": model.get("context_length"),
     }
@@ -349,11 +376,12 @@ async def _probe_plain(
     messages: list[dict] | None = None,
     event: str = "plain_chat",
     expected_content: str | None = None,
+    provider: dict | None = None,
 ) -> None:
     messages = messages or [{"role": "user", "content": "Reply with a short OK."}]
     response, retry = await post_chat(
         client,
-        build_chat_payload(model, messages),
+        build_chat_payload(model, messages, provider=provider),
         max_retries=max_retries,
         retry_base_delay=retry_base_delay,
         max_retry_after=max_retry_after,
@@ -382,6 +410,7 @@ async def _probe_tool_flow(
     max_retry_after: float,
     user_message: dict | None = None,
     event_prefix: str = "tool",
+    provider: dict | None = None,
 ) -> None:
     base_messages = [
         {
@@ -393,13 +422,18 @@ async def _probe_tool_flow(
             "role": "user",
             "content": (
                 "Call echo_probe exactly once with "
-                'value="XKIRO_TOOL_PROBE". Do not answer directly.'
+                'value="OPENROUTER_TOOL_PROBE". Do not answer directly.'
             ),
         },
     ]
     response, retry = await post_chat(
         client,
-        build_chat_payload(model, base_messages, tools=[TOOL_SCHEMA]),
+        build_chat_payload(
+            model,
+            base_messages,
+            tools=[TOOL_SCHEMA],
+            provider=provider,
+        ),
         max_retries=max_retries,
         retry_base_delay=retry_base_delay,
         max_retry_after=max_retry_after,
@@ -415,10 +449,10 @@ async def _probe_tool_flow(
         tool_name=tool_call["function"]["name"],
     )
 
-    marker = f"XKIRO_TOOL_RESULT_{secrets.token_hex(8)}"
+    marker = f"OPENROUTER_TOOL_RESULT_{secrets.token_hex(8)}"
     tool_result = (
         f"{marker}\n"
-        "Reply with the XKIRO_TOOL_RESULT marker exactly and no other text."
+        "Reply with the OPENROUTER_TOOL_RESULT marker exactly and no other text."
     )
     continuation, continuation_retry = await post_chat(
         client,
@@ -428,6 +462,7 @@ async def _probe_tool_flow(
             assistant,
             tool_call,
             tool_result=tool_result,
+            provider=provider,
         ),
         max_retries=max_retries,
         retry_base_delay=retry_base_delay,
@@ -452,9 +487,9 @@ async def _probe_tool_flow(
 
 
 async def run_probe(args: argparse.Namespace) -> int:
-    api_key = xkiro_probe_credential()
+    api_key = openrouter_probe_credential()
     if not api_key:
-        emit("error", compatible=False, error="AI_PROVIDERS__XKIRO__API_KEYS is required")
+        emit("error", compatible=False, error="AI_PROVIDERS__OPENROUTER__API_KEYS is required")
         return 2
 
     if args.vision_model and not args.image:
@@ -465,6 +500,7 @@ async def run_probe(args: argparse.Namespace) -> int:
         )
         return 2
 
+    provider = provider_preferences()
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(args.timeout)
     async with httpx.AsyncClient(
@@ -516,6 +552,7 @@ async def run_probe(args: argparse.Namespace) -> int:
                         max_retries=args.max_retries,
                         retry_base_delay=args.retry_base_delay,
                         max_retry_after=args.max_retry_after,
+                        provider=provider,
                         messages=[vision_message(data_url)],
                         event="vision_chat",
                         expected_content=args.vision_expect,
@@ -526,6 +563,7 @@ async def run_probe(args: argparse.Namespace) -> int:
                         max_retries=args.max_retries,
                         retry_base_delay=args.retry_base_delay,
                         max_retry_after=args.max_retry_after,
+                        provider=provider,
                         user_message=vision_tool_message(data_url),
                         event_prefix="vision_tool",
                     )
@@ -536,6 +574,7 @@ async def run_probe(args: argparse.Namespace) -> int:
                         max_retries=args.max_retries,
                         retry_base_delay=args.retry_base_delay,
                         max_retry_after=args.max_retry_after,
+                        provider=provider,
                     )
                     await _probe_tool_flow(
                         client,
@@ -543,6 +582,7 @@ async def run_probe(args: argparse.Namespace) -> int:
                         max_retries=args.max_retries,
                         retry_base_delay=args.retry_base_delay,
                         max_retry_after=args.max_retry_after,
+                        provider=provider,
                     )
         except (httpx.HTTPError, OSError, ValueError) as exc:
             emit("error", compatible=False, error=str(exc))

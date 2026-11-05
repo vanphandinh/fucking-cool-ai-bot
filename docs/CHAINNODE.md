@@ -11,8 +11,8 @@ AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-TEXT_PROVIDER_ORDER=chainnode,xkiro
-VISION_PROVIDER_ORDER=chainnode,xkiro
+TEXT_PROVIDER_ORDER=chainnode,openrouter
+VISION_PROVIDER_ORDER=chainnode,openrouter
 ```
 
 `AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS`, và `AI_PROVIDERS__CHAINNODE__VISION_MODELS` là canonical runtime pools. Một phần tử là hợp lệ; nhiều phần tử được phân tách bằng dấu phẩy và giữ nguyên case.
@@ -39,8 +39,8 @@ Vision pool dùng cùng quy tắc. Runtime identities chỉ chứa opaque creden
 Production order mặc định:
 
 ```text
-text:   Chainnode -> xKiro
-vision: Chainnode -> xKiro
+text:   Chainnode -> OpenRouter
+vision: Chainnode -> OpenRouter
 ```
 
 Chainnode recovery scopes giữ bounded behavior hiện tại:
@@ -82,7 +82,7 @@ Sau deploy:
 4. thực hiện controlled target/provider fallback smoke;
 5. khôi phục primary target và xác nhận normal traffic quay lại Chainnode.
 
-Operational rollback để tắt xKiro fallback:
+Operational rollback để tắt OpenRouter fallback:
 
 ```env
 TEXT_PROVIDER_ORDER=chainnode
