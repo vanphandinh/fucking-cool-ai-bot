@@ -109,7 +109,7 @@ Bot đọc video (`video`/`animation`/`video_note`, kể cả từ tin nhắn fo
 
 Nếu không có configured/capable vision provider, user nhận generic `NoCapableProvider` UX. Image request không fallback sang text-only slot.
 
-OpenRouter vision chỉ nên được bật sau khi candidate vượt live `/v1/models` hard gates và image/tool qualification trong `scripts/probe_openrouter.py`; model ID không hard-code trong runtime. Khi `AI_PROVIDERS__OPENROUTER__PROVIDER` được đặt, vision request cũng mang provider allowlist/order đó.
+OpenRouter vision chỉ nên được bật sau khi candidate vượt live `<AI_PROVIDERS__OPENROUTER__BASE_URL>/models` hard gates và image/tool qualification trong `scripts/probe_openrouter.py`; model ID không hard-code trong runtime. Khi `AI_PROVIDERS__OPENROUTER__PROVIDER` được đặt, vision request cũng mang provider allowlist/order đó.
 
 ## Tools và provider fallback trong vision request
 

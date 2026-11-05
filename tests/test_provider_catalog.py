@@ -237,6 +237,53 @@ max_images = 1
                 with self.assertRaisesRegex(ValueError, field):
                     load_provider_catalog(path)
 
+    def test_catalog_accepts_boolean_provider_preferences_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "providers.toml"
+            path.write_text(
+                """
+[[providers]]
+id = "demo"
+driver = "openai-chat"
+default_base_url = "https://example.test/v1"
+default_timeout_sec = 30
+
+[providers.routes.text]
+enabled = true
+
+[providers.driver_options]
+provider_preferences = true
+""",
+                encoding="utf-8",
+            )
+            profile = load_provider_catalog(path).require("demo")
+        self.assertIs(profile.driver_options["provider_preferences"], True)
+
+    def test_catalog_rejects_non_boolean_provider_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "providers.toml"
+            path.write_text(
+                """
+[[providers]]
+id = "demo"
+driver = "openai-chat"
+default_base_url = "https://example.test/v1"
+default_timeout_sec = 30
+
+[providers.routes.text]
+enabled = true
+
+[providers.driver_options]
+provider_preferences = "true"
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                r"provider demo driver_options\.provider_preferences must be boolean",
+            ):
+                load_provider_catalog(path)
+
 
 if __name__ == "__main__":
     unittest.main()
