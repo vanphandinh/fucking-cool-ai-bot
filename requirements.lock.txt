@@ -17,17 +17,17 @@
 aiofiles==25.1.0
 aiogram==3.31.0
 aiohappyeyeballs==2.7.1
-aiohttp==3.14.3
+aiohttp==3.14.5
 aiosignal==1.4.0
 annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0
 beautifulsoup4==4.15.0
-certifi==2026.7.22
+certifi==2026.10.23
 charset-normalizer==3.5.1
 click==8.5.0
 ddgs==9.16.0
-filelock==4.0.0
+filelock==4.2.9
 frozenlist==1.8.0
 h11==0.16.0
 httpcore==1.0.9
@@ -49,4 +49,4 @@ tldextract==5.4.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.8.0
-yarl==1.24.5
+yarl==1.25.1
