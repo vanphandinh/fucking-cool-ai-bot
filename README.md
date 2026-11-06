@@ -263,4 +263,6 @@ VISION_PROVIDER_ORDER=chainnode
 
 CI `Audit checks` chạy lint, dependency integrity, compileall, full unittest discovery và `pip-audit` trên Python 3.11/3.12; Python 3.12 còn validate Docker Compose và production image build.
 
+Hook `pre-push` chạy cùng phép audit trên `requirements.lock.txt` trước khi đẩy nhánh: bật một lần bằng `git config core.hooksPath .githooks`, bỏ qua một lần bằng `PIP_AUDIT_SKIP=1 git push` khi dịch vụ audit không truy cập được.
+
 Không commit `.env`, API keys, Telegram token hoặc các secret deployment khác.
