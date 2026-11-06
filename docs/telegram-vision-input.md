@@ -1,6 +1,6 @@
 # Telegram vision input
 
-Vision routing dùng cùng generic provider framework với text. Production order hiện tại là **Chainnode primary -> xKiro fallback**; image handling không hard-code provider identity. Router chọn configured vision providers theo `VISION_PROVIDER_ORDER`, `ProviderCapabilities`, health state và image count.
+Vision routing dùng cùng generic provider framework với text. Production order hiện tại là **Chainnode primary -> OpenRouter -> OpenCode fallback**; image handling không hard-code provider identity. Router chọn configured vision providers theo `VISION_PROVIDER_ORDER`, `ProviderCapabilities`, health state và image count.
 
 ## Input được hỗ trợ
 
@@ -12,7 +12,7 @@ Application limit hiện tại:
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-Cả Chainnode và xKiro vision slots hiện advertise:
+Cả Chainnode, OpenRouter và OpenCode vision slots hiện advertise:
 
 ```text
 supports_vision=True
@@ -47,7 +47,8 @@ Telegram media
   -> MAX_IMAGES_PER_REQUEST=1
   -> generic capability-aware vision routing
   -> Chainnode / route=vision / max_images=1
-  -> xKiro / route=vision / max_images=1 (fallback nếu configured + qualified)
+  -> OpenRouter / route=vision / max_images=1 (fallback nếu configured + qualified)
+  -> OpenCode / route=vision / max_images=1 (fallback nếu configured + qualified)
 ```
 
 UX khi vượt limit được sinh từ effective capability, không phải chuỗi provider-specific hard-code trong handler.
@@ -93,13 +94,14 @@ Current config:
 
 ```env
 VISION_ENABLED=1
-VISION_PROVIDER_ORDER=chainnode,xkiro
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-AI_PROVIDERS__XKIRO__VISION_MODELS=
+AI_PROVIDERS__OPENROUTER__VISION_MODELS=
+AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-Chainnode và xKiro đều dùng stable provider key riêng; text/vision slots được phân biệt bằng `ProviderCapabilities.route`, không bằng UI name riêng.
+Chainnode, OpenRouter và OpenCode đều dùng stable provider key riêng; text/vision slots được phân biệt bằng `ProviderCapabilities.route`, không bằng UI name riêng.
 
 `VISION_ENABLED=0` tắt vision nhưng không tắt text.
 
@@ -109,7 +111,7 @@ Bot đọc video (`video`/`animation`/`video_note`, kể cả từ tin nhắn fo
 
 Nếu không có configured/capable vision provider, user nhận generic `NoCapableProvider` UX. Image request không fallback sang text-only slot.
 
-xKiro vision chỉ nên được bật sau khi candidate vượt live `/v1/models` hard gates và image/tool qualification trong `scripts/probe_xkiro.py`; model ID không hard-code trong runtime.
+OpenRouter vision chỉ nên được bật sau khi candidate vượt live `<AI_PROVIDERS__OPENROUTER__BASE_URL>/models` hard gates và image/tool qualification trong `scripts/probe_openrouter.py`; model ID không hard-code trong runtime. Khi `AI_PROVIDERS__OPENROUTER__PROVIDER` được đặt, vision request cũng mang provider allowlist/order đó.
 
 ## Tools và provider fallback trong vision request
 
@@ -125,15 +127,15 @@ Tool budget là request-wide:
 - tối đa 2 tool calls chạy song song;
 - `MAX_TOOL_ROUNDS` discovery rounds.
 
-Provider transition không reset budget. Provider-specific continuation metadata chỉ replay trong cùng provider. Nếu budget đã đóng, later vision provider chỉ nhận generic Fresh Synthesis context với tools disabled. Completed tool output không chạy lại chỉ vì route chuyển từ Chainnode sang xKiro.
+Provider transition không reset budget. Provider-specific continuation metadata chỉ replay trong cùng provider. Nếu budget đã đóng, later vision provider chỉ nhận generic Fresh Synthesis context với tools disabled. Completed tool output không chạy lại chỉ vì route chuyển từ Chainnode sang OpenRouter.
 
 ## Verification
 
 ```bash
 python -m unittest tests.test_vision -v
 python -m unittest tests.test_chainnode_provider -v
-python -m unittest tests.test_xkiro_provider -v
-python -m unittest tests.test_xkiro_probe -v
+python -m unittest tests.test_openrouter_provider -v
+python -m unittest tests.test_openrouter_probe -v
 python -m unittest tests.test_provider_registry -v
 python -m unittest tests.test_provider_portability -v
 python -m unittest tests.test_fresh_synthesis_routing -v
@@ -150,5 +152,5 @@ Production smoke nên gồm:
 5. image + direct URL;
 6. request vượt effective image limit để xác nhận bị chặn trước model call;
 7. `/status` để xác nhận configured vision providers/order/cooldown;
-8. controlled Chainnode vision failure -> xKiro vision fallback sau khi xKiro đã live-qualified;
+8. controlled Chainnode vision failure -> OpenRouter vision fallback sau khi OpenRouter đã live-qualified;
 9. restore Chainnode ngay sau fallback smoke.

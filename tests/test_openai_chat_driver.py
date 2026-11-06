@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import base64
 import unittest
+from types import MappingProxyType
+
+import httpx
 
 from app.ai.base import ProviderError
+from app.ai.capabilities import ProviderCapabilities
+from app.ai.catalog import load_provider_catalog
 from app.ai.contracts import (
     ChatMessage,
     ChatRequest,
@@ -13,7 +18,14 @@ from app.ai.contracts import (
     ToolDefinition,
     ToolResultPart,
 )
-from app.ai.drivers.openai_chat import parse_response, serialize_request
+from app.ai.drivers.openai_chat import (
+    OpenAIChatDriver,
+    parse_response,
+    serialize_request,
+)
+from app.ai.recovery import RecoveryPolicy
+from app.ai.session import provider_session_id
+from app.ai.target import ProviderTargetIdentity, TargetSpec
 
 
 TOOL = ToolDefinition(
@@ -68,6 +80,23 @@ class OpenAIChatDriverTests(unittest.TestCase):
         self.assertEqual(payload["messages"][3]["role"], "tool")
         self.assertEqual(payload["messages"][3]["tool_call_id"], "c1")
         self.assertEqual(payload["tools"][0]["function"]["name"], "fetch_url")
+
+    def test_serializer_adds_provider_routing_preferences(self) -> None:
+        request = ChatRequest(messages=(ChatMessage("user", (TextPart("hi"),)),))
+        payload = serialize_request(
+            request,
+            "model",
+            False,
+            provider_preferences=("deepinfra", "together"),
+        )
+        self.assertEqual(
+            payload["provider"],
+            {"only": ["deepinfra", "together"], "order": ["deepinfra", "together"]},
+        )
+
+    def test_serializer_omits_provider_without_preferences(self) -> None:
+        request = ChatRequest(messages=(ChatMessage("user", (TextPart("hi"),)),))
+        self.assertNotIn("provider", serialize_request(request, "model", False))
 
     def test_provider_state_is_not_synthesized_when_absent(self) -> None:
         request = ChatRequest(
@@ -180,6 +209,116 @@ class OpenAIChatDriverTests(unittest.TestCase):
                 },
                 (TOOL,),
                 "demo",
+            )
+
+
+def _session_target(driver_options: dict[str, object]):
+    spec = TargetSpec(
+        identity=ProviderTargetIdentity(
+            family="opencode",
+            route="text",
+            model="deepseek-v4.1-flash",
+            credential_id="cred-1",
+            target_id="opencode:text:m1:c1",
+        ),
+        driver="openai-chat",
+        capabilities=ProviderCapabilities(route="text"),
+        base_url="https://opencode.ai/zen/go/v1",
+        request_timeout_sec=5.0,
+        recovery_policy=RecoveryPolicy(overrides=MappingProxyType({})),
+        driver_options=driver_options,
+    )
+    return OpenAIChatDriver().build_target(spec, credential="test-key")
+
+
+async def _sent_session_headers(
+    target, calls: int, *, session_id: str | None = None
+) -> list[str | None]:
+    seen: list[str | None] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("x-opencode-session"))
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "ok"}}]}
+        )
+
+    target._client = httpx.AsyncClient(
+        base_url="https://example.org/v1/",
+        transport=httpx.MockTransport(responder),
+        headers=target._client.headers,
+    )
+    request = ChatRequest(
+        messages=(ChatMessage("user", (TextPart("hi"),)),),
+        session_id=session_id,
+    )
+    for _ in range(calls):
+        await target.chat(request)
+    await target.aclose()
+    return seen
+
+
+class OpenCodeSessionHeaderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_target_reuses_one_opaque_session_header(self) -> None:
+        target = _session_target({"session_header": "x-opencode-session"})
+        stable = target._client.headers.get("x-opencode-session", "")
+        self.assertTrue(stable.startswith("ses_"))
+        self.assertEqual(await _sent_session_headers(target, 2), [stable, stable])
+
+    async def test_target_without_session_option_sends_no_session_header(self) -> None:
+        target = _session_target({})
+        self.assertEqual(await _sent_session_headers(target, 2), [None, None])
+
+    async def test_conversation_id_overrides_target_fallback(self) -> None:
+        target = _session_target({"session_header": "x-opencode-session"})
+        fallback = target._client.headers.get("x-opencode-session", "")
+        seen = await _sent_session_headers(
+            target, 3, session_id="ses_conversation_alpha"
+        )
+        self.assertNotIn(fallback, ("", "ses_conversation_alpha"))
+        self.assertEqual(seen, ["ses_conversation_alpha"] * 3)
+
+    async def test_distinct_conversations_send_distinct_session_ids(self) -> None:
+        target = _session_target({"session_header": "x-opencode-session"})
+        first = await _sent_session_headers(
+            target, 1, session_id="ses_conversation_alpha"
+        )
+        second = await _sent_session_headers(
+            target, 1, session_id="ses_conversation_beta"
+        )
+        self.assertEqual(first, ["ses_conversation_alpha"])
+        self.assertEqual(second, ["ses_conversation_beta"])
+
+    def test_opencode_profile_declares_session_header_and_user_agent(self) -> None:
+        options = load_provider_catalog().require("opencode").driver_options
+        self.assertEqual(options.get("session_header"), "x-opencode-session")
+        self.assertEqual(
+            options.get("extra_headers", {}).get("User-Agent"),
+            "fucking-cool-ai-bot/1.0",
+        )
+
+
+class ProviderSessionIdTests(unittest.TestCase):
+    def test_id_is_stable_per_conversation_and_distinct_between_them(self) -> None:
+        self.assertEqual(provider_session_id(42), provider_session_id(42))
+        self.assertEqual(provider_session_id((42, 7)), provider_session_id((42, 7)))
+        self.assertNotEqual(provider_session_id(42), provider_session_id(43))
+        self.assertNotEqual(provider_session_id((42, 7)), provider_session_id((42, 8)))
+        self.assertNotEqual(provider_session_id(42), provider_session_id((42, 0)))
+
+    def test_id_is_opaque_and_header_safe(self) -> None:
+        value = provider_session_id(987654321)
+        self.assertTrue(value.startswith("ses_"))
+        self.assertNotIn("987654321", value)
+        ChatRequest(
+            messages=(ChatMessage("user", (TextPart("hi"),)),),
+            session_id=value,
+        )
+
+    def test_chat_request_rejects_header_unsafe_session_id(self) -> None:
+        with self.assertRaises(ValueError):
+            ChatRequest(
+                messages=(ChatMessage("user", (TextPart("hi"),)),),
+                session_id="ses_bad value\r\nX-Injected: 1",
             )
 
 

@@ -21,7 +21,7 @@ class ProviderPoolConfigTests(unittest.TestCase):
                     "api_keys": "ChainOne,chainTWO,ChainOne",
                     "text_models": "Model/A,model/B,Model/A",
                 },
-                "xkiro": {
+                "openrouter": {
                     "api_keys": "KeyOne,keyTWO",
                     "text_models": "X/One,x/Two",
                 },
@@ -37,7 +37,7 @@ class ProviderPoolConfigTests(unittest.TestCase):
             ["Model/A", "model/B"],
         )
         self.assertEqual(
-            provider_runtime(settings, "xkiro").api_keys_list,
+            provider_runtime(settings, "openrouter").api_keys_list,
             ["KeyOne", "keyTWO"],
         )
 
@@ -74,12 +74,12 @@ class ProviderPoolConfigTests(unittest.TestCase):
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "xkiro": {
+                    "openrouter": {
                         "api_keys": keys,
                         "text_models": models,
                     }
                 },
-                text_provider_order="xkiro",
+                text_provider_order="openrouter",
                 vision_enabled=False,
             )
         rendered = str(ctx.exception)
@@ -91,15 +91,15 @@ class ProviderPoolConfigTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "xkiro": {
+                "openrouter": {
                     "api_keys": "KeyOne,KeyTwo",
                     "text_models": "ModelA,ModelB",
                 }
             },
-            text_provider_order="xkiro",
+            text_provider_order="openrouter",
             vision_enabled=False,
         )
-        targets = build_provider_targets(settings, ["xkiro"])
+        targets = build_provider_targets(settings, ["openrouter"])
         try:
             self.assertEqual(
                 [
@@ -107,10 +107,10 @@ class ProviderPoolConfigTests(unittest.TestCase):
                     for target in targets
                 ],
                 [
-                    ("ModelA", "cred-1", "xkiro:text:m1:c1"),
-                    ("ModelA", "cred-2", "xkiro:text:m1:c2"),
-                    ("ModelB", "cred-1", "xkiro:text:m2:c1"),
-                    ("ModelB", "cred-2", "xkiro:text:m2:c2"),
+                    ("ModelA", "cred-1", "openrouter:text:m1:c1"),
+                    ("ModelA", "cred-2", "openrouter:text:m1:c2"),
+                    ("ModelB", "cred-1", "openrouter:text:m2:c1"),
+                    ("ModelB", "cred-2", "openrouter:text:m2:c2"),
                 ],
             )
         finally:

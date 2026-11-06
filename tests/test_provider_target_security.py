@@ -29,15 +29,15 @@ class ProviderTargetIdentitySecurityTests(unittest.TestCase):
         self.assertNotIn(secret, rendered)
         self.assertIn("cred-1", rendered)
 
-    def test_xkiro_target_identity_never_contains_raw_api_key(self) -> None:
+    def test_openrouter_target_identity_never_contains_raw_api_key(self) -> None:
         secrets = ("SeCrEt-Key-One", "SeCrEt-Key-Two")
         settings = Settings(
             _env_file=None,
-            ai_providers={"xkiro":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
-            text_provider_order="xkiro",
+            ai_providers={"openrouter":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
+            text_provider_order="openrouter",
             vision_enabled=False,
         )
-        slots = build_provider_targets(settings, ["xkiro"])
+        slots = build_provider_targets(settings, ["openrouter"])
         try:
             rendered = repr([provider_target_identity(slot) for slot in slots])
             rendered += repr([slot.target_id for slot in slots])
@@ -72,7 +72,7 @@ class ProviderTargetIdentitySecurityTests(unittest.TestCase):
 
 
 class SettingsSecretHygieneTests(unittest.TestCase):
-    def test_validation_error_hides_canonical_xkiro_credentials(self) -> None:
+    def test_validation_error_hides_canonical_openrouter_credentials(self) -> None:
         secrets = (
             "".join(("A1", "!x")),
             "".join(("B2", "!y")),
@@ -81,16 +81,16 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             Settings(
                 _env_file=None,
-                ai_providers={"xkiro":{"api_keys":",".join(secrets),"text_models":""}},
-                text_provider_order="xkiro",
+                ai_providers={"openrouter":{"api_keys":",".join(secrets),"text_models":""}},
+                text_provider_order="openrouter",
                 vision_enabled=False,
             )
 
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
-            self.fail("validation error exposed raw xKiro credential input")
-        self.assertIn("AI_PROVIDERS__XKIRO__TEXT_MODELS", rendered)
-        retired = "XKIRO_TEXT_" + "MODEL"
+            self.fail("validation error exposed raw OpenRouter credential input")
+        self.assertIn("AI_PROVIDERS__OPENROUTER__TEXT_MODELS", rendered)
+        retired = "OPENROUTER_TEXT_" + "MODEL"
         self.assertNotIn(f"{retired} là", rendered)
 
     def test_validation_error_hides_canonical_chainnode_credentials(self) -> None:
@@ -119,16 +119,16 @@ class ProviderTargetDiagnosticSecurityTests(unittest.IsolatedAsyncioTestCase):
     async def test_raw_key_is_absent_from_logs_status_exception_and_repr(self) -> None:
         secret = "SeCrEt-Diagnostic-Key"
         provider = ScriptedProvider(
-            "xkiro",
+            "openrouter",
             [ProviderError("quota", status_code=429, transient=True)],
         )
         provider.model = "Model/Case"
         provider.credential_id = "cred-1"
-        provider.target_id = "xkiro:text:m1:c1"
+        provider.target_id = "openrouter:text:m1:c1"
         provider.api_key = secret
         router = AIProviderRouter(
             [provider],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
         )
 
@@ -146,7 +146,7 @@ class ProviderTargetDiagnosticSecurityTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertNotIn(secret, rendered)
-        self.assertIn("xkiro:text:m1:c1", rendered)
+        self.assertIn("openrouter:text:m1:c1", rendered)
 
 
 if __name__ == "__main__":

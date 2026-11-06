@@ -11,6 +11,7 @@ import base64
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -384,6 +385,7 @@ def serialize_request(
     request: ChatRequest,
     model: str,
     supports_tools: bool,
+    provider_preferences: Sequence[str] = (),
 ) -> dict:
     """Serialize canonical request state to OpenAI chat-completions JSON."""
 
@@ -393,6 +395,9 @@ def serialize_request(
     }
     if request.tools and supports_tools:
         payload["tools"] = [_serialize_tool_definition(tool) for tool in request.tools]
+    slugs = list(provider_preferences)
+    if slugs:
+        payload["provider"] = {"only": slugs, "order": list(slugs)}
     return payload
 
 
@@ -403,12 +408,19 @@ class OpenAIChatTarget:
     def __init__(self, spec: TargetSpec, *, credential: str) -> None:
         self.spec = spec
         self.health = ProviderHealth()
+        self.provider_preferences = tuple(spec.provider_preferences)
         self.explicit_stream = spec.driver_options.get("explicit_stream", False)
         self._request_timeout = spec.request_timeout_sec
         headers = {"Authorization": f"Bearer {credential.strip()}"}
         extra_headers = spec.driver_options.get("extra_headers")
         if isinstance(extra_headers, dict):
             headers.update({str(k): str(v) for k, v in extra_headers.items()})
+        session_header = str(spec.driver_options.get("session_header") or "").strip()
+        self._session_header = session_header
+        if session_header:
+            # Fallback id per concrete target, used when the caller carries no
+            # conversation id. Never exposes credentials or message content.
+            headers[session_header] = f"ses_{uuid.uuid4().hex}"
         request_timeout = httpx.Timeout(
             connect=_AI_CONNECT_TIMEOUT_SEC,
             read=spec.request_timeout_sec,
@@ -448,13 +460,26 @@ class OpenAIChatTarget:
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """Send one canonical request through the OpenAI chat-completions protocol."""
 
-        payload = serialize_request(request, self.model, self.supports_tools)
+        payload = serialize_request(
+            request,
+            self.model,
+            self.supports_tools,
+            provider_preferences=self.provider_preferences,
+        )
         if self.explicit_stream is not None:
             payload["stream"] = self.explicit_stream
 
+        request_headers: dict[str, str] | None = None
+        if self._session_header and request.session_id:
+            # One conversation keeps one id across every turn, tool round and
+            # provider fallback so upstream routing and prompt cache stay warm.
+            request_headers = {self._session_header: request.session_id}
+
         transport_error: ProviderError | None = None
         try:
-            response = await self._client.post("chat/completions", json=payload)
+            response = await self._client.post(
+                "chat/completions", json=payload, headers=request_headers
+            )
         except httpx.HTTPError as exc:
             transport_error = ProviderError(
                 f"{self.name}: lỗi mạng "

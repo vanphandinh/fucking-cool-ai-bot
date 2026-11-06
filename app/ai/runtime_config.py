@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
     from app.ai.catalog import ProviderProfile
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
 
 
 MAX_AI_PROVIDER_TARGETS = 64
+_PROVIDER_SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
 
 
 def parse_unique_csv_preserve_case(raw: str | None) -> list[str]:
@@ -37,11 +39,23 @@ class ProviderRuntimeSettings(BaseModel):
     base_url: str = ""
     text_models: str = ""
     vision_models: str = ""
+    provider: str = ""
     request_timeout_sec: float | None = Field(
         default=None,
         gt=0,
         allow_inf_nan=False,
     )
+
+    @field_validator("provider")
+    @classmethod
+    def _check_provider_slugs(cls, value: str) -> str:
+        for part in (value or "").split(","):
+            token = part.strip()
+            if token and _PROVIDER_SLUG_RE.fullmatch(token) is None:
+                raise ValueError(
+                    "provider must be a comma-separated list of provider slugs"
+                )
+        return value
 
     @property
     def api_keys_list(self) -> list[str]:
@@ -54,6 +68,10 @@ class ProviderRuntimeSettings(BaseModel):
     @property
     def vision_models_list(self) -> list[str]:
         return parse_unique_csv_preserve_case(self.vision_models)
+
+    @property
+    def provider_slugs_list(self) -> list[str]:
+        return parse_unique_csv_preserve_case(self.provider)
 
     def resolve_base_url(self, profile: ProviderProfile) -> str:
         return self.base_url.strip() or profile.default_base_url

@@ -140,15 +140,15 @@ def _request() -> ChatRequest:
 
 
 class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_xkiro_older_success_cannot_clear_newer_credential_cooldown(self) -> None:
+    async def test_openrouter_older_success_cannot_clear_newer_credential_cooldown(self) -> None:
         raced = _BlockingRateLimitProvider(
-            "xkiro",
+            "openrouter",
             model="model-a",
             credential_id="cred-1",
         )
         sibling_key = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [
                     ChatResponse(content="b-sibling"),
                     ChatResponse(content="c-sibling"),
@@ -158,13 +158,13 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             credential_id="cred-2",
         )
         same_key_other_model = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="must-not-run")]),
             model="model-b",
             credential_id="cred-1",
         )
         router = AIProviderRouter(
             [raced, sibling_key, same_key_other_model],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
         )
         raced_identity = provider_target_identity(raced)
@@ -187,7 +187,7 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(
             credential_health.available(),
-            "older success must not erase the newer xKiro credential cooldown",
+            "older success must not erase the newer OpenRouter credential cooldown",
         )
         self.assertFalse(
             raced.health.available(),

@@ -15,10 +15,10 @@ class _ToolThenConcurrentRateLimitProvider(ScriptedProvider):
     """A starts a tool round; B rate-limits the same target before A continues."""
 
     def __init__(self) -> None:
-        super().__init__("xkiro", [])
+        super().__init__("openrouter", [])
         self.model = "model-a"
         self.credential_id = "cred-1"
-        self.target_id = "xkiro:text:m1:c1"
+        self.target_id = "openrouter:text:m1:c1"
         self.call_count = 0
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -78,12 +78,12 @@ class _ToolThenConcurrentChainnodeAuthFailureProvider(ScriptedProvider):
 
 def _target_two() -> ScriptedProvider:
     provider = ScriptedProvider(
-        "xkiro",
+        "openrouter",
         [ChatResponse(content="request-b"), ChatResponse(content="request-a")],
     )
     provider.model = "model-a"
     provider.credential_id = "cred-2"
-    provider.target_id = "xkiro:text:m1:c2"
+    provider.target_id = "openrouter:text:m1:c2"
     return provider
 
 
@@ -104,7 +104,7 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
         sibling = _target_two()
         router = AIProviderRouter(
             [raced, sibling],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
         )
         tool_started = asyncio.Event()

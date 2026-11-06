@@ -17,36 +17,44 @@ class ConfigRegressionTests(unittest.TestCase):
         settings = Settings(_env_file=None, bot_username="@MyBot")
         self.assertEqual(settings.bot_username_clean, "mybot")
 
-    def test_provider_defaults_make_chainnode_primary_and_xkiro_fallback(self) -> None:
+    def test_provider_defaults_make_chainnode_primary_openrouter_and_opencode_fallback(
+        self,
+    ) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
-        self.assertEqual(provider_runtime(settings, "xkiro").api_keys_list, [])
+        self.assertEqual(
+            settings.text_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(
+            settings.vision_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(provider_runtime(settings, "openrouter").api_keys_list, [])
 
-    def test_xkiro_text_order_requires_explicit_model_when_key_is_configured(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "AI_PROVIDERS__XKIRO__TEXT_MODELS"):
+    def test_openrouter_text_order_requires_explicit_model_when_key_is_configured(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "AI_PROVIDERS__OPENROUTER__TEXT_MODELS"):
             Settings(
                 _env_file=None,
-                ai_providers={"xkiro": {"api_keys": "test-key", "text_models": ""}},
-                text_provider_order="chainnode,xkiro",
+                ai_providers={"openrouter": {"api_keys": "test-key", "text_models": ""}},
+                text_provider_order="chainnode,openrouter",
                 vision_enabled=False,
             )
 
-    def test_xkiro_vision_order_requires_explicit_model_when_enabled(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "AI_PROVIDERS__XKIRO__VISION_MODELS"):
+    def test_openrouter_vision_order_requires_explicit_model_when_enabled(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "AI_PROVIDERS__OPENROUTER__VISION_MODELS"):
             Settings(
                 _env_file=None,
-                ai_providers={"xkiro": {"api_keys": "test-key", "text_models": "M"}},
-                text_provider_order="xkiro",
+                ai_providers={"openrouter": {"api_keys": "test-key", "text_models": "M"}},
+                text_provider_order="openrouter",
                 vision_enabled=True,
-                vision_provider_order="chainnode,xkiro",
+                vision_provider_order="chainnode,openrouter",
             )
 
-    def test_disabled_vision_does_not_require_xkiro_vision_model(self) -> None:
+    def test_disabled_vision_does_not_require_openrouter_vision_model(self) -> None:
         settings = Settings(
             _env_file=None,
-            ai_providers={"xkiro": {"api_keys": "test-key", "text_models": "M"}},
-            text_provider_order="xkiro",
+            ai_providers={"openrouter": {"api_keys": "test-key", "text_models": "M"}},
+            text_provider_order="openrouter",
             vision_enabled=False,
         )
         self.assertFalse(settings.vision_enabled)

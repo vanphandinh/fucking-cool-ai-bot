@@ -1,4 +1,4 @@
-"""Offline contract tests for the xKiro live qualification probe."""
+"""Offline contract tests for the OpenRouter live qualification probe."""
 
 from __future__ import annotations
 
@@ -15,22 +15,22 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-import scripts.probe_xkiro as probe
+import scripts.probe_openrouter as probe
 
 
 ROOT = Path(__file__).parents[1]
 FREE_TEXT_MODEL = {
     "id": "free-text",
-    "access_tier": "free",
-    "pricing": {"input": 0, "output": 0},
-    "capabilities": {"tools": True, "vision": False},
+    "pricing": {"prompt": "0", "completion": 0},
+    "supported_parameters": ["temperature", "tools"],
+    "architecture": {"input_modalities": ["text"]},
     "context_length": 131072,
 }
 FREE_VISION_MODEL = {
     "id": "free-vision",
-    "access_tier": "free",
-    "pricing": {"input": "0", "output": "0.0"},
-    "capabilities": {"tools": True, "vision": True},
+    "pricing": {"prompt": 0, "completion": "0.0"},
+    "supported_parameters": ["tools"],
+    "architecture": {"input_modalities": ["text", "image"]},
     "context_length": 262144,
 }
 
@@ -51,7 +51,7 @@ def _structured_tool_response(request: httpx.Request) -> httpx.Response:
                                 "function": {
                                     "name": "echo_probe",
                                     "arguments": json.dumps(
-                                        {"value": "XKIRO_TOOL_PROBE"}
+                                        {"value": "OPENROUTER_TOOL_PROBE"}
                                     ),
                                 },
                             }
@@ -64,16 +64,16 @@ def _structured_tool_response(request: httpx.Request) -> httpx.Response:
     )
 
 
-class XKiroProbeCliTests(unittest.TestCase):
+class OpenRouterProbeCliTests(unittest.TestCase):
     def test_direct_script_invocation_imports_app_package(self) -> None:
         env = dict(os.environ)
-        retired_probe_key = "XKIRO_PROBE_API_" + "KEY"
+        retired_probe_key = "OPENROUTER_PROBE_API_" + "KEY"
         env.pop(retired_probe_key, None)
-        env["AI_PROVIDERS__XKIRO__API_KEYS"] = ""
+        env["AI_PROVIDERS__OPENROUTER__API_KEYS"] = ""
         result = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "scripts" / "probe_xkiro.py"),
+                str(ROOT / "scripts" / "probe_openrouter.py"),
                 "--text-model",
                 "free-text",
             ],
@@ -85,7 +85,7 @@ class XKiroProbeCliTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn('"error": "AI_PROVIDERS__XKIRO__API_KEYS is required"', result.stdout)
+        self.assertIn('"error": "AI_PROVIDERS__OPENROUTER__API_KEYS is required"', result.stdout)
         self.assertNotIn("ModuleNotFoundError", result.stderr)
 
     def test_parse_args_rejects_invalid_numeric_bounds(self) -> None:
@@ -102,63 +102,113 @@ class XKiroProbeCliTests(unittest.TestCase):
                 self.assertEqual(exc.exception.code, 2)
 
 
-class XKiroCatalogTests(unittest.TestCase):
+class OpenRouterCatalogTests(unittest.TestCase):
     def test_catalog_lookup_requires_exact_model_id(self) -> None:
         catalog = {"data": [FREE_TEXT_MODEL, FREE_VISION_MODEL]}
         self.assertEqual(probe.find_model(catalog, "free-text"), FREE_TEXT_MODEL)
         self.assertIsNone(probe.find_model(catalog, "FREE-TEXT"))
         self.assertIsNone(probe.find_model(catalog, "missing"))
 
-    def test_free_gate_rejects_non_free_access_tier(self) -> None:
-        model = {**FREE_TEXT_MODEL, "access_tier": "paid"}
-        errors = probe.qualification_errors(model, require_vision=False)
-        self.assertTrue(any("access_tier" in error for error in errors))
-
-    def test_free_gate_rejects_nonzero_input_or_output_pricing(self) -> None:
+    def test_free_gate_rejects_nonzero_prompt_or_completion_pricing(self) -> None:
         for pricing in (
-            {"input": 0.01, "output": 0},
-            {"input": 0, "output": "0.02"},
+            {"prompt": 0.01, "completion": 0},
+            {"prompt": 0, "completion": "0.02"},
         ):
             with self.subTest(pricing=pricing):
                 model = {**FREE_TEXT_MODEL, "pricing": pricing}
                 errors = probe.qualification_errors(model, require_vision=False)
                 self.assertTrue(any("pricing" in error for error in errors))
 
-    def test_text_candidate_requires_tools(self) -> None:
-        model = {
-            **FREE_TEXT_MODEL,
-            "capabilities": {"tools": False, "vision": False},
-        }
+    def test_text_candidate_requires_tools_in_supported_parameters(self) -> None:
+        model = {**FREE_TEXT_MODEL, "supported_parameters": ["temperature"]}
         errors = probe.qualification_errors(model, require_vision=False)
         self.assertTrue(any("tools" in error for error in errors))
 
-    def test_vision_candidate_requires_vision_and_tools(self) -> None:
+    def test_vision_candidate_requires_image_input_modality_and_tools(self) -> None:
         self.assertEqual(
             probe.qualification_errors(FREE_VISION_MODEL, require_vision=True),
             [],
         )
         model = {
             **FREE_VISION_MODEL,
-            "capabilities": {"tools": True, "vision": False},
+            "architecture": {"input_modalities": ["text"]},
         }
         errors = probe.qualification_errors(model, require_vision=True)
-        self.assertTrue(any("vision" in error for error in errors))
+        self.assertTrue(any("image" in error for error in errors))
+
+    def test_catalog_summary_omits_removed_access_fields(self) -> None:
+        summary = probe.catalog_summary(FREE_TEXT_MODEL)
+        self.assertEqual(
+            summary,
+            {
+                "id": "free-text",
+                "pricing": {"prompt": "0", "completion": 0},
+                "context_length": 131072,
+            },
+        )
+        self.assertNotIn("capabilities", summary)
+        self.assertNotIn("access_tier", summary)
 
 
-class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
+class OpenRouterProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
+    def test_provider_preferences_are_read_from_canonical_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDERS__OPENROUTER__PROVIDER": (
+                    " deepinfra , together, deepinfra ,, "
+                )
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                probe.provider_preferences(),
+                {
+                    "only": ["deepinfra", "together"],
+                    "order": ["deepinfra", "together"],
+                },
+            )
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(probe.provider_preferences())
+        with patch.dict(
+            os.environ,
+            {"AI_PROVIDERS__OPENROUTER__PROVIDER": "bad slug"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "provider slugs"):
+                probe.provider_preferences()
+
+    async def test_probe_rejects_invalid_provider_slug_before_network(self) -> None:
+        args = probe.parse_args(["--text-model", "free-text"])
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret",
+                "AI_PROVIDERS__OPENROUTER__PROVIDER": "bad slug",
+            },
+            clear=True,
+        ):
+            with patch.object(probe, "fetch_catalog", new=AsyncMock()) as fetch:
+                with patch.object(probe, "emit") as emit:
+                    result = await probe.run_probe(args)
+
+        self.assertEqual(result, 2)
+        fetch.assert_not_awaited()
+        self.assertIn("PROVIDER", emit.call_args.kwargs["error"])
+
     def test_probe_uses_first_canonical_credential_pool_entry(self) -> None:
         with patch.dict(
             os.environ,
-            {"AI_PROVIDERS__XKIRO__API_KEYS": "  ProbeOne , ProbeTwo ,  "},
+            {"AI_PROVIDERS__OPENROUTER__API_KEYS": "  ProbeOne , ProbeTwo ,  "},
             clear=True,
         ):
-            self.assertEqual(probe.xkiro_probe_credential(), "ProbeOne")
+            self.assertEqual(probe.openrouter_probe_credential(), "ProbeOne")
 
     async def test_probe_accepts_canonical_credential_pool(self) -> None:
         args = probe.parse_args(["--text-model", "free-text"])
         with patch.dict(
             os.environ,
-            {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"},
+            {"AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret"},
             clear=True,
         ):
             with patch.object(
@@ -175,6 +225,35 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             {"compatible": False, "error": "stop-after-auth"},
         )
 
+    async def test_live_probe_threads_provider_routing(self) -> None:
+        args = probe.parse_args(["--text-model", "free-text"])
+        catalog = {"data": [FREE_TEXT_MODEL]}
+        expected = {"only": ["deepinfra"], "order": ["deepinfra"]}
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret",
+                "AI_PROVIDERS__OPENROUTER__PROVIDER": "deepinfra",
+            },
+            clear=True,
+        ):
+            with patch.object(
+                probe,
+                "fetch_catalog",
+                new=AsyncMock(return_value=catalog),
+            ):
+                with patch.object(probe, "_probe_plain", new=AsyncMock()) as plain:
+                    with patch.object(
+                        probe,
+                        "_probe_tool_flow",
+                        new=AsyncMock(),
+                    ) as tool_flow:
+                        result = await probe.run_probe(args)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(plain.await_args.kwargs["provider"], expected)
+        self.assertEqual(tool_flow.await_args.kwargs["provider"], expected)
+
     async def test_all_catalog_gates_run_before_live_probe(self) -> None:
         args = probe.parse_args(
             [
@@ -187,7 +266,11 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         catalog = {"data": [FREE_TEXT_MODEL]}
-        with patch.dict(os.environ, {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"}, clear=True):
+        with patch.dict(
+            os.environ,
+            {"AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret"},
+            clear=True,
+        ):
             with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
                 with patch.object(probe, "_probe_plain", new=AsyncMock()) as plain:
                     with patch.object(
@@ -204,9 +287,9 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_emits_every_requested_catalog_gate_before_failing(self) -> None:
         paid_text_model = {
             "id": "paid-text",
-            "access_tier": "paid",
-            "pricing": {"input": 0, "output": 0},
-            "capabilities": {"tools": True, "vision": False},
+            "pricing": {"prompt": "0.5", "completion": 0},
+            "supported_parameters": ["tools"],
+            "architecture": {"input_modalities": ["text"]},
             "context_length": 131072,
         }
         args = probe.parse_args(
@@ -225,7 +308,11 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("live probe must not run after any catalog gate failure")
 
         output = io.StringIO()
-        with patch.dict(os.environ, {"AI_PROVIDERS__XKIRO__API_KEYS": "probe-secret"}, clear=True):
+        with patch.dict(
+            os.environ,
+            {"AI_PROVIDERS__OPENROUTER__API_KEYS": "probe-secret"},
+            clear=True,
+        ):
             with patch.object(probe, "fetch_catalog", new=AsyncMock(return_value=catalog)):
                 with patch.object(probe, "_probe_plain", new=forbidden_probe):
                     with patch.object(probe, "_probe_tool_flow", new=forbidden_probe):
@@ -244,7 +331,7 @@ class XKiroProbeEnvironmentContractTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-class XKiroPayloadTests(unittest.TestCase):
+class OpenRouterPayloadTests(unittest.TestCase):
     def test_baseline_payload_is_explicitly_non_streaming(self) -> None:
         messages = [{"role": "user", "content": "hello"}]
         payload = probe.build_chat_payload("free-text", messages)
@@ -259,6 +346,17 @@ class XKiroPayloadTests(unittest.TestCase):
         )
         self.assertEqual(set(with_tools), {"model", "messages", "tools", "stream"})
         self.assertNotIn("tool_choice", with_tools)
+
+    def test_payload_includes_provider_routing_when_configured(self) -> None:
+        payload = probe.build_chat_payload(
+            "free-text",
+            [{"role": "user", "content": "hello"}],
+            provider={"only": ["deepinfra"], "order": ["deepinfra"]},
+        )
+        self.assertEqual(
+            payload["provider"],
+            {"only": ["deepinfra"], "order": ["deepinfra"]},
+        )
 
     def test_tool_probe_rejects_missing_structured_tool_call(self) -> None:
         response = {
@@ -279,7 +377,7 @@ class XKiroPayloadTests(unittest.TestCase):
                     "type": "function",
                     "function": {
                         "name": "echo_probe",
-                        "arguments": json.dumps({"value": "XKIRO_TOOL_PROBE"}),
+                        "arguments": json.dumps({"value": "OPENROUTER_TOOL_PROBE"}),
                     },
                 }
             ],
@@ -302,7 +400,7 @@ class XKiroPayloadTests(unittest.TestCase):
             {
                 "role": "tool",
                 "tool_call_id": "call_123",
-                "content": "XKIRO_TOOL_PROBE_OK",
+                "content": "OPENROUTER_TOOL_PROBE_OK",
             },
         )
         self.assertEqual(payload["tools"], [probe.TOOL_SCHEMA])
@@ -323,7 +421,7 @@ class XKiroPayloadTests(unittest.TestCase):
         )
 
 
-class XKiroToolContinuationTests(unittest.IsolatedAsyncioTestCase):
+class OpenRouterToolContinuationTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_flow_rejects_nonsemantic_continuation(self) -> None:
         requests = 0
 
@@ -343,10 +441,10 @@ class XKiroToolContinuationTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
-            with patch("scripts.probe_xkiro.secrets", create=True) as secrets_module:
+            with patch("scripts.probe_openrouter.secrets", create=True) as secrets_module:
                 secrets_module.token_hex.return_value = "abc123"
                 with self.assertRaisesRegex(ValueError, "tool result marker"):
                     await probe._probe_tool_flow(
@@ -371,7 +469,7 @@ class XKiroToolContinuationTests(unittest.IsolatedAsyncioTestCase):
                         {
                             "message": {
                                 "role": "assistant",
-                                "content": "XKIRO_TOOL_RESULT_abc123",
+                                "content": "OPENROUTER_TOOL_RESULT_abc123",
                             }
                         }
                     ]
@@ -380,10 +478,10 @@ class XKiroToolContinuationTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
-            with patch("scripts.probe_xkiro.secrets", create=True) as secrets_module:
+            with patch("scripts.probe_openrouter.secrets", create=True) as secrets_module:
                 secrets_module.token_hex.return_value = "abc123"
                 await probe._probe_tool_flow(
                     client,
@@ -394,11 +492,11 @@ class XKiroToolContinuationTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         tool_message = request_payloads[1]["messages"][-1]
-        self.assertIn("XKIRO_TOOL_RESULT_abc123", tool_message["content"])
+        self.assertIn("OPENROUTER_TOOL_RESULT_abc123", tool_message["content"])
         self.assertNotEqual(tool_message["content"], probe.TOOL_RESULT)
 
 
-class XKiroRetryTests(unittest.IsolatedAsyncioTestCase):
+class OpenRouterRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_post_chat_honors_retry_after_for_429(self) -> None:
         requests = 0
 
@@ -419,10 +517,10 @@ class XKiroRetryTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
-            with patch("scripts.probe_xkiro.asyncio.sleep", new=AsyncMock()) as sleep:
+            with patch("scripts.probe_openrouter.asyncio.sleep", new=AsyncMock()) as sleep:
                 response, summary = await probe.post_chat(
                     client,
                     probe.build_chat_payload(
@@ -447,10 +545,10 @@ class XKiroRetryTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
-            with patch("scripts.probe_xkiro.asyncio.sleep", new=AsyncMock()) as sleep:
+            with patch("scripts.probe_openrouter.asyncio.sleep", new=AsyncMock()) as sleep:
                 with self.assertRaisesRegex(ValueError, "Retry-After"):
                     await probe.post_chat(
                         client,
@@ -474,10 +572,10 @@ class XKiroRetryTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
-            with patch("scripts.probe_xkiro.asyncio.sleep", new=AsyncMock()):
+            with patch("scripts.probe_openrouter.asyncio.sleep", new=AsyncMock()):
                 response, summary = await probe.post_chat(
                     client,
                     probe.build_chat_payload(

@@ -1,4 +1,4 @@
-"""Regression tests for semantic xKiro vision qualification."""
+"""Regression tests for semantic OpenRouter vision qualification."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ import unittest
 
 import httpx
 
-import scripts.probe_xkiro as probe
+import scripts.probe_openrouter as probe
 
 
-class XKiroVisionSemanticGateTests(unittest.IsolatedAsyncioTestCase):
+class OpenRouterVisionSemanticGateTests(unittest.IsolatedAsyncioTestCase):
     async def test_vision_probe_rejects_response_without_expected_marker(self) -> None:
         def respond(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
@@ -28,7 +28,7 @@ class XKiroVisionSemanticGateTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
             with self.assertRaisesRegex(ValueError, "expected image marker"):
@@ -61,7 +61,7 @@ class XKiroVisionSemanticGateTests(unittest.IsolatedAsyncioTestCase):
             )
 
         async with httpx.AsyncClient(
-            base_url="https://api.xkiro.com/v1/",
+            base_url="https://openrouter.ai/api/v1/",
             transport=httpx.MockTransport(respond),
         ) as client:
             await probe._probe_plain(

@@ -71,7 +71,7 @@ class ProviderTargetBuilderTests(unittest.TestCase):
                 }
             },
             text_provider_order="chainnode",
-            vision_provider_order="xkiro",
+            vision_provider_order="openrouter",
         )
         targets = build_provider_targets(settings, ["chainnode"])
         try:

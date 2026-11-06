@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import LinkPreviewOptions, ReplyParameters
 
 from ..ai.base import AllProvidersFailed, NoCapableProvider
+from ..ai.session import provider_session_id
 from ..core.context import ChatMemory
 from ..core.formatting import format_sources
 from ..core.job_manager import JobCapacityError, JobSubmission, UserFacingJobError
@@ -83,9 +84,16 @@ class QuestionProcessor:
     async def execute(self, record, operations):
         request = record.prepared_request
         if request is None:
+            chat_id = getattr(record.submission, "chat_id", None)
+            topic_id = getattr(record.submission, "topic_id", None)
             request = UserRequest(
                 text=record.submission.question,
                 quoted_text=record.submission.quoted,
+                session_id=(
+                    provider_session_id(conversation_key(chat_id, topic_id))
+                    if chat_id is not None
+                    else None
+                ),
             )
         try:
             answer = await self.orchestrator.ask(
@@ -308,7 +316,10 @@ async def submit_controlled_question(
         if images and len(images) > _vision_limit(settings, orchestrator.router):
             raise UserFacingJobError(_vision_limit_message(settings, orchestrator.router))
         return UserRequest(
-            text=question, quoted_text=quoted, images=images
+            text=question,
+            quoted_text=quoted,
+            images=images,
+            session_id=provider_session_id(key),
         )
 
     submission = JobSubmission(

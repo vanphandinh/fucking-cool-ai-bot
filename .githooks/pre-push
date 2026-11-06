@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Pre-push gate: fail when the pinned runtime closure has a published advisory.
+#
+# Mirrors the CI "Audit installed dependencies" step, so the same failure is
+# caught locally instead of after a branch reaches GitHub. Advisories are
+# published independently of commits, so this audits on every push rather than
+# only when requirements.lock.txt changes.
+#
+# Enable per clone (once):
+#   git config core.hooksPath .githooks
+#
+# Bypass a single push when the audit service is unreachable:
+#   PIP_AUDIT_SKIP=1 git push
+set -euo pipefail
+
+if [[ "${PIP_AUDIT_SKIP:-0}" == "1" ]]; then
+    echo "pre-push: PIP_AUDIT_SKIP=1 -- dependency audit skipped" >&2
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+PYTHON="${PYTHON:-python}"
+
+if ! "$PYTHON" -c 'import pip_audit' >/dev/null 2>&1; then
+    echo "pre-push: pip-audit is not installed for '$PYTHON'." >&2
+    echo "          install it with: $PYTHON -m pip install 'pip-audit==2.10.1'" >&2
+    echo "          or bypass once with: PIP_AUDIT_SKIP=1 git push" >&2
+    exit 1
+fi
+
+echo "pre-push: auditing requirements.lock.txt for known advisories" >&2
+if ! "$PYTHON" -m pip_audit -r requirements.lock.txt --progress-spinner off; then
+    echo "pre-push: pip-audit found advisories in the pinned lock." >&2
+    echo "          bump the affected pins (see docs/VPS_REDEPLOY_AND_FEATURE_FLAGS.md)." >&2
+    exit 1
+fi
+
+echo "pre-push: dependency audit clean" >&2

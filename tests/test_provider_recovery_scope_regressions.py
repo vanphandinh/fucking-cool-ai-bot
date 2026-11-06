@@ -54,21 +54,21 @@ def _request():
 
 
 class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_xkiro_403_rotates_entitlement_without_family_fallback(self) -> None:
+    async def test_openrouter_403_rotates_entitlement_without_family_fallback(self) -> None:
         denied = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ProviderError("entitlement", status_code=403, transient=False)],
             ),
             model="model-a",
             credential_id="cred-1",
-            target_id="xkiro:text:model-a:cred-1",
+            target_id="openrouter:text:model-a:cred-1",
         )
         sibling = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="xkiro-ok")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="openrouter-ok")]),
             model="model-a",
             credential_id="cred-2",
-            target_id="xkiro:text:model-a:cred-2",
+            target_id="openrouter:text:model-a:cred-2",
         )
         backup = _target(
             ScriptedProvider("backup", [ChatResponse(content="backup")]),
@@ -78,13 +78,13 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router(
             [denied, sibling, backup],
-            text_order=("xkiro", "backup"),
+            text_order=("openrouter", "backup"),
         )
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result.content, "xkiro-ok")
-        self.assertEqual(result.provider, "xkiro")
+        self.assertEqual(result.content, "openrouter-ok")
+        self.assertEqual(result.provider, "openrouter")
         self.assertEqual(result.fallbacks, ())
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 0)
@@ -93,10 +93,10 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sibling.requests), 1)
         self.assertEqual(backup.requests, [])
 
-    async def test_xkiro_402_disables_credential_across_requests(self) -> None:
+    async def test_openrouter_402_disables_credential_across_requests(self) -> None:
         key1 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [
                     ProviderError("payment", status_code=402, transient=False),
                     ChatResponse(content="must-not-run"),
@@ -104,18 +104,18 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
             ),
             model="model-a",
             credential_id="cred-1",
-            target_id="xkiro:text:model-a:cred-1",
+            target_id="openrouter:text:model-a:cred-1",
         )
         key2 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ChatResponse(content="first-ok"), ChatResponse(content="second-ok")],
             ),
             model="model-a",
             credential_id="cred-2",
-            target_id="xkiro:text:model-a:cred-2",
+            target_id="openrouter:text:model-a:cred-2",
         )
-        router = _router([key1, key2], text_order=("xkiro",))
+        router = _router([key1, key2], text_order=("openrouter",))
 
         first = await router.complete(_request(), noop_tool)
         second = await router.complete(_request(), noop_tool)
@@ -128,28 +128,28 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_404_disables_model_across_credential_siblings(self) -> None:
         model_a_key1 = _target(
             ScriptedProvider(
-                "xkiro",
+                "openrouter",
                 [ProviderError("missing", status_code=404, transient=False)],
             ),
             model="model-a",
             credential_id="cred-1",
-            target_id="xkiro:text:model-a:cred-1",
+            target_id="openrouter:text:model-a:cred-1",
         )
         model_a_key2 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="must-not-run")]),
             model="model-a",
             credential_id="cred-2",
-            target_id="xkiro:text:model-a:cred-2",
+            target_id="openrouter:text:model-a:cred-2",
         )
         model_b_key1 = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="model-b-ok")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="model-b-ok")]),
             model="model-b",
             credential_id="cred-1",
-            target_id="xkiro:text:model-b:cred-1",
+            target_id="openrouter:text:model-b:cred-1",
         )
         router = _router(
             [model_a_key1, model_a_key2, model_b_key1],
-            text_order=("xkiro",),
+            text_order=("openrouter",),
         )
 
         result = await router.complete(_request(), noop_tool)
@@ -165,24 +165,24 @@ class ProviderRecoveryScopeRegressionTests(unittest.IsolatedAsyncioTestCase):
         invalid = [
             _target(
                 ScriptedProvider(
-                    "xkiro",
+                    "openrouter",
                     [ProviderError("missing", status_code=404, transient=False)],
                 ),
                 model="model-a",
                 credential_id=f"cred-{index}",
-                target_id=f"xkiro:text:model-a:cred-{index}",
+                target_id=f"openrouter:text:model-a:cred-{index}",
             )
             for index in range(1, 7)
         ]
         healthy = _target(
-            ScriptedProvider("xkiro", [ChatResponse(content="healthy")]),
+            ScriptedProvider("openrouter", [ChatResponse(content="healthy")]),
             model="model-b",
             credential_id="cred-1",
-            target_id="xkiro:text:model-b:cred-1",
+            target_id="openrouter:text:model-b:cred-1",
         )
         router = _router(
             [*invalid, healthy],
-            text_order=("xkiro",),
+            text_order=("openrouter",),
             recovery_hops=2,
         )
 

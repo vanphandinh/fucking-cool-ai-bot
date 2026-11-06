@@ -49,6 +49,7 @@ class TargetSpec:
     request_timeout_sec: float
     recovery_policy: RecoveryPolicy
     driver_options: Mapping[str, object] = field(default_factory=dict)
+    provider_preferences: tuple[str, ...] = ()
 
 
 def provider_target_identity(provider: object) -> ProviderTargetIdentity:

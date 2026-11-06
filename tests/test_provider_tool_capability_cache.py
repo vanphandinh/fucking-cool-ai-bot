@@ -40,12 +40,12 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
         first_provider = _make_target(
             api_key="key-one",
             credential_id="cred-1",
-            target_id="xkiro:text:m1:c1",
+            target_id="openrouter:text:m1:c1",
         )
         second_provider = _make_target(
             api_key="key-two",
             credential_id="cred-2",
-            target_id="xkiro:text:m1:c2",
+            target_id="openrouter:text:m1:c2",
         )
         await first_provider.aclose()
         await second_provider.aclose()
@@ -53,7 +53,7 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
         second_provider._client = _mock_client(second_respond)
         router = AIProviderRouter(
             [first_provider, second_provider],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
         )
 
@@ -89,7 +89,7 @@ class ProviderToolCapabilityCacheTests(unittest.IsolatedAsyncioTestCase):
 
 def _make_target(*, api_key: str, credential_id: str, target_id: str):
     return make_catalog_target(
-        "xkiro",
+        "openrouter",
         model="shared-model",
         credential=api_key,
         credential_id=credential_id,
@@ -99,7 +99,7 @@ def _make_target(*, api_key: str, credential_id: str, target_id: str):
 
 def _mock_client(responder) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        base_url="https://api.xkiro.com/v1/",
+        base_url="https://openrouter.ai/api/v1/",
         transport=httpx.MockTransport(responder),
     )
 

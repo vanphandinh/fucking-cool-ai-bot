@@ -82,13 +82,13 @@ class ProviderRetryStateTests(unittest.TestCase):
             "chainnode", transport_error("read_timeout"), target_id="chain-target"
         )
         self.state.record_transport_failure(
-            "xkiro", transport_error("read_timeout"), target_id="xkiro-target"
+            "openrouter", transport_error("read_timeout"), target_id="openrouter-target"
         )
 
         self.state.record_chat_success("chainnode")
 
         self.assertEqual(self.state.pending_health_incidents("chainnode"), ())
-        self.assertEqual(len(self.state.pending_health_incidents("xkiro")), 1)
+        self.assertEqual(len(self.state.pending_health_incidents("openrouter")), 1)
 
     def test_pending_health_incidents_are_keyed_by_target(self) -> None:
         self.state.record_transport_failure(

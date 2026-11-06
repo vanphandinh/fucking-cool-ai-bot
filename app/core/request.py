@@ -27,6 +27,8 @@ class UserRequest:
     text: str
     quoted_text: str | None = None
     images: tuple[ImageAttachment, ...] = ()
+    # Opaque conversation id handed to providers that route on a session header.
+    session_id: str | None = None
 
     @property
     def requires_vision(self) -> bool:

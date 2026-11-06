@@ -31,6 +31,17 @@ class ProviderEnvContractTests(unittest.TestCase):
             self.assertEqual(runtime.text_models_list, ["ModelA", "ModelB"])
             self.assertEqual(runtime.request_timeout_sec, 42.0)
 
+    def test_openrouter_provider_routing_env_is_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = Path(tmp) / ".env"
+            env.write_text(
+                "AI_PROVIDERS__OPENROUTER__PROVIDER=deepinfra,together\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=env)
+            runtime = provider_runtime(settings, "openrouter")
+            self.assertEqual(runtime.provider_slugs_list, ["deepinfra", "together"])
+
     def test_runtime_values_preserve_case_and_first_occurrence(self) -> None:
         runtime = ProviderRuntimeSettings(
             api_keys="KeyA,keya,KeyA",

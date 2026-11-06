@@ -187,8 +187,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        xkiro = ScriptedProvider(
-            "xkiro",
+        openrouter = ScriptedProvider(
+            "openrouter",
             [
                 ChatResponse(
                     tool_calls=[
@@ -221,8 +221,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         provider_router = AIProviderRouter(
-            [chainnode, xkiro],
-            text_provider_order=("chainnode", "xkiro"),
+            [chainnode, openrouter],
+            text_provider_order=("chainnode", "openrouter"),
             vision_provider_order=(),
             max_tool_rounds=5,
         )
@@ -296,7 +296,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetch_counts[url1], 1)
         self.assertEqual(fetch_counts[url2], 1)
         self.assertEqual(len(chainnode.requests), 1)
-        self.assertEqual(len(xkiro.requests), 4)
+        self.assertEqual(len(openrouter.requests), 4)
         self.assertEqual(final_answers, [(7, "final answer")])
 
         await self.manager.shutdown()
@@ -318,7 +318,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
 
         class RenewalBudgetProvider(ScriptedProvider):
             def __init__(self):
-                super().__init__("xkiro", [])
+                super().__init__("openrouter", [])
                 self.tool_rounds_requested = 0
                 self.synthesis_requests = 0
 
@@ -342,7 +342,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         provider = RenewalBudgetProvider()
         provider_router = AIProviderRouter(
             [provider],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
             max_tool_rounds=5,
         )
@@ -427,7 +427,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             max_tool_rounds=5,
         )
         provider = ScriptedProvider(
-            "xkiro",
+            "openrouter",
             [
                 ChatResponse(
                     tool_calls=[
@@ -454,7 +454,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         provider_router = AIProviderRouter(
             [provider],
-            text_provider_order=("xkiro",),
+            text_provider_order=("openrouter",),
             vision_provider_order=(),
             max_tool_rounds=5,
         )

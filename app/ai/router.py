@@ -436,6 +436,7 @@ class AIProviderRouter:
         portable_base_request = ChatRequest(
             messages=portable_base_messages,
             tools=request.tools,
+            session_id=request.session_id,
         )
         state = _RequestState(
             base_request=portable_base_request,
@@ -666,7 +667,11 @@ class AIProviderRouter:
                 raise _TargetBecameUnavailable
             health_snapshot = self._health_snapshot(provider, identity)
             response = await provider.chat(
-                ChatRequest(messages=tuple(messages), tools=tools)
+                ChatRequest(
+                    messages=tuple(messages),
+                    tools=tools,
+                    session_id=state.base_request.session_id,
+                )
             )
             _accumulate_usage(state, response.usage)
             return response, health_snapshot

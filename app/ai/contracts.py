@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
 
 
 _EMPTY_MAPPING = MappingProxyType({})
+# Session ids travel as HTTP header values, so only header-safe tokens pass.
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 
 
 def _freeze_mapping(value: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -93,10 +96,17 @@ class ToolDefinition:
 class ChatRequest:
     messages: tuple[ChatMessage, ...]
     tools: tuple[ToolDefinition, ...] = ()
+    # Stable per-conversation id for providers that route on a session header.
+    session_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "messages", tuple(self.messages))
         object.__setattr__(self, "tools", tuple(self.tools))
+        if (
+            self.session_id is not None
+            and _SESSION_ID_RE.fullmatch(self.session_id) is None
+        ):
+            raise ValueError("ChatRequest.session_id must be a header-safe token")
 
 
 def _freeze_usage(value: Mapping[str, int] | None) -> Mapping[str, int] | None:

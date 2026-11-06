@@ -65,10 +65,10 @@ class RouterBudgetTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "xkiro",
+            "openrouter",
             model="test-model",
             credential="test-key",
-            target_id="xkiro:text:test:c1",
+            target_id="openrouter:text:test:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -210,7 +210,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
 
         async def slow_answer(**kwargs):
             await asyncio.sleep(0.08)
-            return Answer(text="late answer", provider="xkiro")
+            return Answer(text="late answer", provider="openrouter")
 
         settings = Settings(_env_file=None, question_timeout_sec=0.02)
         await _handle_question(
@@ -243,7 +243,7 @@ class HandlerDeadlineTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(send_chat_action=AsyncMock()),
             reply=AsyncMock(),
         )
-        answer = Answer("answer", "xkiro")
+        answer = Answer("answer", "openrouter")
         orchestrator = SimpleNamespace(ask=AsyncMock(return_value=answer))
         async with locks.hold(-100200):
             task = asyncio.create_task(
@@ -289,7 +289,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="xkiro", aclose=AsyncMock())
+        provider = SimpleNamespace(name="openrouter", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -304,7 +304,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     _env_file=None,
                     bot_token="123:test",
                     ai_providers={
-                        "xkiro": {
+                        "openrouter": {
                             "api_keys": "test-key",
                             "text_models": "test-text-model",
                         }
@@ -324,7 +324,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             get_me=AsyncMock(side_effect=RuntimeError("startup failed")),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="xkiro", aclose=AsyncMock())
+        provider = SimpleNamespace(name="openrouter", aclose=AsyncMock())
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -339,7 +339,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                         _env_file=None,
                         bot_token="123:test",
                         ai_providers={
-                            "xkiro": {
+                            "openrouter": {
                                 "api_keys": "test-key",
                                 "text_models": "test-text-model",
                             }
@@ -379,7 +379,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             delete_webhook=AsyncMock(),
             session=SimpleNamespace(close=AsyncMock()),
         )
-        provider = SimpleNamespace(name="xkiro", aclose=close_provider)
+        provider = SimpleNamespace(name="openrouter", aclose=close_provider)
         with (
             patch.object(main, "Bot", return_value=bot),
             patch.object(
@@ -393,7 +393,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 _env_file=None,
                 bot_token="123:test",
                 ai_providers={
-                    "xkiro": {
+                    "openrouter": {
                         "api_keys": "test-key",
                         "text_models": "test-text-model",
                     }

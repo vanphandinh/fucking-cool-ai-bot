@@ -1,4 +1,4 @@
-"""Regression tests for Chainnode-primary and xKiro-fallback deployment defaults."""
+"""Regression tests for Chainnode-primary, OpenRouter and OpenCode fallback defaults."""
 
 from __future__ import annotations
 
@@ -10,11 +10,17 @@ from app.config import Settings
 
 
 class ProviderDeploymentDefaultsTests(unittest.TestCase):
-    def test_defaults_keep_chainnode_primary_xkiro_fallback_and_updated_limits(self) -> None:
+    def test_defaults_keep_chainnode_primary_openrouter_and_opencode_fallback(self) -> None:
         settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "xkiro"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "xkiro"])
+        self.assertEqual(
+            settings.text_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(
+            settings.vision_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
         self.assertEqual(settings.max_images_per_request, 1)
         self.assertEqual(settings.max_context_turns, 6)
         self.assertEqual(settings.max_tool_rounds, 5)
@@ -24,8 +30,14 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
         try:
             self.assertEqual(router.configured_provider_names(False), ())
             self.assertEqual(router.configured_provider_names(True), ())
-            self.assertEqual(router.provider_order(False), ("chainnode", "xkiro"))
-            self.assertEqual(router.provider_order(True), ("chainnode", "xkiro"))
+            self.assertEqual(
+                router.provider_order(False),
+                ("chainnode", "openrouter", "opencode"),
+            )
+            self.assertEqual(
+                router.provider_order(True),
+                ("chainnode", "openrouter", "opencode"),
+            )
         finally:
             asyncio.run(_close_router(router))
 
@@ -48,7 +60,7 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
         finally:
             asyncio.run(_close_router(router))
 
-    def test_both_credentials_activate_chainnode_then_xkiro(self) -> None:
+    def test_both_credentials_activate_chainnode_then_openrouter(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
@@ -58,10 +70,10 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
                         "text_models": "test-chainnode-text",
                         "vision_models": "test-chainnode-vision",
                     },
-                    "xkiro": {
-                        "api_keys": "test-xkiro-key",
-                        "text_models": "test-xkiro-text",
-                        "vision_models": "test-xkiro-vision",
+                    "openrouter": {
+                        "api_keys": "test-openrouter-key",
+                        "text_models": "test-openrouter-text",
+                        "vision_models": "test-openrouter-vision",
                     },
                 },
             )
@@ -69,11 +81,11 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
         try:
             self.assertEqual(
                 router.configured_provider_names(False),
-                ("chainnode", "xkiro"),
+                ("chainnode", "openrouter"),
             )
             self.assertEqual(
                 router.configured_provider_names(True),
-                ("chainnode", "xkiro"),
+                ("chainnode", "openrouter"),
             )
         finally:
             asyncio.run(_close_router(router))
