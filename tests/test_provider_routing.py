@@ -82,6 +82,20 @@ class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result, CompletionResult("ok", "second", ("second",)))
 
+    async def test_anonymous_session_id_survives_provider_fallback(self) -> None:
+        first = ScriptedProvider("first", [ProviderError("timeout")])
+        second = ScriptedProvider("second", [ChatResponse(content="ok")])
+        router = AIProviderRouter(
+            [first, second],
+            text_provider_order=("first", "second"),
+        )
+        await router.complete(text_request("hi"), noop_tool)
+        first_session = first.requests[0].session_id
+        second_session = second.requests[0].session_id
+        self.assertIsNotNone(first_session)
+        self.assertTrue(first_session.startswith("ses_"))
+        self.assertEqual(first_session, second_session)
+
     async def test_permanent_provider_local_failure_can_fall_back(self) -> None:
         first = ScriptedProvider(
             "first",
