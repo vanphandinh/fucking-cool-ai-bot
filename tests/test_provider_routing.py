@@ -8,7 +8,13 @@ from dataclasses import replace
 from app.ai.base import AllProvidersFailed, NoCapableProvider, ProviderError
 from app.ai.contracts import ChatResponse
 from app.ai.router import AIProviderRouter, CompletionResult
-from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
+from tests.provider_fakes import (
+    ScriptedProvider,
+    fetch_url_definition,
+    noop_tool,
+    text_request,
+    tool_response,
+)
 
 
 class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
@@ -26,11 +32,32 @@ class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
             ["ses_conversation_1", "ses_conversation_1"],
         )
 
-    async def test_request_without_conversation_id_stays_empty(self) -> None:
-        provider = ScriptedProvider("first", [ChatResponse(content="one")])
+    async def test_request_without_conversation_id_gets_unique_session(self) -> None:
+        provider = ScriptedProvider(
+            "first", [ChatResponse(content="one"), ChatResponse(content="two")]
+        )
         router = AIProviderRouter([provider], text_provider_order=("first",))
         await router.complete(text_request("hi"), noop_tool)
-        self.assertIsNone(provider.requests[0].session_id)
+        await router.complete(text_request("hi"), noop_tool)
+        first, second = (captured.session_id for captured in provider.requests)
+        self.assertIsNotNone(first)
+        self.assertTrue(first.startswith("ses_"))
+        self.assertNotEqual(first, second)
+
+    async def test_anonymous_session_id_survives_tool_rounds(self) -> None:
+        provider = ScriptedProvider(
+            "first",
+            [tool_response(1), ChatResponse(content="done")],
+        )
+        provider.supports_tools = True
+        router = AIProviderRouter([provider], max_tool_rounds=1)
+        await router.complete(
+            text_request("hi", tools=(fetch_url_definition(),)),
+            noop_tool,
+        )
+        first, second = (captured.session_id for captured in provider.requests)
+        self.assertIsNotNone(first)
+        self.assertEqual(first, second)
 
     async def test_first_success_does_not_call_second_provider(self) -> None:
         first = ScriptedProvider("first", [ChatResponse(content="one")])

@@ -109,10 +109,11 @@ def _tool_names(tools: tuple[ToolDefinition, ...]) -> set[str]:
 def _parse_usage(usage: object) -> dict[str, int] | None:
     """Extract token counts from a provider ``usage`` payload.
 
-    Only the three well-known integer counters survive; anything else is
-    dropped, and a payload without a single usable counter stays ``None`` so a
-    missing measurement is never reported as zero. Observability only: the
-    numbers never participate in routing or health decisions.
+    The three well-known integer counters and a provider-reported cache-hit
+    count survive; anything else is dropped, and a payload without a single
+    usable counter stays ``None`` so a missing measurement is never reported as
+    zero. Observability only: the numbers never participate in routing or
+    health decisions.
     """
     if not isinstance(usage, Mapping):
         return None
@@ -122,6 +123,16 @@ def _parse_usage(usage: object) -> dict[str, int] | None:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             continue
         parsed[key] = value
+    details = usage.get("prompt_tokens_details")
+    cached_candidates = (
+        details.get("cached_tokens") if isinstance(details, Mapping) else None,
+        usage.get("prompt_cache_hit_tokens"),
+    )
+    for cached in cached_candidates:
+        if isinstance(cached, bool) or not isinstance(cached, int) or cached < 0:
+            continue
+        parsed["cached_tokens"] = cached
+        break
     return parsed or None
 
 

@@ -35,6 +35,7 @@ from .retry import (
     transport_kind,
 )
 from .scoped_health import ScopedHealthRegistry
+from .session import new_provider_session_id
 from .synthesis import build_fresh_synthesis_messages
 from .target import ProviderTargetIdentity, provider_target_identity
 
@@ -433,10 +434,14 @@ class AIProviderRouter:
             raise NoCapableProvider("Không có AI provider nào phù hợp capability của request")
 
         portable_base_messages = tuple(message.portable() for message in request.messages)
+        # One completion gets one opaque id, reused by every tool round, retry
+        # and fallback target. Without this, all callers that pass no
+        # conversation id would share the driver's per-target fallback session.
+        session_id = request.session_id or new_provider_session_id()
         portable_base_request = ChatRequest(
             messages=portable_base_messages,
             tools=request.tools,
-            session_id=request.session_id,
+            session_id=session_id,
         )
         state = _RequestState(
             base_request=portable_base_request,

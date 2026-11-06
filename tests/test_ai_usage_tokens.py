@@ -46,6 +46,19 @@ class DriverUsageParsingTests(unittest.TestCase):
         self.assertEqual(dict(response.usage or {}), USAGE)
         self.assertNotIn("cached_tokens", response.usage or {})
 
+    def test_cache_hit_counters_are_kept_when_reported(self):
+        nested = parse_response(
+            _payload({**USAGE, "prompt_tokens_details": {"cached_tokens": 12}}),
+            (),
+            "test",
+        )
+        self.assertEqual(dict(nested.usage or {}), {**USAGE, "cached_tokens": 12})
+
+        native = parse_response(
+            _payload({**USAGE, "prompt_cache_hit_tokens": 9}), (), "test"
+        )
+        self.assertEqual(dict(native.usage or {}), {**USAGE, "cached_tokens": 9})
+
     def test_missing_or_unusable_payload_stays_none(self):
         for usage, with_usage in (
             (None, False),

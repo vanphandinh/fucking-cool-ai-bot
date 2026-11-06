@@ -38,9 +38,11 @@ OpenCode Go trả `HTTP 400` với `MissingSessionID` khi request thiếu sessio
 
 Profile `opencode` khai báo `driver_options.session_header = "x-opencode-session"`. Id là **một id opaque cho mỗi cuộc hội thoại** (`app/ai/session.py`: blake2b của chat id + forum topic với salt ngẫu nhiên mỗi process), nên mọi lượt hỏi-đáp trong cùng cuộc hội thoại — kể cả các vòng tool call trong một lượt và các lần fallback/rotation target — dùng lại đúng một giá trị. Nhờ vậy OpenCode giữ routing và prompt cache ổn định thay vì coi mỗi lượt là một session mới.
 
-Khi caller không truyền conversation id (script, probe, `orchestrator.ask(question=...)`), `openai-chat` fallback về một id `ses_<uuid>` cố định cho concrete target. Header không chứa credential, chat id hay nội dung message; salt đổi khi restart nên id cũng đổi cùng lúc với chat memory trong RAM.
+Với caller không có conversation context (script, probe, `orchestrator.ask(question=...)`), router mint một id `ses_<32 hex>` mới cho **mỗi completion**; id này được giữ qua mọi tool round, retry và fallback trong completion đó. Chỉ khi gọi thẳng driver mới dùng fallback per-target. Header không chứa credential, chat id hay nội dung message. Id hội thoại đổi khi restart cùng chat memory trong RAM; id anonymous đổi mỗi completion.
 
-Go cũng yêu cầu client tự nhận diện bằng User-Agent riêng thay vì tên SDK/HTTP library, nên profile gửi `User-Agent: fucking-cool-ai-bot/1.0` qua `driver_options.extra_headers`; `https://opencode.ai/zen/go/v1` tương đương `https://opencode.ai/inference/go` + `/openai/v1`.
+Định dạng hiện tại là `ses_` + 32 hex. Go và Zen trả phí chấp nhận một token ổn định bất kỳ; không cần đổi sang id canonical 30 ký tự của OpenCode. Free tier của Zen có gate riêng (User-Agent `opencode/...` và id canonical); bot này không lách gate đó — chỉ dùng model trả phí.
+
+`x-opencode-client` chỉ là attribution và không được gateway validate; User-Agent riêng `fucking-cool-ai-bot/1.0` mới là yêu cầu của Go. Cache hit có thể không được báo với một số model DeepSeek, nên log `ai_usage ... cached=...` chỉ là observability, không dùng để routing.
 
 ## Enable OpenCode
 

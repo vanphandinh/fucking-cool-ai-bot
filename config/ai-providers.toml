@@ -81,6 +81,8 @@ effect = "cooldown"
 
 [providers.driver_options]
 # OpenCode Go rejects requests without a stable session id (HTTP 400
-# MissingSessionID). The driver sends an opaque per-target `ses_<uuid>`.
+# MissingSessionID). The router mints one opaque `ses_<32 hex>` per completion
+# when the caller has no conversation id; the driver's per-target id is only
+# a fallback for direct driver calls.
 session_header = "x-opencode-session"
 extra_headers = { "User-Agent" = "fucking-cool-ai-bot/1.0" }

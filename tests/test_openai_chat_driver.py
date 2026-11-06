@@ -24,7 +24,7 @@ from app.ai.drivers.openai_chat import (
     serialize_request,
 )
 from app.ai.recovery import RecoveryPolicy
-from app.ai.session import provider_session_id
+from app.ai.session import new_provider_session_id, provider_session_id
 from app.ai.target import ProviderTargetIdentity, TargetSpec
 
 
@@ -312,6 +312,17 @@ class ProviderSessionIdTests(unittest.TestCase):
         ChatRequest(
             messages=(ChatMessage("user", (TextPart("hi"),)),),
             session_id=value,
+        )
+
+    def test_new_id_is_fresh_opaque_and_header_safe(self) -> None:
+        first = new_provider_session_id()
+        second = new_provider_session_id()
+        self.assertTrue(first.startswith("ses_"))
+        self.assertEqual(len(first), 36)
+        self.assertNotEqual(first, second)
+        ChatRequest(
+            messages=(ChatMessage("user", (TextPart("hi"),)),),
+            session_id=first,
         )
 
     def test_chat_request_rejects_header_unsafe_session_id(self) -> None:

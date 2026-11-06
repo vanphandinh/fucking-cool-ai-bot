@@ -612,11 +612,12 @@ class Orchestrator:
         # output, so an invented link cannot legitimize itself.
         if result.usage:
             logger.info(
-                "ai_usage provider=%s prompt=%s completion=%s total=%s",
+                "ai_usage provider=%s prompt=%s completion=%s total=%s cached=%s",
                 result.provider,
                 result.usage.get("prompt_tokens", "-"),
                 result.usage.get("completion_tokens", "-"),
                 result.usage.get("total_tokens", "-"),
+                result.usage.get("cached_tokens", "-"),
             )
 
         answer_text = result.content
