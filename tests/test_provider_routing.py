@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from app.ai.base import AllProvidersFailed, NoCapableProvider, ProviderError
 from app.ai.contracts import ChatResponse
@@ -11,6 +12,26 @@ from tests.provider_fakes import ScriptedProvider, noop_tool, text_request
 
 
 class OrderedProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_conversation_session_id_survives_every_turn(self) -> None:
+        provider = ScriptedProvider(
+            "first",
+            [ChatResponse(content="one"), ChatResponse(content="two")],
+        )
+        router = AIProviderRouter([provider], text_provider_order=("first",))
+        request = replace(text_request("hi"), session_id="ses_conversation_1")
+        await router.complete(request, noop_tool)
+        await router.complete(request, noop_tool)
+        self.assertEqual(
+            [captured.session_id for captured in provider.requests],
+            ["ses_conversation_1", "ses_conversation_1"],
+        )
+
+    async def test_request_without_conversation_id_stays_empty(self) -> None:
+        provider = ScriptedProvider("first", [ChatResponse(content="one")])
+        router = AIProviderRouter([provider], text_provider_order=("first",))
+        await router.complete(text_request("hi"), noop_tool)
+        self.assertIsNone(provider.requests[0].session_id)
+
     async def test_first_success_does_not_call_second_provider(self) -> None:
         first = ScriptedProvider("first", [ChatResponse(content="one")])
         second = ScriptedProvider("second", [ChatResponse(content="unused")])

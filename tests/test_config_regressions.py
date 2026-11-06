@@ -17,10 +17,18 @@ class ConfigRegressionTests(unittest.TestCase):
         settings = Settings(_env_file=None, bot_username="@MyBot")
         self.assertEqual(settings.bot_username_clean, "mybot")
 
-    def test_provider_defaults_make_chainnode_primary_and_openrouter_fallback(self) -> None:
+    def test_provider_defaults_make_chainnode_primary_openrouter_and_opencode_fallback(
+        self,
+    ) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "openrouter"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "openrouter"])
+        self.assertEqual(
+            settings.text_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(
+            settings.vision_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
         self.assertEqual(provider_runtime(settings, "openrouter").api_keys_list, [])
 
     def test_openrouter_text_order_requires_explicit_model_when_key_is_configured(self) -> None:

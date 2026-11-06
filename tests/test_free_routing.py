@@ -1,4 +1,4 @@
-"""Regression tests for Chainnode-primary and OpenRouter-fallback deployment defaults."""
+"""Regression tests for Chainnode-primary, OpenRouter and OpenCode fallback defaults."""
 
 from __future__ import annotations
 
@@ -10,11 +10,17 @@ from app.config import Settings
 
 
 class ProviderDeploymentDefaultsTests(unittest.TestCase):
-    def test_defaults_keep_chainnode_primary_openrouter_fallback_and_updated_limits(self) -> None:
+    def test_defaults_keep_chainnode_primary_openrouter_and_opencode_fallback(self) -> None:
         settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "openrouter"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "openrouter"])
+        self.assertEqual(
+            settings.text_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(
+            settings.vision_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
         self.assertEqual(settings.max_images_per_request, 1)
         self.assertEqual(settings.max_context_turns, 6)
         self.assertEqual(settings.max_tool_rounds, 5)
@@ -24,8 +30,14 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
         try:
             self.assertEqual(router.configured_provider_names(False), ())
             self.assertEqual(router.configured_provider_names(True), ())
-            self.assertEqual(router.provider_order(False), ("chainnode", "openrouter"))
-            self.assertEqual(router.provider_order(True), ("chainnode", "openrouter"))
+            self.assertEqual(
+                router.provider_order(False),
+                ("chainnode", "openrouter", "opencode"),
+            )
+            self.assertEqual(
+                router.provider_order(True),
+                ("chainnode", "openrouter", "opencode"),
+            )
         finally:
             asyncio.run(_close_router(router))
 

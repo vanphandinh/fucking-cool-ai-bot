@@ -158,10 +158,16 @@ class ProviderContractTests(unittest.TestCase):
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_provider_orders_default_to_chainnode_then_openrouter(self) -> None:
+    def test_provider_orders_default_to_chainnode_then_openrouter_then_opencode(self) -> None:
         settings = Settings(_env_file=None)
-        self.assertEqual(settings.text_provider_order_list, ["chainnode", "openrouter"])
-        self.assertEqual(settings.vision_provider_order_list, ["chainnode", "openrouter"])
+        self.assertEqual(
+            settings.text_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
+        self.assertEqual(
+            settings.vision_provider_order_list,
+            ["chainnode", "openrouter", "opencode"],
+        )
 
     def test_orders_reject_unknown_catalog_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown AI provider"):
@@ -207,8 +213,14 @@ class ProviderOrderTests(unittest.TestCase):
             )
         )
         try:
-            self.assertEqual(router.provider_order(False), ("chainnode", "openrouter"))
-            self.assertEqual(router.provider_order(True), ("chainnode", "openrouter"))
+            self.assertEqual(
+                router.provider_order(False),
+                ("chainnode", "openrouter", "opencode"),
+            )
+            self.assertEqual(
+                router.provider_order(True),
+                ("chainnode", "openrouter", "opencode"),
+            )
             self.assertEqual(
                 router.configured_provider_names(False),
                 ("chainnode", "openrouter"),

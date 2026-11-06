@@ -2,12 +2,13 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Default AI route: Chainnode primary -> OpenRouter fallback.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
+**Default AI route: Chainnode primary -> OpenRouter -> OpenCode fallback.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
 
 ## Tài liệu chính
 
 - [Chainnode primary provider](docs/CHAINNODE.md)
 - [OpenRouter fallback provider](docs/OPENROUTER.md)
+- [OpenCode provider (optional)](docs/OPENCODE.md)
 - [Đồng bộ `.env`](docs/ENV_SYNC.md)
 - [Telegram vision input](docs/telegram-vision-input.md)
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md)
@@ -43,12 +44,15 @@ AIProviderRouter
           ├─ Chainnode target pool
           │    ├─ text model × credential targets
           │    └─ vision model × credential targets
-          └─ OpenRouter target pool
+          ├─ OpenRouter target pool
+          │    ├─ text model × credential targets
+          │    └─ vision model × credential targets
+          └─ OpenCode target pool
                ├─ text model × credential targets
                └─ vision model × credential targets
 ```
 
-Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả hai dùng `openai-chat` driver. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
+Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả ba dùng `openai-chat` driver. OpenCode Zen là third fallback OpenAI-compatible profile, nằm trong default provider orders và chỉ có active targets khi `AI_PROVIDERS__OPENCODE__*` được cấu hình. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
 
 ### Thêm OpenAI-compatible provider chỉ bằng config/catalog
 
@@ -84,8 +88,14 @@ AI_PROVIDERS__OPENROUTER__VISION_MODELS=
 AI_PROVIDERS__OPENROUTER__REQUEST_TIMEOUT_SEC=60.0
 AI_PROVIDERS__OPENROUTER__PROVIDER=
 
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+AI_PROVIDERS__OPENCODE__API_KEYS=
+AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/v1
+AI_PROVIDERS__OPENCODE__TEXT_MODELS=deepseek-v4.1-flash
+AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
+AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
+
+TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
@@ -222,8 +232,8 @@ BOT_TOKEN=...
 AI_PROVIDERS__CHAINNODE__API_KEYS=...
 AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
@@ -240,7 +250,7 @@ Sau deploy:
 4. smoke text request qua Chainnode primary;
 5. smoke one-image request qua Chainnode vision primary;
 6. smoke structured tools/continuation;
-7. nếu OpenRouter đã qualified/configured, thực hiện controlled fallback rồi khôi phục Chainnode.
+7. nếu OpenRouter hoặc OpenCode đã qualified/configured, thực hiện controlled fallback rồi khôi phục Chainnode.
 
 Operational rollback để tắt OpenRouter fallback:
 

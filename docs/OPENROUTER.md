@@ -1,6 +1,6 @@
 # OpenRouter fallback provider
 
-OpenRouter là secondary AI provider cho text và vision. Chainnode giữ vai trò production primary; OpenRouter chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
+OpenRouter là secondary AI provider cho text và vision; OpenCode là tertiary fallback sau OpenRouter. Chainnode giữ vai trò production primary; OpenRouter chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
 
 ## Current configuration
 
@@ -12,8 +12,8 @@ AI_PROVIDERS__OPENROUTER__VISION_MODELS=
 AI_PROVIDERS__OPENROUTER__REQUEST_TIMEOUT_SEC=60.0
 AI_PROVIDERS__OPENROUTER__PROVIDER=
 
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 ```
 
 `AI_PROVIDERS__OPENROUTER__API_KEYS`, `AI_PROVIDERS__OPENROUTER__TEXT_MODELS`, và `AI_PROVIDERS__OPENROUTER__VISION_MODELS` là canonical runtime pools. Model pools được để trống trong `.env.example` vì model IDs phải được live-qualified trước khi đưa vào deployment.
@@ -114,8 +114,8 @@ Completed tools không được chạy lại khi target/provider rotate; retry, 
 4. Giữ provider order mong muốn, ví dụ:
 
 ```env
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 ```
 
 5. Run `python scripts/sync_env.py` và yêu cầu exit `0`; chạy lần hai để xác nhận idempotence.

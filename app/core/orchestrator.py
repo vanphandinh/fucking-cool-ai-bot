@@ -590,6 +590,7 @@ class Orchestrator:
                 ChatRequest(
                     messages=tuple(messages),
                     tools=TOOLS,
+                    session_id=request.session_id,
                 ),
                 tool_executor,
                 requires_vision=request.requires_vision,

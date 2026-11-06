@@ -415,6 +415,12 @@ class OpenAIChatTarget:
         extra_headers = spec.driver_options.get("extra_headers")
         if isinstance(extra_headers, dict):
             headers.update({str(k): str(v) for k, v in extra_headers.items()})
+        session_header = str(spec.driver_options.get("session_header") or "").strip()
+        self._session_header = session_header
+        if session_header:
+            # Fallback id per concrete target, used when the caller carries no
+            # conversation id. Never exposes credentials or message content.
+            headers[session_header] = f"ses_{uuid.uuid4().hex}"
         request_timeout = httpx.Timeout(
             connect=_AI_CONNECT_TIMEOUT_SEC,
             read=spec.request_timeout_sec,
@@ -463,9 +469,17 @@ class OpenAIChatTarget:
         if self.explicit_stream is not None:
             payload["stream"] = self.explicit_stream
 
+        request_headers: dict[str, str] | None = None
+        if self._session_header and request.session_id:
+            # One conversation keeps one id across every turn, tool round and
+            # provider fallback so upstream routing and prompt cache stay warm.
+            request_headers = {self._session_header: request.session_id}
+
         transport_error: ProviderError | None = None
         try:
-            response = await self._client.post("chat/completions", json=payload)
+            response = await self._client.post(
+                "chat/completions", json=payload, headers=request_headers
+            )
         except httpx.HTTPError as exc:
             transport_error = ProviderError(
                 f"{self.name}: lỗi mạng "

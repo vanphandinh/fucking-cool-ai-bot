@@ -1,6 +1,6 @@
 # Chainnode primary text and vision provider
 
-Chainnode là production primary AI provider cho cả text và vision. Router giữ text/vision target pools riêng để mỗi route có thể dùng model khác nhau trong cùng provider family.
+Chainnode là production primary AI provider cho cả text và vision; OpenRouter và OpenCode là các fallback lần lượt phía sau. Router giữ text/vision target pools riêng để mỗi route có thể dùng model khác nhau trong cùng provider family.
 
 ## Current configuration
 
@@ -11,8 +11,8 @@ AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
 AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
 AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
 
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
+VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
 ```
 
 `AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS`, và `AI_PROVIDERS__CHAINNODE__VISION_MODELS` là canonical runtime pools. Một phần tử là hợp lệ; nhiều phần tử được phân tách bằng dấu phẩy và giữ nguyên case.
@@ -39,8 +39,8 @@ Vision pool dùng cùng quy tắc. Runtime identities chỉ chứa opaque creden
 Production order mặc định:
 
 ```text
-text:   Chainnode -> OpenRouter
-vision: Chainnode -> OpenRouter
+text:   Chainnode -> OpenRouter -> OpenCode
+vision: Chainnode -> OpenRouter -> OpenCode
 ```
 
 Chainnode recovery scopes giữ bounded behavior hiện tại:

@@ -18,6 +18,7 @@ from aiogram.types import ChatMemberUpdated, LinkPreviewOptions, Message
 from ..ai.base import AllProvidersFailed, NoCapableProvider
 from ..ai.recovery import HealthScope
 from ..ai.router import AIProviderRouter
+from ..ai.session import provider_session_id
 from ..ai.target import provider_target_identity
 from ..config import Settings
 from ..core.context import ChatMemory
@@ -475,7 +476,10 @@ async def _handle_question(
                     return
 
                 request = UserRequest(
-                    text=question, quoted_text=quoted, images=images
+                    text=question,
+                    quoted_text=quoted,
+                    images=images,
+                    session_id=provider_session_id(conversation_key),
                 )
                 typing_task = asyncio.create_task(
                     _typing_loop(bot, chat_id, message_thread_id=message_thread_id)
