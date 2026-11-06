@@ -1,12 +1,12 @@
-# OpenCode Zen provider
+# OpenCode provider (Go và Zen)
 
-OpenCode Zen là third fallback AI provider cho text và vision, dùng chung `openai-chat` driver với Chainnode và OpenRouter. Profile nằm cuối default provider orders (`chainnode,openrouter,opencode`) và chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
+OpenCode (gói Go hoặc Zen trả trước) là third fallback AI provider cho text và vision, dùng chung `openai-chat` driver với Chainnode và OpenRouter. Profile nằm cuối default provider orders (`chainnode,openrouter,opencode`) và chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
 
 ## Current configuration
 
 ```env
 AI_PROVIDERS__OPENCODE__API_KEYS=
-AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/v1
+AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/go/v1
 AI_PROVIDERS__OPENCODE__TEXT_MODELS=deepseek-v4.1-flash
 AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
 AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
@@ -16,17 +16,17 @@ AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
 
 Nếu OpenCode được chọn cho text và credential pool không rỗng, `AI_PROVIDERS__OPENCODE__TEXT_MODELS` phải có ít nhất một model. Nếu vision bật và OpenCode được chọn cho vision, `AI_PROVIDERS__OPENCODE__VISION_MODELS` cũng phải có ít nhất một model.
 
-`AI_PROVIDERS__OPENCODE__BASE_URL` mặc định là `https://opencode.ai/zen/v1`; runtime gọi `POST <BASE_URL>/chat/completions` với `stream=false`. `AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây; shared transport vẫn dùng bounded connect/write/pool timeouts.
+`AI_PROVIDERS__OPENCODE__BASE_URL` mặc định trong `.env.example` là `https://opencode.ai/zen/go/v1` cho credential thuộc gói Go; workspace Zen trả trước dùng `https://opencode.ai/zen/v1`. Gửi key Go tới gateway Zen khiến request bị tính vào số dư Zen và trả `HTTP 402` (`Insufficient account funds`) dù quota Go còn trống — lỗi này là cấu hình URL, không phải hết hạn mức. Runtime gọi `POST <BASE_URL>/chat/completions` với `stream=false`. `AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây; shared transport vẫn dùng bounded connect/write/pool timeouts.
 
 ## Endpoint constraint
 
-OpenCode Zen phục vụ model qua nhiều wire protocol. Chỉ các model nằm trên `https://opencode.ai/zen/v1/chat/completions` dùng được với `openai-chat` driver hiện tại:
+OpenCode phục vụ model qua nhiều wire protocol. Chỉ các model nằm trên `/chat/completions` của gateway đang dùng (Go: `https://opencode.ai/zen/go/v1/chat/completions`, Zen: `https://opencode.ai/zen/v1/chat/completions`) dùng được với `openai-chat` driver hiện tại:
 
 - model trên `/responses` (ví dụ các GPT, Grok và Muse Spark) cần Responses API driver;
 - model trên `/messages` (ví dụ Claude và một số Qwen) cần Anthropic Messages driver;
 - model trên `/systemone` (Jev) không phải chat-completions contract.
 
-`GET https://opencode.ai/zen/v1/models` là source of truth cho danh sách model và metadata hiện tại; không hard-code model IDs trong source. Một số model free/experimental có thể biến mất hoặc đổi endpoint, nên luôn qualification lại sau khi chọn candidate.
+`GET <BASE_URL>/models` (`https://opencode.ai/zen/go/v1/models` cho Go, `https://opencode.ai/zen/v1/models` cho Zen) là source of truth cho danh sách model và metadata hiện tại; không hard-code model IDs trong source. Một số model free/experimental có thể biến mất hoặc đổi endpoint, nên luôn qualification lại sau khi chọn candidate.
 
 ## Session header (bắt buộc với OpenCode Go)
 
@@ -40,11 +40,11 @@ Profile `opencode` khai báo `driver_options.session_header = "x-opencode-sessio
 
 Khi caller không truyền conversation id (script, probe, `orchestrator.ask(question=...)`), `openai-chat` fallback về một id `ses_<uuid>` cố định cho concrete target. Header không chứa credential, chat id hay nội dung message; salt đổi khi restart nên id cũng đổi cùng lúc với chat memory trong RAM.
 
-Go base URL là `https://opencode.ai/zen/go/v1` (tương đương `https://opencode.ai/inference/go` + `/openai/v1`); đặt `AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/go/v1` khi credential thuộc workspace Go. Go cũng yêu cầu client tự nhận diện bằng User-Agent riêng thay vì tên SDK/HTTP library, nên profile gửi `User-Agent: fucking-cool-ai-bot/1.0` qua `driver_options.extra_headers`.
+Go cũng yêu cầu client tự nhận diện bằng User-Agent riêng thay vì tên SDK/HTTP library, nên profile gửi `User-Agent: fucking-cool-ai-bot/1.0` qua `driver_options.extra_headers`; `https://opencode.ai/zen/go/v1` tương đương `https://opencode.ai/inference/go` + `/openai/v1`.
 
 ## Enable OpenCode
 
-1. Cấu hình `AI_PROVIDERS__OPENCODE__API_KEYS` bằng credential tạo từ OpenCode Zen.
+1. Cấu hình `AI_PROVIDERS__OPENCODE__API_KEYS` bằng credential tạo từ OpenCode console (gói Go dùng `https://opencode.ai/zen/go/v1`, workspace Zen trả trước dùng `https://opencode.ai/zen/v1`).
 2. Live-qualify candidate trên `/chat/completions` cho text (plain chat, structured tool call, tool continuation) và cho vision (image understanding + vision/tool flow) nếu route vision được dùng.
 3. Điền model IDs đã pass vào `AI_PROVIDERS__OPENCODE__TEXT_MODELS` / `AI_PROVIDERS__OPENCODE__VISION_MODELS`.
 4. Xác nhận `opencode` nằm trong order mặc định (hoặc đặt order riêng), ví dụ:
