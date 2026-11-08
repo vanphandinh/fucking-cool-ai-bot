@@ -210,7 +210,7 @@ sudo python3 scripts/check_crawl4ai_vps_live.py --live     # bot vẫn đang t�
 sudo bash scripts/apply_crawl4ai_safe_boot.sh              # policy restart + báo cáo read-only
 ```
 
-Chỉ khi mọi bước trên pass mới đặt `CRAWL4AI_ENABLED=1` rồi `docker compose up -d --no-deps --force-recreate bot`. `crawl4ai_ready` yêu cầu đúng `CRAWL4AI_URL=http://crawl4ai:11235` và `CRAWL4AI_EGRESS_PROXY_URL=http://crawl4ai-proxy:3128`; URL khác thì bot lặng lẽ dùng generic reader.
+Chỉ khi mọi bước trên pass mới đặt `CRAWL4AI_ENABLED=1` rồi `docker compose up -d --no-deps --force-recreate bot`. `crawl4ai_ready` chỉ chấp nhận cặp nội bộ `http://crawl4ai:11235` + `http://crawl4ai-proxy:3128`, hoặc một endpoint HTTPS từ xa khai báo tường minh bằng `CRAWL4AI_REMOTE_HOST` khớp đúng host của `CRAWL4AI_URL`; cấu hình khác thì bot log `Crawl4AI endpoint not approved` và dùng generic reader.
 
 ### 5.5 Các cờ khác
 

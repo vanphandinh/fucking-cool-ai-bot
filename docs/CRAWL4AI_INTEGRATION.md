@@ -56,6 +56,41 @@ CRAWL4AI_SHM_SIZE=512m
 
 If enabled but the token, fixed crawler endpoint, or fixed proxy endpoint is absent or incorrect, the bot logs a coarse warning and keeps using the generic reader. The timeout budget check is enforced for a configured crawler. No user-supplied browser configuration is accepted.
 
+## Remote crawler mode (opt-in, HTTPS only)
+
+When the VPS cannot spare the crawler's memory, the crawler may run on another
+machine and the bot may reach it through one explicit endpoint:
+
+```dotenv
+CRAWL4AI_URL=https://crawl.dn.chainno.de
+CRAWL4AI_REMOTE_HOST=crawl.dn.chainno.de
+CRAWL4AI_EGRESS_PROXY_URL=
+```
+
+`CRAWL4AI_REMOTE_HOST` is the opt-in and must match the URL host exactly. It
+must be a bare fully qualified DNS name: no scheme, port, path, IP literal or
+`localhost`. Anything else leaves `crawl4ai_ready` false, logs
+`Crawl4AI endpoint not approved (mode=… remote_host=…)`, and keeps the generic
+reader; the bot still starts.
+
+Operational notes:
+
+- The VPS Squid/CoreDNS/host-firewall layers do not apply to a remote crawler.
+  Run Squid beside it with `crawl4ai/squid.conf` and point
+  `CRAWL4AI_UPSTREAM_PROXY` at that instance, so the browser cannot reach
+  private ranges, Docker peers or the home LAN.
+- Put the endpoint behind a TLS reverse proxy that only exposes
+  `POST /crawl` plus `GET /health`. Never publish port 11235.
+- Docker Desktop rewrites every published-port client address to its bridge
+  gateway, so a source-IP allowlist cannot identify the VPS there. In that
+  topology the bearer token is the access control; enforce an IP allowlist
+  only on a Linux edge that preserves peer addresses.
+- A dynamic home IP is fine with DDNS. With a 300 s TTL, an address change can
+  cost about five minutes of generic-reader fallback before it recovers.
+- Stopping the VPS crawler leaves the `FCAI_CRAWL4AI` chain bound to container
+  addresses that no longer exist. If Docker later reuses one of those IPs, that
+  container is dropped; flush the chain only as a deliberate firewall change.
+
 ## Production activation (operator runbook)
 
 **Current gate: NO-GO until the remaining checks below are verified on the
