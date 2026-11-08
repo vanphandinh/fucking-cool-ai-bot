@@ -76,9 +76,15 @@ async def read_url(url: str, settings: Settings, mode: str = "auto",
                 crawl = await crawl4ai_client.read_page(fetch_url, settings)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 - this boundary must degrade to generic reading
+        except TimeoutError:
+            # OperationRunner applies its own deadline around read_page, so this
+            # escapes the client's reason normalization; it is a slow crawler,
+            # not an unexpected client bug.
+            logger.warning("Crawl4AI URL read failed (timeout); fallback generic reader")
+        except Exception as exc:  # noqa: BLE001 - this boundary must degrade to generic reading
             logger.warning(
-                "Crawl4AI URL read failed (unexpected_client_error); fallback generic reader"
+                "Crawl4AI URL read failed (unexpected_client_error: %s); fallback generic reader",
+                type(exc).__name__,
             )
         else:
             if crawl.ok:

@@ -5,6 +5,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
+from app.core.job_control import JobControl
+from app.core.job_operations import OperationRunner
 from app.search.crawl4ai_client import Crawl4AIReadResult
 from app.search.url_service import read_url
 from app.search.x_reader import XReadResult
@@ -99,6 +101,7 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.search.url_service.crawl4ai_client.read_page", new=crawl),
             patch("app.search.url_service.reader.read_page", new=generic),
+            self.assertLogs("app.search.url_service", level="WARNING") as logs,
         ):
             result = await read_url("https://example.org", settings)
         crawl.assert_awaited_once_with("https://example.org", settings)
@@ -108,6 +111,44 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
             query="",
             max_extracted_chars=settings.web_evidence_max_extracted_chars,
         )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.backend, "generic_reader")
+        self.assertIn("unexpected_client_error: RuntimeError", "\n".join(logs.output))
+
+    async def test_crawl4ai_job_budget_deadline_reports_timeout(self):
+        """A crawler cut off by the operation deadline must not look like a client bug.
+
+        OperationRunner applies its own asyncio.timeout around read_page, so this
+        TimeoutError escapes the client's reason normalization.
+        """
+        settings = Settings(
+            _env_file=None,
+            crawl4ai_enabled=True,
+            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+            crawl4ai_api_token="secret",
+            crawl4ai_timeout_sec=5,
+        )
+        still_crawling = asyncio.Event()
+
+        async def hung_crawler(url, active_settings):
+            await still_crawling.wait()
+
+        generic = AsyncMock(return_value="generic text")
+        operations = OperationRunner(
+            JobControl(renewal_sec=30), asyncio.Semaphore(1), lambda event: None
+        )
+        with (
+            patch("app.search.url_service.crawl4ai_client.read_page", new=hung_crawler),
+            patch("app.search.url_service.reader.read_page", new=generic),
+            self.assertLogs("app.search.url_service", level="WARNING") as logs,
+            operations.budget(0.05),
+        ):
+            result = await read_url(
+                "https://example.org", settings, operations=operations
+            )
+        joined = "\n".join(logs.output)
+        self.assertIn("Crawl4AI URL read failed (timeout)", joined)
+        self.assertNotIn("unexpected_client_error", joined)
         self.assertTrue(result.ok)
         self.assertEqual(result.backend, "generic_reader")
 
