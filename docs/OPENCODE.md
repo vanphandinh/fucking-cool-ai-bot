@@ -16,7 +16,7 @@ AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
 
 Nếu OpenCode được chọn cho text và credential pool không rỗng, `AI_PROVIDERS__OPENCODE__TEXT_MODELS` phải có ít nhất một model. Nếu vision bật và OpenCode được chọn cho vision, `AI_PROVIDERS__OPENCODE__VISION_MODELS` cũng phải có ít nhất một model.
 
-`AI_PROVIDERS__OPENCODE__BASE_URL` mặc định trong `.env.example` là `https://opencode.ai/zen/go/v1` cho credential thuộc gói Go; workspace Zen trả trước dùng `https://opencode.ai/zen/v1`. Gửi key Go tới gateway Zen khiến request bị tính vào số dư Zen và trả `HTTP 402` (`Insufficient account funds`) dù quota Go còn trống — lỗi này là cấu hình URL, không phải hết hạn mức. Runtime gọi `POST <BASE_URL>/chat/completions` với `stream=false`. `AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây; shared transport vẫn dùng bounded connect/write/pool timeouts.
+`default_base_url` của profile trong `config/ai-providers.toml` và `AI_PROVIDERS__OPENCODE__BASE_URL` trong `.env.example` đều là `https://opencode.ai/zen/go/v1` cho credential thuộc gói Go; workspace Zen trả trước override bằng `AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/v1`. Env luôn thắng catalog default (`ProviderRuntimeSettings.resolve_base_url`), catalog chỉ được dùng khi env để trống. Gửi key Go tới gateway Zen khiến request bị tính vào số dư Zen và trả `HTTP 402` (`Insufficient account funds`) dù quota Go còn trống — lỗi này là cấu hình URL, không phải hết hạn mức. Runtime gọi `POST <BASE_URL>/chat/completions` với `stream=false`. `AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC` là per-attempt read timeout, mặc định `60.0` giây; shared transport vẫn dùng bounded connect/write/pool timeouts.
 
 ## Endpoint constraint
 
@@ -103,4 +103,4 @@ Sau đó rebuild/restart service.
 
 ## Generic provider architecture
 
-OpenCode là một `ProviderProfile` trong `config/ai-providers.toml` dùng `openai-chat` driver. Không có module Python theo vendor, không có branch trong router/retry/health/orchestrator, và profile không khai báo `driver_options.provider_preferences` nên `AI_PROVIDERS__OPENCODE__PROVIDER` không được hỗ trợ.
+OpenCode là một `ProviderProfile` trong `config/ai-providers.toml` dùng `openai-chat` driver. Không có module Python theo vendor, không có branch trong router/retry/health/orchestrator, và profile không khai báo `driver_options.provider_preferences` nên `AI_PROVIDERS__OPENCODE__PROVIDER` không được hỗ trợ. `default_base_url` của profile trỏ Go gateway (`https://opencode.ai/zen/go/v1`); workspace Zen override bằng env chứ không sửa catalog.

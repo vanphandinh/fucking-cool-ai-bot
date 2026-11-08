@@ -52,7 +52,7 @@ AIProviderRouter
                └─ vision model × credential targets
 ```
 
-Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả ba dùng `openai-chat` driver. OpenCode Zen là third fallback OpenAI-compatible profile, nằm trong default provider orders và chỉ có active targets khi `AI_PROVIDERS__OPENCODE__*` được cấu hình. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
+Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả ba dùng `openai-chat` driver. OpenCode (Go hoặc Zen) là third fallback OpenAI-compatible profile, nằm trong default provider orders và chỉ có active targets khi `AI_PROVIDERS__OPENCODE__*` được cấu hình. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
 
 ### Thêm OpenAI-compatible provider chỉ bằng config/catalog
 

@@ -50,7 +50,10 @@ effect = "cooldown"
 [[providers]]
 id = "opencode"
 driver = "openai-chat"
-default_base_url = "https://opencode.ai/zen/v1"
+# Go subscription gateway. Workspaces on Zen pay-as-you-go override this with
+# AI_PROVIDERS__OPENCODE__BASE_URL=https://opencode.ai/zen/v1: a Go key sent to
+# the Zen gateway is billed against prepaid Zen credit and fails with HTTP 402.
+default_base_url = "https://opencode.ai/zen/go/v1"
 default_timeout_sec = 60.0
 
 [providers.routes.text]

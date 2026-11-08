@@ -20,7 +20,7 @@ class ProviderCatalogTests(unittest.TestCase):
     def test_opencode_profile_uses_openai_chat_endpoint(self) -> None:
         profile = load_provider_catalog().require("opencode")
         self.assertEqual(profile.driver, "openai-chat")
-        self.assertEqual(profile.default_base_url, "https://opencode.ai/zen/v1")
+        self.assertEqual(profile.default_base_url, "https://opencode.ai/zen/go/v1")
         self.assertTrue(profile.routes["text"].enabled)
         self.assertEqual(profile.routes["vision"].max_images, 1)
         self.assertNotIn("provider_preferences", profile.driver_options)
