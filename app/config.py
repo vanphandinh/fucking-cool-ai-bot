@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +17,49 @@ from .ai.runtime_config import (
 
 _SEARCH_BACKENDS = ("auto", "searxng", "ddgs")
 _LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+
+_INTERNAL_CRAWL4AI_URL = "http://crawl4ai:11235"
+_INTERNAL_CRAWL4AI_PROXY_URL = "http://crawl4ai-proxy:3128"
+_LOCAL_CRAWL4AI_HOSTS = frozenset({"localhost", "localhost.localdomain", "ip6-localhost"})
+_REMOTE_HOST_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
+
+
+def crawl4ai_remote_host_error(host: str) -> str | None:
+    """Return why a remote crawler host is unusable, or None when it is valid."""
+    candidate = host.strip().lower()
+    if not candidate:
+        return None
+    if any(marker in candidate for marker in ("/", ":", "@", " ")):
+        return "host must be a bare DNS name without scheme, port or path"
+    if candidate in _LOCAL_CRAWL4AI_HOSTS or candidate.endswith(".localhost"):
+        return "localhost cannot be a remote crawler"
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        pass
+    else:
+        return "IP literals are not allowed"
+    if _REMOTE_HOST_PATTERN.match(candidate) is None:
+        return "host must be a fully qualified DNS name"
+    return None
+
+
+def crawl4ai_endpoint_is_approved(url: str, proxy_url: str, remote_host: str) -> bool:
+    """True only for the isolated Docker pair or an explicit HTTPS remote host."""
+    normalized_url = url.strip().rstrip("/").lower()
+    host = remote_host.strip().lower()
+    internal = (
+        normalized_url == _INTERNAL_CRAWL4AI_URL
+        and proxy_url.strip().rstrip("/") == _INTERNAL_CRAWL4AI_PROXY_URL
+    )
+    remote = (
+        bool(host)
+        and crawl4ai_remote_host_error(host) is None
+        and normalized_url == f"https://{host}"
+    )
+    return internal or remote
 
 
 def parse_csv_ints(raw: str | None) -> list[int]:
@@ -118,6 +163,7 @@ class Settings(BaseSettings):
     # URL rendering/extraction backend. Set CRAWL4AI_ENABLED=0 for instant rollback.
     crawl4ai_enabled: bool = False
     crawl4ai_url: str = "http://crawl4ai:11235"
+    crawl4ai_remote_host: str = ""
     crawl4ai_api_token: str = ""
     crawl4ai_egress_proxy_url: str = ""
     crawl4ai_timeout_sec: float = Field(default=25.0, gt=0, allow_inf_nan=False)
@@ -273,9 +319,12 @@ class Settings(BaseSettings):
             )
         crawl4ai_active = (
             self.crawl4ai_enabled
-            and bool(self.crawl4ai_url.strip())
             and bool(self.crawl4ai_api_token.strip())
-            and bool(self.crawl4ai_egress_proxy_url.strip())
+            and crawl4ai_endpoint_is_approved(
+                self.crawl4ai_url,
+                self.crawl4ai_egress_proxy_url,
+                self.crawl4ai_remote_host,
+            )
         )
         if (
             not self.question_controls_enabled
@@ -287,14 +336,23 @@ class Settings(BaseSettings):
 
     @property
     def crawl4ai_ready(self) -> bool:
-        """Restrict the opt-in crawler to isolated Docker service endpoints."""
+        """Accept the isolated Docker pair or one explicit HTTPS remote host."""
         return (
             self.crawl4ai_enabled
             and bool(self.crawl4ai_api_token.strip())
-            and self.crawl4ai_url.strip().rstrip("/") == "http://crawl4ai:11235"
-            and self.crawl4ai_egress_proxy_url.strip().rstrip("/")
-            == "http://crawl4ai-proxy:3128"
+            and crawl4ai_endpoint_is_approved(
+                self.crawl4ai_url,
+                self.crawl4ai_egress_proxy_url,
+                self.crawl4ai_remote_host,
+            )
         )
+
+    @property
+    def crawl4ai_mode(self) -> str:
+        """Report the configured endpoint family without implying it is approved."""
+        if not self.crawl4ai_enabled or not self.crawl4ai_api_token.strip():
+            return "disabled"
+        return "remote" if self.crawl4ai_remote_host.strip() else "internal"
 
     @property
     def allowed_group_ids_list(self) -> list[int]:

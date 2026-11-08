@@ -62,6 +62,30 @@ class Crawl4AIClientTests(unittest.IsolatedAsyncioTestCase):
         values.update(overrides)
         return Settings(_env_file=None, **values)
 
+    async def test_remote_endpoint_uses_https_and_maps_403_to_auth(self):
+        settings = self.settings(
+            crawl4ai_url="https://crawl.dn.chainno.de",
+            crawl4ai_remote_host="crawl.dn.chainno.de",
+            crawl4ai_egress_proxy_url="",
+        )
+        self.assertTrue(settings.crawl4ai_ready)
+        response = httpx.Response(
+            403,
+            request=httpx.Request("POST", "https://crawl.dn.chainno.de/crawl"),
+            json={"detail": "forbidden"},
+        )
+        client = _stream_client(response)
+        with patch(
+            "app.search.crawl4ai_client._get_client",
+            new=AsyncMock(return_value=client),
+        ):
+            result = await read_page("https://example.org/article", settings)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "auth")
+        self.assertEqual(
+            client.stream.call_args.args[1], "https://crawl.dn.chainno.de/crawl"
+        )
+
     async def test_prefers_fit_markdown_and_truncates(self):
         fit = "x" * 1200
         response = httpx.Response(

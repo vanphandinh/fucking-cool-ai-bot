@@ -17,6 +17,7 @@ from pathlib import Path
 
 import httpx
 
+from app.config import crawl4ai_endpoint_is_approved
 from app.search.crawl4ai_client import _crawl_payload
 from app.search.reader import validate_public_url
 
@@ -101,11 +102,12 @@ async def main() -> int:
     base_url = os.getenv("CRAWL4AI_URL", "http://crawl4ai:11235").strip()
     token = os.getenv("CRAWL4AI_API_TOKEN", "").strip()
     proxy_url = os.getenv("CRAWL4AI_EGRESS_PROXY_URL", "").strip()
-    isolated = (base_url, proxy_url) == (
-        "http://crawl4ai:11235", "http://crawl4ai-proxy:3128"
-    )
-    if not isolated or not token:
-        print("Crawl4AI isolated endpoint, proxy and token required", file=sys.stderr)
+    remote_host = os.getenv("CRAWL4AI_REMOTE_HOST", "").strip()
+    if not token or not crawl4ai_endpoint_is_approved(base_url, proxy_url, remote_host):
+        print(
+            "Crawl4AI endpoint, token and proxy/remote-host approval required",
+            file=sys.stderr,
+        )
         return 2
 
     try:

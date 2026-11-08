@@ -114,7 +114,11 @@ async def _amain(settings: Settings) -> int:
                 "CRAWL4AI_ENABLED=1 nhưng thiếu CRAWL4AI_API_TOKEN; dùng generic reader."
             )
         if settings.crawl4ai_enabled and not settings.crawl4ai_ready:
-            logger.warning("Crawl4AI isolation configuration unavailable; generic reader")
+            logger.warning(
+                "Crawl4AI endpoint not approved (mode=%s remote_host=%r); generic reader",
+                settings.crawl4ai_mode,
+                settings.crawl4ai_remote_host.strip(),
+            )
 
         # The web evidence pipeline is no longer flag-gated. State the only
         # policy once at boot so an operator cannot mistake this for V1.

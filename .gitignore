@@ -3,6 +3,7 @@
 .env.bak
 .env.bak.*
 .env.*.bak
+.crawl4ai.local.env
 
 # Python
 __pycache__/

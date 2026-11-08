@@ -18,8 +18,79 @@ class UrlServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(settings.crawl4ai_enabled)
         self.assertFalse(settings.crawl4ai_ready)
         self.assertEqual(settings.crawl4ai_url, "http://crawl4ai:11235")
+        self.assertEqual(settings.crawl4ai_remote_host, "")
+        self.assertEqual(settings.crawl4ai_mode, "disabled")
         self.assertEqual(settings.crawl4ai_timeout_sec, 25.0)
         self.assertEqual(settings.crawl4ai_max_chars, 12000)
+
+    def test_crawl4ai_remote_endpoint_is_opt_in_and_https_only(self):
+        token = {"crawl4ai_enabled": True, "crawl4ai_api_token": "secret"}
+        approved = Settings(
+            _env_file=None,
+            crawl4ai_url="https://crawl.dn.chainno.de",
+            crawl4ai_remote_host="crawl.dn.chainno.de",
+            **token,
+        )
+        self.assertTrue(approved.crawl4ai_ready)
+        self.assertEqual(approved.crawl4ai_mode, "remote")
+
+        rejected = (
+            ("missing host", {"crawl4ai_url": "https://crawl.dn.chainno.de"}),
+            (
+                "plain http",
+                {
+                    "crawl4ai_url": "http://crawl.dn.chainno.de",
+                    "crawl4ai_remote_host": "crawl.dn.chainno.de",
+                },
+            ),
+            (
+                "other host",
+                {
+                    "crawl4ai_url": "https://crawl.example.net",
+                    "crawl4ai_remote_host": "crawl.dn.chainno.de",
+                },
+            ),
+            (
+                "scheme in host",
+                {
+                    "crawl4ai_url": "https://crawl.dn.chainno.de",
+                    "crawl4ai_remote_host": "https://crawl.dn.chainno.de",
+                },
+            ),
+            (
+                "localhost",
+                {
+                    "crawl4ai_url": "https://localhost:8443",
+                    "crawl4ai_remote_host": "localhost",
+                },
+            ),
+            (
+                "ip literal",
+                {
+                    "crawl4ai_url": "https://203.0.113.9",
+                    "crawl4ai_remote_host": "203.0.113.9",
+                },
+            ),
+        )
+        for label, overrides in rejected:
+            with self.subTest(label=label):
+                settings = Settings(_env_file=None, **token, **overrides)
+                self.assertFalse(settings.crawl4ai_ready)
+
+    def test_crawl4ai_internal_pair_still_requires_its_proxy(self):
+        base = {
+            "crawl4ai_enabled": True,
+            "crawl4ai_api_token": "secret",
+            "crawl4ai_url": "http://crawl4ai:11235",
+        }
+        with_proxy = Settings(
+            _env_file=None,
+            crawl4ai_egress_proxy_url="http://crawl4ai-proxy:3128",
+            **base,
+        )
+        self.assertTrue(with_proxy.crawl4ai_ready)
+        self.assertEqual(with_proxy.crawl4ai_mode, "internal")
+        self.assertFalse(Settings(_env_file=None, **base).crawl4ai_ready)
 
     def test_crawl4ai_timeout_must_be_below_question_timeout(self):
         with self.assertRaises(ValueError):
