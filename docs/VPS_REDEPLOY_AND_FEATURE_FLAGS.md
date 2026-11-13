@@ -340,9 +340,11 @@ git diff > "$HOME/fcai-tracked-changes-$STAMP.patch"
 | --- | --- |
 | Mỗi provider một credential + một model, tên phẳng không namespace | `AI_PROVIDERS__<ID>__API_KEYS`, `__BASE_URL`, `__TEXT_MODELS`, `__VISION_MODELS`, `__REQUEST_TIMEOUT_SEC`; pool nhiều giá trị ngăn bằng dấu phẩy |
 | Key retry có hậu tố `_FAILURES*` (trước canonical) | `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST` |
-| `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` còn id provider đã bỏ | chỉ giữ provider còn trong `config/ai-providers.toml` (`chainnode,openrouter,opencode`) |
+| `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` còn id provider đã bỏ | chỉ giữ provider còn trong `config/ai-providers.toml` (`opencode,openrouter`) |
 | `WEB_EVIDENCE_V2_ENABLED`, `WEB_EVIDENCE_V2_GROUP_IDS`, `WEB_AUTO_FETCH_ENABLED` | xóa |
 | Key chỉ phục vụ compose cũ (ví dụ biến port host của SearXNG) | xóa, compose hiện tại không publish port |
+
+> **Nâng cấp từ bản có Chainnode:** xóa `AI_PROVIDERS__CHAINNODE__*` (hoặc mọi key phẳng `CHAINNODE_*` còn sót); đổi `TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` thành `opencode,openrouter` (hoặc chỉ `opencode` nếu không dùng fallback). Chỉ làm bước này sau khi có ít nhất một provider active: `AI_PROVIDERS__OPENCODE__API_KEYS` đã có giá trị, hoặc OpenRouter đã configured nếu dùng fallback; nếu không bot sẽ khởi động với zero active provider. `sync_env.py` sẽ exit `2` nếu còn key Chainnode.
 
 Liệt kê key lạ trước khi sửa (chỉ đọc, không ghi file):
 

@@ -19,124 +19,124 @@ from tests.provider_fakes import ScriptedProvider, fetch_url_definition, noop_to
 
 class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_connect_error_retries_same_provider_once(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("connect_error"), ChatResponse(content="recovered")],
         )
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="unused")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(result, CompletionResult("recovered", "primary", ()))
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 0)
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
+        self.assertEqual(primary.health.consecutive_transient_failures, 0)
 
     async def test_connect_timeout_retries_same_provider_then_recovers(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("connect_timeout"), ChatResponse(content="recovered")],
         )
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="unused")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(result, CompletionResult("recovered", "primary", ()))
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 0)
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
+        self.assertEqual(primary.health.consecutive_transient_failures, 0)
 
     async def test_connect_timeout_exhausts_retry_then_falls_back_once(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("connect_timeout"), _transport_error("connect_timeout")],
         )
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="fallback")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result, CompletionResult("fallback", "openrouter", ("openrouter",)))
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 1)
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 1)
+        self.assertEqual(primary.health.consecutive_transient_failures, 1)
 
     async def test_read_timeout_prefers_healthy_ordered_fallback(self) -> None:
-        chainnode = ScriptedProvider("chainnode", [_transport_error("read_timeout")])
+        primary = ScriptedProvider("primary", [_transport_error("read_timeout")])
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="fallback")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(result, CompletionResult("fallback", "openrouter", ("openrouter",)))
-        self.assertEqual(len(chainnode.requests), 1)
+        self.assertEqual(len(primary.requests), 1)
         self.assertEqual(len(openrouter.requests), 1)
 
     async def test_read_timeout_wraps_to_previous_provider_and_recovers(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [
                 _transport_error("read_timeout"),
                 ChatResponse(content="recovered on wrap"),
             ],
         )
         openrouter = ScriptedProvider("openrouter", [_transport_error("read_timeout")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
         self.assertEqual(
             result,
-            CompletionResult("recovered on wrap", "chainnode", ("openrouter", "chainnode")),
+            CompletionResult("recovered on wrap", "primary", ("openrouter", "primary")),
         )
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 1)
 
     async def test_cyclic_read_timeouts_stop_after_bounded_failures(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
         openrouter = ScriptedProvider(
             "openrouter",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         with self.assertRaises(AllProvidersFailed):
             await router.complete(_request(), noop_tool)
 
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 2)
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 1)
+        self.assertEqual(primary.health.consecutive_transient_failures, 1)
         self.assertEqual(openrouter.health.consecutive_transient_failures, 1)
 
     async def test_read_timeout_rechecks_fallback_health_at_failure_time(self) -> None:
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="must not be called")])
-        chainnode = _FallbackDisablingProvider(
-            "chainnode",
+        primary = _FallbackDisablingProvider(
+            "primary",
             [_transport_error("read_timeout"), ChatResponse(content="recovered")],
             fallback=openrouter,
         )
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result, CompletionResult("recovered", "chainnode", ()))
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(result, CompletionResult("recovered", "primary", ()))
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(openrouter.requests, [])
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
+        self.assertEqual(primary.health.consecutive_transient_failures, 0)
 
     async def test_read_timeout_rechecks_wrapped_alternative_health_at_failure_time(self) -> None:
-        chainnode = ScriptedProvider("chainnode", [_transport_error("read_timeout")])
+        primary = ScriptedProvider("primary", [_transport_error("read_timeout")])
         openrouter = _FallbackDisablingProvider(
             "openrouter",
             [_transport_error("read_timeout"), ChatResponse(content="openrouter recovered")],
-            fallback=chainnode,
+            fallback=primary,
         )
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
@@ -144,23 +144,23 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             result,
             CompletionResult("openrouter recovered", "openrouter", ("openrouter",)),
         )
-        self.assertEqual(len(chainnode.requests), 1)
+        self.assertEqual(len(primary.requests), 1)
         self.assertEqual(len(openrouter.requests), 2)
 
     async def test_existing_shared_health_failure_does_not_prevent_wrap_recovery(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("read_timeout"), ChatResponse(content="recovered")],
         )
         openrouter = ScriptedProvider("openrouter", [_transport_error("read_timeout")])
-        chainnode.health.consecutive_transient_failures = 1
-        router = _router(chainnode, openrouter)
+        primary.health.consecutive_transient_failures = 1
+        router = _router(primary, openrouter)
 
         result = await router.complete(_request(), noop_tool)
 
-        self.assertEqual(result.provider, "chainnode")
-        self.assertEqual(len(chainnode.requests), 2)
-        self.assertEqual(chainnode.health.consecutive_transient_failures, 0)
+        self.assertEqual(result.provider, "primary")
+        self.assertEqual(len(primary.requests), 2)
+        self.assertEqual(primary.health.consecutive_transient_failures, 0)
 
     async def test_read_timeout_retries_final_healthy_provider_once(self) -> None:
         openrouter = ScriptedProvider(
@@ -254,8 +254,8 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TOOL-EVIDENCE", repr(provider.requests[1].messages))
 
     async def test_completed_tool_is_not_rerun_across_rotation_and_wrap(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [
                 _tool_call(),
                 _transport_error("read_timeout"),
@@ -263,7 +263,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         openrouter = ScriptedProvider("openrouter", [_transport_error("read_timeout")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -275,13 +275,13 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result,
-            CompletionResult("final after wrap", "chainnode", ("openrouter", "chainnode")),
+            CompletionResult("final after wrap", "primary", ("openrouter", "primary")),
         )
         self.assertEqual(tool_invocations, 1)
-        self.assertEqual(len(chainnode.requests), 3)
+        self.assertEqual(len(primary.requests), 3)
         self.assertEqual(len(openrouter.requests), 1)
         self.assertIn("PORTABLE-EVIDENCE", repr(openrouter.requests[0].messages))
-        self.assertIn("PORTABLE-EVIDENCE", repr(chainnode.requests[-1].messages))
+        self.assertIn("PORTABLE-EVIDENCE", repr(primary.requests[-1].messages))
 
     async def test_tool_chat_success_does_not_refund_same_provider_retry(self) -> None:
         provider = ScriptedProvider(
@@ -341,8 +341,8 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.health.consecutive_transient_failures, 1)
 
     async def test_request_cumulative_budget_bounds_all_providers(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [_transport_error("read_timeout"), _transport_error("read_timeout")],
         )
         openrouter = ScriptedProvider(
@@ -350,7 +350,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             [_transport_error("read_timeout"), ChatResponse(content="must not run")],
         )
         router = _router(
-            chainnode,
+            primary,
             openrouter,
             retry_policy=ProviderRetryPolicy(
                 max_consecutive_failures=3,
@@ -362,12 +362,12 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AllProvidersFailed):
             await router.complete(_request(), noop_tool)
 
-        self.assertEqual(len(chainnode.requests), 2)
+        self.assertEqual(len(primary.requests), 2)
         self.assertEqual(len(openrouter.requests), 1)
 
     async def test_healthy_alternative_drives_later_read_timeout_fallback(self) -> None:
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [
                 _transport_error("connect_timeout"),
                 _tool_call(),
@@ -375,7 +375,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         openrouter = ScriptedProvider("openrouter", [ChatResponse(content="fallback answer")])
-        router = _router(chainnode, openrouter)
+        router = _router(primary, openrouter)
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -387,7 +387,7 @@ class ProviderTransportRetryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, CompletionResult("fallback answer", "openrouter", ("openrouter",)))
         self.assertEqual(tool_invocations, 1)
-        self.assertEqual(len(chainnode.requests), 3)
+        self.assertEqual(len(primary.requests), 3)
         self.assertEqual(len(openrouter.requests), 1)
         self.assertIn("PORTABLE-EVIDENCE", repr(openrouter.requests[0].messages))
 
@@ -427,14 +427,14 @@ def _tool_call() -> ChatResponse:
 
 
 def _router(
-    chainnode: ScriptedProvider,
+    primary: ScriptedProvider,
     openrouter: ScriptedProvider,
     *,
     retry_policy: ProviderRetryPolicy | None = None,
 ) -> AIProviderRouter:
     return AIProviderRouter(
-        [chainnode, openrouter],
-        text_provider_order=("chainnode", "openrouter"),
+        [primary, openrouter],
+        text_provider_order=("primary", "openrouter"),
         retry_policy=retry_policy,
     )
 

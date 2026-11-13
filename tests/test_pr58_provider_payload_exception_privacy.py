@@ -41,10 +41,10 @@ class ProviderPayloadExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential="test-key",
-            target_id="chainnode:text:privacy-tool-name:c1",
+            target_id="opencode:text:privacy-tool-name:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -78,10 +78,10 @@ class ProviderPayloadExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential="test-key",
-            target_id="chainnode:text:privacy-json:c1",
+            target_id="opencode:text:privacy-json:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -132,10 +132,10 @@ class ProviderPayloadExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential="test-key",
-            target_id="chainnode:text:privacy-tools:c1",
+            target_id="opencode:text:privacy-tools:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -169,10 +169,10 @@ class ProviderPayloadExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential="test-key",
-            target_id="chainnode:text:privacy-choices:c1",
+            target_id="opencode:text:privacy-choices:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(

@@ -25,7 +25,7 @@ class CanonicalEnvVocabularyTests(unittest.TestCase):
     def test_generic_nested_provider_namespace_is_accepted(self) -> None:
         scanner = self._scanner()
         self.assertEqual(
-            scanner.scan_text("AI_PROVIDERS__CHAINNODE__API_KEYS=secret\n"),
+            scanner.scan_text("AI_PROVIDERS__OPENCODE__API_KEYS=secret\n"),
             (),
         )
 

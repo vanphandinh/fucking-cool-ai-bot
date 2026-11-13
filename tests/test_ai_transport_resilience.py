@@ -47,7 +47,7 @@ class AITransportResilienceTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(_env_file=None)
 
         self.assertIsNone(provider_runtime(settings, "openrouter").request_timeout_sec)
-        self.assertIsNone(provider_runtime(settings, "chainnode").request_timeout_sec)
+        self.assertIsNone(provider_runtime(settings, "opencode").request_timeout_sec)
 
     async def test_connect_error_is_classified_without_adapter_retry(self) -> None:
         message = await self._assert_transport_failure(

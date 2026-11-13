@@ -50,15 +50,15 @@ class ProviderTargetIdentitySecurityTests(unittest.TestCase):
             for slot in slots:
                 asyncio.run(slot.aclose())
 
-    def test_chainnode_target_identity_never_contains_raw_api_key(self) -> None:
+    def test_opencode_target_identity_never_contains_raw_api_key(self) -> None:
         secrets = ("Chain-SeCrEt-One", "Chain-SeCrEt-Two")
         settings = Settings(
             _env_file=None,
-            ai_providers={"chainnode":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
-            text_provider_order="chainnode",
+            ai_providers={"opencode":{"api_keys":",".join(secrets),"text_models":"Model/Case"}},
+            text_provider_order="opencode",
             vision_enabled=False,
         )
-        slots = build_provider_targets(settings, ["chainnode"])
+        slots = build_provider_targets(settings, ["opencode"])
         try:
             rendered = repr([provider_target_identity(slot) for slot in slots])
             rendered += repr([slot.target_id for slot in slots])
@@ -93,7 +93,7 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         retired = "OPENROUTER_TEXT_" + "MODEL"
         self.assertNotIn(f"{retired} là", rendered)
 
-    def test_validation_error_hides_canonical_chainnode_credentials(self) -> None:
+    def test_validation_error_hides_canonical_opencode_credentials(self) -> None:
         secrets = (
             "".join(("CN-A1", "!x")),
             "".join(("CN-B2", "!y")),
@@ -102,16 +102,16 @@ class SettingsSecretHygieneTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             Settings(
                 _env_file=None,
-                ai_providers={"chainnode":{"api_keys":",".join(secrets),"text_models":""}},
-                text_provider_order="chainnode",
+                ai_providers={"opencode":{"api_keys":",".join(secrets),"text_models":""}},
+                text_provider_order="opencode",
                 vision_enabled=False,
             )
 
         rendered = str(ctx.exception)
         if any(secret in rendered for secret in secrets):
-            self.fail("validation error exposed raw Chainnode credential input")
-        self.assertIn("AI_PROVIDERS__CHAINNODE__TEXT_MODELS", rendered)
-        retired = "CHAINNODE_TEXT_" + "MODEL"
+            self.fail("validation error exposed raw OpenCode credential input")
+        self.assertIn("AI_PROVIDERS__OPENCODE__TEXT_MODELS", rendered)
+        retired = "OPENCODE_TEXT_" + "MODEL"
         self.assertNotIn(f"{retired} là", rendered)
 
 

@@ -17,7 +17,7 @@ class ProviderPoolConfigTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "ChainOne,chainTWO,ChainOne",
                     "text_models": "Model/A,model/B,Model/A",
                 },
@@ -29,11 +29,11 @@ class ProviderPoolConfigTests(unittest.TestCase):
             vision_enabled=False,
         )
         self.assertEqual(
-            provider_runtime(settings, "chainnode").api_keys_list,
+            provider_runtime(settings, "opencode").api_keys_list,
             ["ChainOne", "chainTWO"],
         )
         self.assertEqual(
-            provider_runtime(settings, "chainnode").text_models_list,
+            provider_runtime(settings, "opencode").text_models_list,
             ["Model/A", "model/B"],
         )
         self.assertEqual(
@@ -45,7 +45,7 @@ class ProviderPoolConfigTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "",
                     "text_models": "",
                 }
@@ -53,7 +53,7 @@ class ProviderPoolConfigTests(unittest.TestCase):
             text_provider_order="",
             vision_provider_order="",
         )
-        self.assertEqual(provider_runtime(settings, "chainnode").api_keys_list, [])
+        self.assertEqual(provider_runtime(settings, "opencode").api_keys_list, [])
 
     def test_recovery_hop_limit_is_bounded(self) -> None:
         self.assertEqual(

@@ -17,17 +17,17 @@ class ConfigRegressionTests(unittest.TestCase):
         settings = Settings(_env_file=None, bot_username="@MyBot")
         self.assertEqual(settings.bot_username_clean, "mybot")
 
-    def test_provider_defaults_make_chainnode_primary_openrouter_and_opencode_fallback(
+    def test_provider_defaults_make_opencode_primary_and_openrouter_optional_fallback(
         self,
     ) -> None:
         settings = Settings(_env_file=None)
         self.assertEqual(
             settings.text_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
         self.assertEqual(
             settings.vision_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
         self.assertEqual(provider_runtime(settings, "openrouter").api_keys_list, [])
 
@@ -36,7 +36,7 @@ class ConfigRegressionTests(unittest.TestCase):
             Settings(
                 _env_file=None,
                 ai_providers={"openrouter": {"api_keys": "test-key", "text_models": ""}},
-                text_provider_order="chainnode,openrouter",
+                text_provider_order="opencode,openrouter",
                 vision_enabled=False,
             )
 
@@ -47,7 +47,7 @@ class ConfigRegressionTests(unittest.TestCase):
                 ai_providers={"openrouter": {"api_keys": "test-key", "text_models": "M"}},
                 text_provider_order="openrouter",
                 vision_enabled=True,
-                vision_provider_order="chainnode,openrouter",
+                vision_provider_order="opencode,openrouter",
             )
 
     def test_disabled_vision_does_not_require_openrouter_vision_model(self) -> None:

@@ -1,6 +1,6 @@
 # Telegram vision input
 
-Vision routing dùng cùng generic provider framework với text. Production order hiện tại là **Chainnode primary -> OpenRouter -> OpenCode fallback**; image handling không hard-code provider identity. Router chọn configured vision providers theo `VISION_PROVIDER_ORDER`, `ProviderCapabilities`, health state và image count.
+Vision routing dùng cùng generic provider framework với text. Production order hiện tại là **OpenCode primary; OpenRouter là optional fallback**; image handling không hard-code provider identity. Router chọn configured vision providers theo `VISION_PROVIDER_ORDER`, `ProviderCapabilities`, health state và image count.
 
 ## Input được hỗ trợ
 
@@ -12,7 +12,7 @@ Application limit hiện tại:
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-Cả Chainnode, OpenRouter và OpenCode vision slots hiện advertise:
+Cả OpenCode và OpenRouter vision slots hiện advertise:
 
 ```text
 supports_vision=True
@@ -46,9 +46,8 @@ Current production flow:
 Telegram media
   -> MAX_IMAGES_PER_REQUEST=1
   -> generic capability-aware vision routing
-  -> Chainnode / route=vision / max_images=1
-  -> OpenRouter / route=vision / max_images=1 (fallback nếu configured + qualified)
-  -> OpenCode / route=vision / max_images=1 (fallback nếu configured + qualified)
+  -> OpenCode / route=vision / max_images=1
+  -> OpenRouter / route=vision / max_images=1 (optional fallback nếu configured + qualified)
 ```
 
 UX khi vượt limit được sinh từ effective capability, không phải chuỗi provider-specific hard-code trong handler.
@@ -94,14 +93,13 @@ Current config:
 
 ```env
 VISION_ENABLED=1
-VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
-AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
+VISION_PROVIDER_ORDER=opencode,openrouter
 AI_PROVIDERS__OPENROUTER__VISION_MODELS=
 AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
 MAX_IMAGES_PER_REQUEST=1
 ```
 
-Chainnode, OpenRouter và OpenCode đều dùng stable provider key riêng; text/vision slots được phân biệt bằng `ProviderCapabilities.route`, không bằng UI name riêng.
+OpenCode và OpenRouter đều dùng stable provider key riêng; text/vision slots được phân biệt bằng `ProviderCapabilities.route`, không bằng UI name riêng.
 
 `VISION_ENABLED=0` tắt vision nhưng không tắt text.
 
@@ -127,13 +125,12 @@ Tool budget là request-wide:
 - tối đa 2 tool calls chạy song song;
 - `MAX_TOOL_ROUNDS` discovery rounds.
 
-Provider transition không reset budget. Provider-specific continuation metadata chỉ replay trong cùng provider. Nếu budget đã đóng, later vision provider chỉ nhận generic Fresh Synthesis context với tools disabled. Completed tool output không chạy lại chỉ vì route chuyển từ Chainnode sang OpenRouter.
+Provider transition không reset budget. Provider-specific continuation metadata chỉ replay trong cùng provider. Nếu budget đã đóng, later vision provider chỉ nhận generic Fresh Synthesis context với tools disabled. Completed tool output không chạy lại chỉ vì route chuyển từ OpenCode sang OpenRouter.
 
 ## Verification
 
 ```bash
 python -m unittest tests.test_vision -v
-python -m unittest tests.test_chainnode_provider -v
 python -m unittest tests.test_openrouter_provider -v
 python -m unittest tests.test_openrouter_probe -v
 python -m unittest tests.test_provider_registry -v
@@ -152,5 +149,5 @@ Production smoke nên gồm:
 5. image + direct URL;
 6. request vượt effective image limit để xác nhận bị chặn trước model call;
 7. `/status` để xác nhận configured vision providers/order/cooldown;
-8. controlled Chainnode vision failure -> OpenRouter vision fallback sau khi OpenRouter đã live-qualified;
-9. restore Chainnode ngay sau fallback smoke.
+8. controlled OpenCode vision failure -> OpenRouter vision fallback sau khi OpenRouter đã live-qualified;
+9. restore OpenCode ngay sau fallback smoke.

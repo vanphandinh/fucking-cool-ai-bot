@@ -25,12 +25,12 @@ class RuntimeSecretReprRegressionTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": secret,
                     "text_models": "model-a",
                 }
             },
-            text_provider_order="chainnode",
+            text_provider_order="opencode",
             vision_enabled=False,
         )
 

@@ -178,11 +178,11 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         url1 = "https://example.com/one"
         url2 = "https://example.com/two"
-        chainnode = ScriptedProvider(
-            "chainnode",
+        primary = ScriptedProvider(
+            "primary",
             [
                 ProviderError(
-                    "chainnode read timeout",
+                    "primary read timeout",
                     transport_kind=TransportFailureKind.READ_TIMEOUT,
                 )
             ],
@@ -221,8 +221,8 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         provider_router = AIProviderRouter(
-            [chainnode, openrouter],
-            text_provider_order=("chainnode", "openrouter"),
+            [primary, openrouter],
+            text_provider_order=("primary", "openrouter"),
             vision_provider_order=(),
             max_tool_rounds=5,
         )
@@ -295,7 +295,7 @@ class QuestionRenewalFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.renewals, 2)
         self.assertEqual(fetch_counts[url1], 1)
         self.assertEqual(fetch_counts[url2], 1)
-        self.assertEqual(len(chainnode.requests), 1)
+        self.assertEqual(len(primary.requests), 1)
         self.assertEqual(len(openrouter.requests), 4)
         self.assertEqual(final_answers, [(7, "final answer")])
 

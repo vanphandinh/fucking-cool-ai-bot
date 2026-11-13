@@ -22,10 +22,10 @@ class ProviderTransportExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential=secret,
-            target_id="chainnode:text:privacy:c2",
+            target_id="opencode:text:privacy:c2",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -52,10 +52,10 @@ class ProviderTransportExceptionPrivacyTests(unittest.IsolatedAsyncioTestCase):
             raise httpx.ConnectError("connection failed", request=request)
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="privacy-model",
             credential=secret,
-            target_id="chainnode:text:privacy:c1",
+            target_id="opencode:text:privacy:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(

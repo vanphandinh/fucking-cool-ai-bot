@@ -72,30 +72,30 @@ class OpenRouterProfileTests(unittest.TestCase):
     def test_provider_option_is_rejected_without_catalog_opt_in(self) -> None:
         with self.assertRaisesRegex(
             ValidationError,
-            "AI_PROVIDERS__CHAINNODE__PROVIDER",
+            "AI_PROVIDERS__OPENCODE__PROVIDER",
         ):
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
+                    "opencode": {
                         "api_keys": "key",
                         "text_models": "text-model",
                         "provider": "deepinfra",
                     }
                 },
-                text_provider_order="chainnode",
+                text_provider_order="opencode",
                 vision_enabled=False,
             )
 
     def test_provider_option_is_rejected_for_unused_non_opted_in_provider(self) -> None:
         with self.assertRaisesRegex(
             ValidationError,
-            "AI_PROVIDERS__CHAINNODE__PROVIDER",
+            "AI_PROVIDERS__OPENCODE__PROVIDER",
         ):
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
+                    "opencode": {
                         "api_keys": "key",
                         "provider": "deepinfra",
                     }
@@ -124,19 +124,19 @@ class OpenRouterProfileTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "key",
                     "text_models": "text-model",
                 }
             },
-            text_provider_order="chainnode",
+            text_provider_order="opencode",
             vision_enabled=False,
         )
         # Settings validation rejects this combination; isolate the builder's
         # own opt-in guard with the already-validated runtime object.
-        settings.ai_providers["chainnode"].provider = "deepinfra"
+        settings.ai_providers["opencode"].provider = "deepinfra"
 
-        targets = build_provider_targets(settings, ["chainnode"])
+        targets = build_provider_targets(settings, ["opencode"])
         try:
             self.assertEqual(len(targets), 1)
             self.assertEqual(targets[0].spec.provider_preferences, ())

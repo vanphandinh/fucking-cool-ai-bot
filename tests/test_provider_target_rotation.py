@@ -39,8 +39,8 @@ def _target(
 def _router(
     providers: list[ScriptedProvider],
     *,
-    text_order: tuple[str, ...] = ("chainnode", "openrouter"),
-    vision_order: tuple[str, ...] = ("chainnode", "openrouter"),
+    text_order: tuple[str, ...] = ("primary", "openrouter"),
+    vision_order: tuple[str, ...] = ("primary", "openrouter"),
     recovery_hops: int = 5,
 ) -> AIProviderRouter:
     policy = SimpleNamespace(
@@ -85,19 +85,19 @@ def _transport_error(message: str, kind: str) -> ProviderError:
 
 
 class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_chainnode_429_rotates_model_without_provider_fallback(self) -> None:
+    async def test_primary_429_rotates_model_without_provider_fallback(self) -> None:
         model_a = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [ProviderError("quota", status_code=429, retry_after=60, transient=True)],
             ),
             model="cn-model-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         model_b = _target(
-            ScriptedProvider("chainnode", [ChatResponse(content="model-b")]),
+            ScriptedProvider("primary", [ChatResponse(content="model-b")]),
             model="cn-model-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
         openrouter = _target(
             ScriptedProvider("openrouter", [ChatResponse(content="unused")]),
@@ -110,7 +110,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
-            ("model-b", "chainnode", ()),
+            ("model-b", "primary", ()),
         )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
@@ -119,20 +119,20 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model_b.requests), 1)
         self.assertEqual(openrouter.requests, [])
 
-    async def test_chainnode_two_429s_then_falls_back_to_openrouter(self) -> None:
+    async def test_primary_two_429s_then_falls_back_to_openrouter(self) -> None:
         a = _target(
             ScriptedProvider(
-                "chainnode", [ProviderError("quota-a", status_code=429, transient=True)]
+                "primary", [ProviderError("quota-a", status_code=429, transient=True)]
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         b = _target(
             ScriptedProvider(
-                "chainnode", [ProviderError("quota-b", status_code=429, transient=True)]
+                "primary", [ProviderError("quota-b", status_code=429, transient=True)]
             ),
             model="cn-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
         openrouter = _target(
             ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
@@ -157,22 +157,22 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_transport_then_429_then_sibling_transport_flushes_correct_target(self) -> None:
         first = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     _transport_error("connect-timeout", "connect_timeout"),
                     ProviderError("rate-limit", status_code=429, retry_after=120, transient=True),
                 ],
             ),
             model="m1",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         sibling = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [_transport_error("read-timeout", "read_timeout")],
             ),
             model="m2",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
         fallback = _target(
             ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
@@ -285,18 +285,18 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vision_key1.requests, [])
         self.assertEqual(len(vision_key2.requests), 1)
 
-    async def test_chainnode_503_falls_back_without_sibling_model_spray(self) -> None:
+    async def test_primary_503_falls_back_without_sibling_model_spray(self) -> None:
         a = _target(
             ScriptedProvider(
-                "chainnode", [ProviderError("down", status_code=503, transient=True)]
+                "primary", [ProviderError("down", status_code=503, transient=True)]
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         sibling = _target(
-            ScriptedProvider("chainnode", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("primary", [ChatResponse(content="must-not-run")]),
             model="cn-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
         openrouter = _target(
             ScriptedProvider("openrouter", [ChatResponse(content="fallback")]),
@@ -344,22 +344,22 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_transport_retry_token_does_not_multiply_with_siblings(self) -> None:
         first = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     ProviderError("connect-1", transient=True),
                     ProviderError("connect-2", transient=True),
                 ],
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         first.script[0].transport_kind = "connect_timeout"
         first.script[1].transport_kind = "connect_timeout"
         siblings = [
             _target(
-                ScriptedProvider("chainnode", [ChatResponse(content="must-not-run")]),
+                ScriptedProvider("primary", [ChatResponse(content="must-not-run")]),
                 model=f"cn-{index}",
-                target_id=f"chainnode:text:m{index}:c1",
+                target_id=f"primary:text:m{index}:c1",
             )
             for index in range(2, 8)
         ]
@@ -380,17 +380,17 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         targets = [
             _target(
                 ScriptedProvider(
-                    "chainnode",
+                    "primary",
                     [ProviderError("quota", status_code=429, transient=True)],
                 ),
                 model=f"cn-{index}",
-                target_id=f"chainnode:text:m{index}:c1",
+                target_id=f"primary:text:m{index}:c1",
             )
             for index in range(20)
         ]
         router = _router(
             targets,
-            text_order=("chainnode",),
+            text_order=("primary",),
             vision_order=(),
             recovery_hops=5,
         )
@@ -403,21 +403,21 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_is_not_rerun_when_429_switches_target(self) -> None:
         a = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     _tool_call(),
                     ProviderError("quota", status_code=429, transient=True),
                 ],
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         b = _target(
-            ScriptedProvider("chainnode", [ChatResponse(content="final")]),
+            ScriptedProvider("primary", [ChatResponse(content="final")]),
             model="cn-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
-        router = _router([a, b], text_order=("chainnode",), vision_order=())
+        router = _router([a, b], text_order=("primary",), vision_order=())
         tool_invocations = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -432,7 +432,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             (result.content, result.provider, result.fallbacks),
-            ("final", "chainnode", ()),
+            ("final", "primary", ()),
         )
         self.assertEqual(result.target_rotations, 1)
         self.assertEqual(result.model_rotations, 1)
@@ -444,7 +444,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_rotation_does_not_reset_tool_budget(self) -> None:
         a = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     ChatResponse(
                         tool_calls=[
@@ -460,17 +460,17 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
                 ],
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         b = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [ChatResponse(content="bounded synthesis")],
             ),
             model="cn-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
-        router = _router([a, b], text_order=("chainnode",), vision_order=())
+        router = _router([a, b], text_order=("primary",), vision_order=())
         executed = 0
 
         async def execute(_name: str, _args: dict) -> str:
@@ -525,19 +525,19 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_exhausted_rotation_budget_blocks_later_family_fallback(self) -> None:
         first = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [ProviderError("quota", status_code=429, transient=True)],
             ),
             model="cn-a",
-            target_id="chainnode:text:m1:c1",
+            target_id="primary:text:m1:c1",
         )
         sibling = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [ProviderError("down", status_code=503, transient=True)],
             ),
             model="cn-b",
-            target_id="chainnode:text:m2:c1",
+            target_id="primary:text:m2:c1",
         )
         backup = _target(
             ScriptedProvider("openrouter", [ChatResponse(content="must-not-run")]),
@@ -546,7 +546,7 @@ class ProviderTargetRotationTests(unittest.IsolatedAsyncioTestCase):
         )
         router = _router(
             [first, sibling, backup],
-            text_order=("chainnode", "openrouter"),
+            text_order=("primary", "openrouter"),
             vision_order=(),
             recovery_hops=1,
         )

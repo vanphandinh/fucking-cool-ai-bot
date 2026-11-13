@@ -1,18 +1,4 @@
 [[providers]]
-id = "chainnode"
-driver = "openai-chat"
-default_base_url = "https://dn.chainno.de/v1"
-default_timeout_sec = 60.0
-
-[providers.routes.text]
-enabled = true
-
-[providers.routes.vision]
-enabled = true
-supports_vision = true
-max_images = 1
-
-[[providers]]
 id = "openrouter"
 driver = "openai-chat"
 default_base_url = "https://openrouter.ai/api/v1"

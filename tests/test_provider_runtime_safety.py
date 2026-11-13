@@ -1,10 +1,7 @@
-"""Security and runtime-safety regressions for the Chainnode integration."""
+"""Security and runtime-safety regressions for the generic openai-chat integration."""
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
 import unittest
 
 import httpx
@@ -17,37 +14,11 @@ from app.config import Settings
 from tests.provider_fakes import text_request
 
 
-ROOT = Path(__file__).parents[1]
-PROBE_PATH = ROOT / "scripts" / "probe_chainnode.py"
-CHAINNODE_FILES = (
-    ROOT / "scripts" / "probe_chainnode.py",
-    ROOT / "scripts" / "probe_chainnode_vision.py",
-    ROOT / ".env.example",
-)
-QUALIFIED_MODEL = "cl/cline-free/deepseek-v4.1-flash"
-VISION_MODEL = "cl/cline-free/muse-spark-1.3-contributor"
+QUALIFIED_MODEL = "deepseek-v4.1-flash"
+VISION_MODEL = "deepseek-v4-flash-vision-exp"
 
 
-class ChainnodeCliAuditTests(unittest.TestCase):
-    def test_probe_is_directly_executable_from_repo_root(self) -> None:
-        result = subprocess.run(
-            [sys.executable, str(PROBE_PATH), "--help"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--models", result.stdout)
-        self.assertNotIn("--api-key", result.stdout.lower())
-
-    def test_chainnode_sources_contain_no_embedded_secret_shape(self) -> None:
-        for path in CHAINNODE_FILES:
-            text = path.read_text(encoding="utf-8")
-            self.assertNotIn("sk-", text.lower(), str(path))
-
-
-class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
+class ProviderRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_structured_tool_arguments_fail_closed(self) -> None:
         provider = _provider()
         await provider.aclose()
@@ -79,7 +50,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider._client = httpx.AsyncClient(
-            base_url="https://dn.chainno.de/v1/",
+            base_url="https://opencode.ai/zen/go/v1/",
             transport=httpx.MockTransport(respond),
         )
         try:
@@ -152,7 +123,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                     )
 
                 provider._client = httpx.AsyncClient(
-                    base_url="https://dn.chainno.de/v1/",
+                    base_url="https://opencode.ai/zen/go/v1/",
                     transport=httpx.MockTransport(respond),
                 )
                 try:
@@ -195,7 +166,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider._client = httpx.AsyncClient(
-            base_url="https://dn.chainno.de/v1/",
+            base_url="https://opencode.ai/zen/go/v1/",
             transport=httpx.MockTransport(respond),
         )
         try:
@@ -231,7 +202,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                     )
 
                 provider._client = httpx.AsyncClient(
-                    base_url="https://dn.chainno.de/v1/",
+                    base_url="https://opencode.ai/zen/go/v1/",
                     transport=httpx.MockTransport(respond),
                 )
                 try:
@@ -243,15 +214,15 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ctx.exception.transient, transient)
                 self.assertEqual(ctx.exception.retry_after, retry_after)
 
-    async def test_chainnode_503_falls_back_to_openrouter_without_shared_health(self) -> None:
+    async def test_primary_503_falls_back_to_openrouter_without_shared_health(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode":{"api_keys":"test-chainnode-key","text_models":QUALIFIED_MODEL},
+                    "opencode":{"api_keys":"test-opencode-key","text_models":QUALIFIED_MODEL},
                     "openrouter":{"api_keys":"test-openrouter-key","text_models":"test-openrouter-text"},
                 },
-                text_provider_order="chainnode,openrouter",
+                text_provider_order="opencode,openrouter",
                 vision_enabled=False,
             )
         )
@@ -259,7 +230,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         for provider in providers.values():
             await provider.aclose()
 
-        def chainnode_failure(request: httpx.Request) -> httpx.Response:
+        def primary_failure(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 503,
                 json={"error": {"message": "temporary outage"}},
@@ -277,9 +248,9 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        providers["chainnode"]._client = httpx.AsyncClient(
-            base_url="https://dn.chainno.de/v1/",
-            transport=httpx.MockTransport(chainnode_failure),
+        providers["opencode"]._client = httpx.AsyncClient(
+            base_url="https://opencode.ai/zen/go/v1/",
+            transport=httpx.MockTransport(primary_failure),
         )
         providers["openrouter"]._client = httpx.AsyncClient(
             base_url="https://openrouter.ai/api/v1/",
@@ -295,21 +266,21 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.content, "ok")
         self.assertEqual(result.fallbacks, ("openrouter",))
         self.assertEqual(
-            providers["chainnode"].health.consecutive_transient_failures,
+            providers["opencode"].health.consecutive_transient_failures,
             1,
         )
         self.assertEqual(providers["openrouter"].health.consecutive_transient_failures, 0)
 
-    async def test_chainnode_vision_503_falls_back_to_openrouter_vision(self) -> None:
+    async def test_primary_vision_503_falls_back_to_openrouter_vision(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode":{"api_keys":"test-chainnode-key","vision_models":VISION_MODEL},
+                    "opencode":{"api_keys":"test-opencode-key","vision_models":VISION_MODEL},
                     "openrouter":{"api_keys":"test-openrouter-key","text_models":"test-openrouter-text","vision_models":"test-openrouter-vision"},
                 },
                 text_provider_order="openrouter",
-                vision_provider_order="chainnode,openrouter",
+                vision_provider_order="opencode,openrouter",
             )
         )
         providers = {
@@ -319,7 +290,7 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         for provider in providers.values():
             await provider.aclose()
 
-        def chainnode_failure(request: httpx.Request) -> httpx.Response:
+        def primary_failure(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 503,
                 json={"error": {"message": "temporary vision outage"}},
@@ -342,9 +313,9 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        providers[("chainnode", "vision")]._client = httpx.AsyncClient(
-            base_url="https://dn.chainno.de/v1/",
-            transport=httpx.MockTransport(chainnode_failure),
+        providers[("opencode", "vision")]._client = httpx.AsyncClient(
+            base_url="https://opencode.ai/zen/go/v1/",
+            transport=httpx.MockTransport(primary_failure),
         )
         providers[("openrouter", "vision")]._client = httpx.AsyncClient(
             base_url="https://openrouter.ai/api/v1/",
@@ -380,11 +351,11 @@ class ChainnodeRuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
 def _provider():
     settings = Settings(
         _env_file=None,
-        ai_providers={"chainnode":{"api_keys":"test-key","text_models":QUALIFIED_MODEL,"request_timeout_sec":30}},
-        text_provider_order="chainnode",
+        ai_providers={"opencode":{"api_keys":"test-key","text_models":QUALIFIED_MODEL,"request_timeout_sec":30}},
+        text_provider_order="opencode",
         vision_enabled=False,
     )
-    return build_provider_targets(settings, ["chainnode"])[0]
+    return build_provider_targets(settings, ["opencode"])[0]
 
 
 def _search_tool() -> ToolDefinition:

@@ -44,14 +44,14 @@ class _ToolThenConcurrentRateLimitProvider(ScriptedProvider):
         return ChatResponse(content="stale-target-reused")
 
 
-class _ToolThenConcurrentChainnodeAuthFailureProvider(ScriptedProvider):
+class _ToolThenConcurrentPrimaryAuthFailureProvider(ScriptedProvider):
     """A waits in a tool; B disables credential #1 before A can continue."""
 
     def __init__(self) -> None:
-        super().__init__("chainnode", [])
+        super().__init__("primary", [])
         self.model = "model-a"
         self.credential_id = "cred-1"
-        self.target_id = "chainnode:text:m1:c1"
+        self.target_id = "primary:text:m1:c1"
         self.call_count = 0
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -73,7 +73,7 @@ class _ToolThenConcurrentChainnodeAuthFailureProvider(ScriptedProvider):
                 status_code=401,
                 transient=False,
             )
-        return ChatResponse(content="stale-chainnode-credential-reused")
+        return ChatResponse(content="stale-primary-credential-reused")
 
 
 def _target_two() -> ScriptedProvider:
@@ -87,14 +87,14 @@ def _target_two() -> ScriptedProvider:
     return provider
 
 
-def _chainnode_target_two() -> ScriptedProvider:
+def _primary_target_two() -> ScriptedProvider:
     provider = ScriptedProvider(
-        "chainnode",
+        "primary",
         [ChatResponse(content="request-b"), ChatResponse(content="request-a")],
     )
     provider.model = "model-a"
     provider.credential_id = "cred-2"
-    provider.target_id = "chainnode:text:m1:c2"
+    provider.target_id = "primary:text:m1:c2"
     return provider
 
 
@@ -146,14 +146,14 @@ class ProviderTargetRevalidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sibling.requests), 2)
         self.assertEqual(tool_invocations, 1)
 
-    async def test_chainnode_tool_continuation_revalidates_credential_after_concurrent_401(
+    async def test_primary_tool_continuation_revalidates_credential_after_concurrent_401(
         self,
     ) -> None:
-        raced = _ToolThenConcurrentChainnodeAuthFailureProvider()
-        sibling = _chainnode_target_two()
+        raced = _ToolThenConcurrentPrimaryAuthFailureProvider()
+        sibling = _primary_target_two()
         router = AIProviderRouter(
             [raced, sibling],
-            text_provider_order=("chainnode",),
+            text_provider_order=("primary",),
             vision_provider_order=(),
         )
         tool_started = asyncio.Event()

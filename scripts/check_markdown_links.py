@@ -102,6 +102,10 @@ def tracked_markdown_files(root: Path = ROOT) -> tuple[Path, ...]:
 def find_broken_links(root: Path = ROOT) -> tuple[str, ...]:
     hits: list[str] = []
     for path in tracked_markdown_files(root):
+        # A tracked-but-deleted file is the intended state until its deletion is
+        # staged; skipping it keeps the local gate usable before commit.
+        if not path.is_file():
+            continue
         hits.extend(scan_markdown_file(path, root))
     return tuple(hits)
 
@@ -135,6 +139,8 @@ def find_untracked_link_targets(
         if not relative_source.endswith(".md"):
             continue
         path = root / relative_source
+        if not path.is_file():
+            continue
         markdown = path.read_text(encoding="utf-8")
         for line_number, raw_target in _markdown_links(markdown):
             local_path = _link_path(raw_target)

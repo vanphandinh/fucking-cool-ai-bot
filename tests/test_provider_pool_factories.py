@@ -14,20 +14,20 @@ class ProviderPoolFactoryTests(unittest.TestCase):
         for target in targets:
             asyncio.run(target.aclose())
 
-    def test_chainnode_is_model_major_then_credential_for_each_route(self) -> None:
+    def test_opencode_is_model_major_then_credential_for_each_route(self) -> None:
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "ChainKeyOne,ChainKeyTwo",
                     "text_models": "DeepSeek/Case,GLM/Case",
                     "vision_models": "Vision/Case",
                 }
             },
-            text_provider_order="chainnode",
-            vision_provider_order="chainnode",
+            text_provider_order="opencode",
+            vision_provider_order="opencode",
         )
-        targets = build_provider_targets(settings, ["chainnode"])
+        targets = build_provider_targets(settings, ["opencode"])
         try:
             self.assertEqual(
                 [
@@ -40,12 +40,12 @@ class ProviderPoolFactoryTests(unittest.TestCase):
                     for target in targets
                 ],
                 [
-                    ("text", "DeepSeek/Case", "cred-1", "chainnode:text:m1:c1"),
-                    ("text", "DeepSeek/Case", "cred-2", "chainnode:text:m1:c2"),
-                    ("text", "GLM/Case", "cred-1", "chainnode:text:m2:c1"),
-                    ("text", "GLM/Case", "cred-2", "chainnode:text:m2:c2"),
-                    ("vision", "Vision/Case", "cred-1", "chainnode:vision:m1:c1"),
-                    ("vision", "Vision/Case", "cred-2", "chainnode:vision:m1:c2"),
+                    ("text", "DeepSeek/Case", "cred-1", "opencode:text:m1:c1"),
+                    ("text", "DeepSeek/Case", "cred-2", "opencode:text:m1:c2"),
+                    ("text", "GLM/Case", "cred-1", "opencode:text:m2:c1"),
+                    ("text", "GLM/Case", "cred-2", "opencode:text:m2:c2"),
+                    ("vision", "Vision/Case", "cred-1", "opencode:vision:m1:c1"),
+                    ("vision", "Vision/Case", "cred-2", "opencode:vision:m1:c2"),
                 ],
             )
         finally:

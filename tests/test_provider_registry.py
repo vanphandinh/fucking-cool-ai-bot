@@ -158,15 +158,15 @@ class ProviderContractTests(unittest.TestCase):
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_provider_orders_default_to_chainnode_then_openrouter_then_opencode(self) -> None:
+    def test_provider_orders_default_to_opencode_then_openrouter(self) -> None:
         settings = Settings(_env_file=None)
         self.assertEqual(
             settings.text_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
         self.assertEqual(
             settings.vision_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
 
     def test_orders_reject_unknown_catalog_provider(self) -> None:
@@ -194,15 +194,15 @@ class ProviderOrderTests(unittest.TestCase):
         self.assertEqual([provider.name for provider in text], ["first", "second"])
         self.assertEqual([provider.name for provider in vision], ["second", "first"])
 
-    def test_production_router_keeps_chainnode_primary_and_openrouter_fallback(self) -> None:
+    def test_production_router_keeps_opencode_primary_and_openrouter_fallback(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
-                        "api_keys": "test-chainnode-key",
-                        "text_models": "test-chainnode-text",
-                        "vision_models": "test-chainnode-vision",
+                    "opencode": {
+                        "api_keys": "test-opencode-key",
+                        "text_models": "test-opencode-text",
+                        "vision_models": "test-opencode-vision",
                     },
                     "openrouter": {
                         "api_keys": "test-openrouter-key",
@@ -215,19 +215,19 @@ class ProviderOrderTests(unittest.TestCase):
         try:
             self.assertEqual(
                 router.provider_order(False),
-                ("chainnode", "openrouter", "opencode"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(
                 router.provider_order(True),
-                ("chainnode", "openrouter", "opencode"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(
                 router.configured_provider_names(False),
-                ("chainnode", "openrouter"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(
                 router.configured_provider_names(True),
-                ("chainnode", "openrouter"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(router.max_supported_images(), 1)
         finally:

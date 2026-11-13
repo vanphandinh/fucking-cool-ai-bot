@@ -27,7 +27,7 @@ class ShutdownFailureTests(unittest.IsolatedAsyncioTestCase):
         provider = SimpleNamespace(aclose=AsyncMock())
         router = SimpleNamespace(
             providers=[provider],
-            configured_provider_names=lambda vision: [] if vision else ["chainnode"],
+            configured_provider_names=lambda vision: [] if vision else ["opencode"],
         )
         with (
             patch.object(main, "Bot", return_value=bot),

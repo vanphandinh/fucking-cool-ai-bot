@@ -1,6 +1,6 @@
 # OpenCode provider (Go và Zen)
 
-OpenCode (gói Go hoặc Zen trả trước) là third fallback AI provider cho text và vision, dùng chung `openai-chat` driver với Chainnode và OpenRouter. Profile nằm cuối default provider orders (`chainnode,openrouter,opencode`) và chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
+OpenCode (gói Go hoặc Zen trả trước) là default primary AI provider cho text và vision, dùng chung `openai-chat` driver với OpenRouter. Profile nằm đầu default provider orders (`opencode,openrouter`) và chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình.
 
 ## Current configuration
 
@@ -52,8 +52,8 @@ Với caller không có conversation context (script, probe, `orchestrator.ask(q
 4. Xác nhận `opencode` nằm trong order mặc định (hoặc đặt order riêng), ví dụ:
 
 ```env
-TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
-VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
+TEXT_PROVIDER_ORDER=opencode,openrouter
+VISION_PROVIDER_ORDER=opencode,openrouter
 ```
 
 5. Chạy `python scripts/sync_env.py` và yêu cầu exit `0`; chạy lần hai để xác nhận idempotence.
@@ -86,11 +86,11 @@ Các status còn lại dùng provider-agnostic default: `401` disable credential
 
 ## Rollback
 
-Tắt OpenCode mà không xóa credential/model pools:
+Tắt OpenRouter fallback và giữ OpenCode-only:
 
 ```env
-TEXT_PROVIDER_ORDER=chainnode,openrouter
-VISION_PROVIDER_ORDER=chainnode,openrouter
+TEXT_PROVIDER_ORDER=opencode
+VISION_PROVIDER_ORDER=opencode
 ```
 
 Sau đó rebuild/restart service.

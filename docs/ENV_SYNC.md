@@ -24,12 +24,6 @@ Permission hardening là một phần của sync vì `.env` chứa Telegram toke
 Runtime và template chỉ dùng plural credential/model pools:
 
 ```env
-AI_PROVIDERS__CHAINNODE__API_KEYS=
-AI_PROVIDERS__CHAINNODE__BASE_URL=https://dn.chainno.de/v1
-AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
-
 AI_PROVIDERS__OPENROUTER__API_KEYS=
 AI_PROVIDERS__OPENROUTER__BASE_URL=https://openrouter.ai/api/v1
 AI_PROVIDERS__OPENROUTER__TEXT_MODELS=
@@ -43,8 +37,8 @@ AI_PROVIDERS__OPENCODE__TEXT_MODELS=deepseek-v4.1-flash
 AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
 AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
 
-TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
-VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
+TEXT_PROVIDER_ORDER=opencode,openrouter
+VISION_PROVIDER_ORDER=opencode,openrouter
 
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
@@ -52,7 +46,7 @@ PROVIDER_RETRY_MAX_PER_REQUEST=5
 PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả Chainnode và OpenRouter mở rộng target theo deterministic model-major × credential order. `AI_PROVIDERS__OPENROUTER__BASE_URL` mặc định là `https://openrouter.ai/api/v1` và được dùng chung bởi runtime và qualification probe. `AI_PROVIDERS__OPENROUTER__PROVIDER` (danh sách slug ngăn bằng dấu phẩy, có thể để trống) giới hạn và ưu tiên đúng các upstream provider OpenRouter; chỉ OpenRouter khai báo hỗ trợ thuộc tính này trong catalog.
+Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và credential, cả OpenCode và OpenRouter mở rộng target theo deterministic model-major × credential order. `AI_PROVIDERS__OPENROUTER__BASE_URL` mặc định là `https://openrouter.ai/api/v1` và được dùng chung bởi runtime và qualification probe. `AI_PROVIDERS__OPENROUTER__PROVIDER` (danh sách slug ngăn bằng dấu phẩy, có thể để trống) giới hạn và ưu tiên đúng các upstream provider OpenRouter; chỉ OpenRouter khai báo hỗ trợ thuộc tính này trong catalog.
 
 ## Deployment sequence
 
@@ -60,6 +54,9 @@ Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và cr
 2. Populate all canonical settings required by the deployment.
 3. Remove every assignment that is not present in the deployed `.env.example`.
 4. Confirm text/vision provider orders contain only current registered providers.
+
+   Khi nâng cấp từ bản có Chainnode, làm migration `.env` ở mục 10.3 của [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) trước khi sync.
+
 5. Deploy the canonical-only revision.
 6. Run `python scripts/sync_env.py` and require exit `0`.
 7. Run it again and verify no content rewrite.
@@ -91,8 +88,8 @@ Xác nhận provider orders chỉ chứa provider hiện hành, route đang bậ
 Nếu muốn tạm thời vô hiệu hóa OpenRouter fallback mà không thay config pool:
 
 ```env
-TEXT_PROVIDER_ORDER=chainnode
-VISION_PROVIDER_ORDER=chainnode
+TEXT_PROVIDER_ORDER=opencode
+VISION_PROVIDER_ORDER=opencode
 ```
 
 Sau đó rebuild/restart service.

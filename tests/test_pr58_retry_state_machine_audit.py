@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 import math
@@ -10,7 +11,7 @@ import unittest
 import httpx
 
 from app.ai.base import AllProvidersFailed, ProviderError
-from app.ai.recovery import HealthScope
+from app.ai.recovery import HealthScope, RecoveryPolicy
 from app.ai.router import AIProviderRouter
 from app.ai.target import provider_target_identity
 from tests.openai_target_fakes import make_catalog_target
@@ -27,11 +28,9 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        provider = make_catalog_target(
-            "chainnode",
+        provider = _default_recovery_provider(
             model="retry-model",
-            credential="test-key",
-            target_id="chainnode:text:retry-negative:c1",
+            target_id="opencode:text:retry-negative:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -40,7 +39,7 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
         )
         router = AIProviderRouter(
             [provider],
-            text_provider_order=("chainnode",),
+            text_provider_order=("opencode",),
             vision_provider_order=(),
         )
 
@@ -67,10 +66,10 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
             )
 
         provider = make_catalog_target(
-            "chainnode",
+            "opencode",
             model="retry-date-model",
             credential="test-key",
-            target_id="chainnode:text:retry-date:c1",
+            target_id="opencode:text:retry-date:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -97,11 +96,9 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
                 request=request,
             )
 
-        provider = make_catalog_target(
-            "chainnode",
+        provider = _default_recovery_provider(
             model="retry-model",
-            credential="test-key",
-            target_id="chainnode:text:retry:c1",
+            target_id="opencode:text:retry:c1",
         )
         await provider.aclose()
         provider._client = httpx.AsyncClient(
@@ -110,7 +107,7 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
         )
         router = AIProviderRouter(
             [provider],
-            text_provider_order=("chainnode",),
+            text_provider_order=("opencode",),
             vision_provider_order=(),
         )
 
@@ -124,6 +121,20 @@ class RetryAfterHealthBoundTests(unittest.IsolatedAsyncioTestCase):
         model_health = router.scoped_health.health(HealthScope.MODEL, identity)
         self.assertTrue(math.isfinite(provider.health.cooldown_until))
         self.assertTrue(math.isfinite(model_health.cooldown_until))
+
+
+
+def _default_recovery_provider(*, model: str, target_id: str):
+    # Exercise the provider-agnostic 429 policy (MODEL scope), not OpenCode's
+    # catalog override (CREDENTIAL scope).
+    provider = make_catalog_target(
+        "opencode",
+        model=model,
+        credential="test-key",
+        target_id=target_id,
+    )
+    provider.spec = replace(provider.spec, recovery_policy=RecoveryPolicy())
+    return provider
 
 
 if __name__ == "__main__":

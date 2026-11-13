@@ -8,13 +8,13 @@ from app.ai.catalog import load_provider_catalog
 
 
 class ProviderCatalogTests(unittest.TestCase):
-    def test_catalog_loads_chainnode_and_openrouter(self) -> None:
+    def test_catalog_loads_openrouter_and_opencode(self) -> None:
         catalog = load_provider_catalog()
         self.assertEqual(
             tuple(catalog.providers),
-            ("chainnode", "openrouter", "opencode"),
+            ("openrouter", "opencode"),
         )
-        self.assertEqual(catalog.require("chainnode").driver, "openai-chat")
+        self.assertEqual(catalog.require("opencode").driver, "openai-chat")
         self.assertEqual(catalog.require("openrouter").routes["vision"].max_images, 1)
 
     def test_opencode_profile_uses_openai_chat_endpoint(self) -> None:

@@ -17,16 +17,16 @@ class ProviderEnvContractTests(unittest.TestCase):
             env.write_text(
                 "\n".join(
                     [
-                        "AI_PROVIDERS__CHAINNODE__API_KEYS=KeyOne,KeyTwo",
-                        "AI_PROVIDERS__CHAINNODE__TEXT_MODELS=ModelA,ModelB",
-                        "AI_PROVIDERS__CHAINNODE__VISION_MODELS=VisionA",
-                        "AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=42",
+                        "AI_PROVIDERS__OPENCODE__API_KEYS=KeyOne,KeyTwo",
+                        "AI_PROVIDERS__OPENCODE__TEXT_MODELS=ModelA,ModelB",
+                        "AI_PROVIDERS__OPENCODE__VISION_MODELS=VisionA",
+                        "AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=42",
                     ]
                 ),
                 encoding="utf-8",
             )
             settings = Settings(_env_file=env)
-            runtime = provider_runtime(settings, "chainnode")
+            runtime = provider_runtime(settings, "opencode")
             self.assertEqual(runtime.api_keys_list, ["KeyOne", "KeyTwo"])
             self.assertEqual(runtime.text_models_list, ["ModelA", "ModelB"])
             self.assertEqual(runtime.request_timeout_sec, 42.0)
@@ -59,10 +59,10 @@ class ProviderEnvContractTests(unittest.TestCase):
     def test_provider_ids_are_normalized_lowercase(self) -> None:
         settings = Settings(
             _env_file=None,
-            ai_providers={"ChainNode": {"api_keys": "", "text_models": "ModelA"}},
+            ai_providers={"OpenCode": {"api_keys": "", "text_models": "ModelA"}},
         )
-        self.assertIn("chainnode", settings.ai_providers)
-        self.assertNotIn("ChainNode", settings.ai_providers)
+        self.assertIn("opencode", settings.ai_providers)
+        self.assertNotIn("OpenCode", settings.ai_providers)
 
     def test_unknown_provider_in_order_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "unknown AI provider"):
@@ -74,12 +74,12 @@ class ProviderEnvContractTests(unittest.TestCase):
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
+                    "opencode": {
                         "api_keys": "k1,k2",
                         "text_models": models,
                     }
                 },
-                text_provider_order="chainnode",
+                text_provider_order="opencode",
                 vision_enabled=False,
             )
 

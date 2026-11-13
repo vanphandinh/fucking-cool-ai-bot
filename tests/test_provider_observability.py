@@ -43,7 +43,7 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
             complete=AsyncMock(
                 return_value=CompletionResult(
                     content="answer",
-                    provider="chainnode",
+                    provider="primary",
                     target_rotations=3,
                     model_rotations=2,
                     credential_failovers=1,
@@ -87,7 +87,7 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
         )
         answer = SimpleNamespace(
             text="answer",
-            provider="chainnode",
+            provider="primary",
             fallbacks=(),
             searched=False,
             sources=[],
@@ -106,22 +106,22 @@ class ProviderObservabilityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_terminal_provider_failure_carries_target_recovery_counters(self) -> None:
         first = ScriptedProvider(
-            "chainnode",
+            "primary",
             [ProviderError("quota-a", status_code=429, transient=True)],
         )
         first.model = "m1"
         first.credential_id = "c1"
-        first.target_id = "chainnode:text:m1:c1"
+        first.target_id = "primary:text:m1:c1"
         second = ScriptedProvider(
-            "chainnode",
+            "primary",
             [ProviderError("quota-b", status_code=429, transient=True)],
         )
         second.model = "m2"
         second.credential_id = "c1"
-        second.target_id = "chainnode:text:m2:c1"
+        second.target_id = "primary:text:m2:c1"
         router = AIProviderRouter(
             [first, second],
-            text_provider_order=("chainnode",),
+            text_provider_order=("primary",),
             vision_provider_order=(),
         )
 

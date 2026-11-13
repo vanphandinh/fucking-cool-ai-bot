@@ -29,44 +29,44 @@ class ProviderRetryStateTests(unittest.TestCase):
 
     def test_success_resets_consecutive_but_not_cumulative(self) -> None:
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout")
+            "primary", transport_error("read_timeout")
         )
-        self.state.record_chat_success("chainnode")
+        self.state.record_chat_success("primary")
 
-        slot = self.state.provider_state("chainnode")
+        slot = self.state.provider_state("primary")
         self.assertEqual(slot.consecutive_transport_failures, 0)
         self.assertEqual(slot.total_transport_failures, 1)
         self.assertEqual(self.state.total_transport_failures, 1)
 
     def test_same_provider_retry_token_is_monotonic_across_success(self) -> None:
-        self.assertTrue(self.state.can_retry_same("chainnode"))
-        self.state.consume_same_provider_retry("chainnode")
-        self.state.record_chat_success("chainnode")
+        self.assertTrue(self.state.can_retry_same("primary"))
+        self.state.consume_same_provider_retry("primary")
+        self.state.record_chat_success("primary")
 
-        self.assertFalse(self.state.can_retry_same("chainnode"))
+        self.assertFalse(self.state.can_retry_same("primary"))
 
     def test_provider_blocks_after_consecutive_limit(self) -> None:
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout")
+            "primary", transport_error("read_timeout")
         )
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout")
+            "primary", transport_error("read_timeout")
         )
 
-        self.assertFalse(self.state.can_attempt("chainnode"))
+        self.assertFalse(self.state.can_attempt("primary"))
 
     def test_provider_blocks_after_cumulative_limit_even_after_successes(self) -> None:
         for _ in range(2):
             self.state.record_transport_failure(
-                "chainnode", transport_error("read_timeout")
+                "primary", transport_error("read_timeout")
             )
-            self.state.record_chat_success("chainnode")
+            self.state.record_chat_success("primary")
 
-        self.assertTrue(self.state.can_attempt("chainnode"))
+        self.assertTrue(self.state.can_attempt("primary"))
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout")
+            "primary", transport_error("read_timeout")
         )
-        self.assertFalse(self.state.can_attempt("chainnode"))
+        self.assertFalse(self.state.can_attempt("primary"))
 
     def test_request_budget_stops_all_further_transport_attempts(self) -> None:
         for name in ["a", "b", "a", "b", "a"]:
@@ -79,32 +79,32 @@ class ProviderRetryStateTests(unittest.TestCase):
 
     def test_success_clears_pending_health_error_for_only_that_provider(self) -> None:
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout"), target_id="chain-target"
+            "primary", transport_error("read_timeout"), target_id="chain-target"
         )
         self.state.record_transport_failure(
             "openrouter", transport_error("read_timeout"), target_id="openrouter-target"
         )
 
-        self.state.record_chat_success("chainnode")
+        self.state.record_chat_success("primary")
 
-        self.assertEqual(self.state.pending_health_incidents("chainnode"), ())
+        self.assertEqual(self.state.pending_health_incidents("primary"), ())
         self.assertEqual(len(self.state.pending_health_incidents("openrouter")), 1)
 
     def test_pending_health_incidents_are_keyed_by_target(self) -> None:
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("connect_timeout"),
             health_barrier_generation=3,
             target_id="target-a",
         )
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("read_timeout"),
             health_barrier_generation=4,
             target_id="target-b",
         )
 
-        incidents = self.state.pending_health_incidents("chainnode")
+        incidents = self.state.pending_health_incidents("primary")
         self.assertEqual(
             {incident.target_id for incident in incidents},
             {"target-a", "target-b"},
@@ -112,20 +112,20 @@ class ProviderRetryStateTests(unittest.TestCase):
 
     def test_same_target_failures_in_same_generation_share_incident(self) -> None:
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("connect_timeout"),
             health_barrier_generation=7,
             target_id="target-a",
         )
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("read_timeout"),
             health_barrier_generation=7,
             target_id="target-a",
         )
 
-        slot = self.state.family_state("chainnode")
-        incidents = self.state.pending_health_incidents("chainnode")
+        slot = self.state.family_state("primary")
+        incidents = self.state.pending_health_incidents("primary")
         self.assertEqual(slot.total_transport_failures, 2)
         self.assertEqual(self.state.total_transport_failures, 2)
         self.assertEqual(len(incidents), 1)
@@ -136,34 +136,34 @@ class ProviderRetryStateTests(unittest.TestCase):
         self,
     ) -> None:
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("connect_timeout"),
             health_barrier_generation=7,
             target_id="target-a",
         )
         self.state.record_transport_failure(
-            "chainnode",
+            "primary",
             transport_error("read_timeout"),
             health_barrier_generation=8,
             target_id="target-a",
         )
 
-        incidents = self.state.pending_health_incidents("chainnode")
+        incidents = self.state.pending_health_incidents("primary")
         self.assertEqual(len(incidents), 1)
         self.assertEqual(incidents[0].health_barrier_generation, 8)
         self.assertIn("read_timeout", str(incidents[0].error))
 
     def test_discarding_one_target_incident_preserves_sibling_incident(self) -> None:
         self.state.record_transport_failure(
-            "chainnode", transport_error("connect_timeout"), target_id="target-a"
+            "primary", transport_error("connect_timeout"), target_id="target-a"
         )
         self.state.record_transport_failure(
-            "chainnode", transport_error("read_timeout"), target_id="target-b"
+            "primary", transport_error("read_timeout"), target_id="target-b"
         )
 
-        self.state.discard_pending_health_incident("chainnode", "target-a")
+        self.state.discard_pending_health_incident("primary", "target-a")
 
-        incidents = self.state.pending_health_incidents("chainnode")
+        incidents = self.state.pending_health_incidents("primary")
         self.assertEqual([incident.target_id for incident in incidents], ["target-b"])
 
     def test_retryable_classification_is_narrow(self) -> None:

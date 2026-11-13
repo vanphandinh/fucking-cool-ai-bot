@@ -2,13 +2,12 @@
 
 Telegram AI bot cho **group/supergroup được allowlist**, chạy bằng Docker Compose trên VPS.
 
-**Default AI route: Chainnode primary -> OpenRouter -> OpenCode fallback.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
+**Default AI route: OpenCode primary; OpenRouter is an optional fallback once its credentials and live-qualified model pools are configured.** Text và vision dùng cùng capability-aware, health-aware multi-provider router. Bot vẫn hỗ trợ web search, image search, direct URL reading, X/Twitter reader, Crawl4AI, vision input, renewable question controls và Telegram-native HTML formatting.
 
 ## Tài liệu chính
 
-- [Chainnode primary provider](docs/CHAINNODE.md)
-- [OpenRouter fallback provider](docs/OPENROUTER.md)
-- [OpenCode provider (optional)](docs/OPENCODE.md)
+- [OpenCode primary provider](docs/OPENCODE.md)
+- [OpenRouter optional fallback provider](docs/OPENROUTER.md)
 - [Đồng bộ `.env`](docs/ENV_SYNC.md)
 - [Telegram vision input](docs/telegram-vision-input.md)
 - [Telegram-native formatting](docs/TELEGRAM_FORMATTING.md)
@@ -41,18 +40,15 @@ AIProviderRouter
    ├─ scoped health/cooldown filtering
    └─ bounded retry + recovery scheduler
           │
-          ├─ Chainnode target pool
+          ├─ OpenCode target pool
           │    ├─ text model × credential targets
           │    └─ vision model × credential targets
-          ├─ OpenRouter target pool
-          │    ├─ text model × credential targets
-          │    └─ vision model × credential targets
-          └─ OpenCode target pool
+          └─ OpenRouter target pool (optional, when configured)
                ├─ text model × credential targets
                └─ vision model × credential targets
 ```
 
-Chainnode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả ba dùng `openai-chat` driver. OpenCode (Go hoặc Zen) là third fallback OpenAI-compatible profile, nằm trong default provider orders và chỉ có active targets khi `AI_PROVIDERS__OPENCODE__*` được cấu hình. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
+OpenCode và OpenRouter là declarative `ProviderProfile` entries trong `config/ai-providers.toml`; cả hai dùng `openai-chat` driver. OpenCode là default primary và có qualified model pools; OpenRouter là optional fallback, chỉ có active targets khi canonical credential/model pools cho route tương ứng được cấu hình. Concrete targets được mở rộng theo deterministic **model-major × credential** order. Provider OpenAI-compatible mới chỉ cần catalog + `AI_PROVIDERS__<ID>__*`, không cần module Python theo vendor.
 
 ### Thêm OpenAI-compatible provider chỉ bằng config/catalog
 
@@ -75,12 +71,6 @@ Native protocol mới không yêu cầu thay đổi `AIProviderRouter`, retry, s
 Current runtime/environment contract chỉ dùng canonical plural pools và canonical retry fields:
 
 ```env
-AI_PROVIDERS__CHAINNODE__API_KEYS=
-AI_PROVIDERS__CHAINNODE__BASE_URL=https://dn.chainno.de/v1
-AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-AI_PROVIDERS__CHAINNODE__REQUEST_TIMEOUT_SEC=60.0
-
 AI_PROVIDERS__OPENROUTER__API_KEYS=
 AI_PROVIDERS__OPENROUTER__BASE_URL=https://openrouter.ai/api/v1
 AI_PROVIDERS__OPENROUTER__TEXT_MODELS=
@@ -94,8 +84,8 @@ AI_PROVIDERS__OPENCODE__TEXT_MODELS=deepseek-v4.1-flash
 AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
 AI_PROVIDERS__OPENCODE__REQUEST_TIMEOUT_SEC=60.0
 
-TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
-VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
+TEXT_PROVIDER_ORDER=opencode,openrouter
+VISION_PROVIDER_ORDER=opencode,openrouter
 
 PROVIDER_RETRY_MAX_CONSECUTIVE=2
 PROVIDER_RETRY_MAX_PER_PROVIDER=3
@@ -103,7 +93,7 @@ PROVIDER_RETRY_MAX_PER_REQUEST=5
 PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST=5
 ```
 
-Một phần tử trong plural pool là hợp lệ. Chainnode text/vision pools có qualified defaults; OpenRouter model pools cố ý để trống cho tới khi current candidate pass live qualification. Runtime không query model catalog khi startup hoặc mỗi request.
+Một phần tử trong plural pool là hợp lệ. OpenCode text/vision pools có qualified defaults; OpenRouter model pools cố ý để trống cho tới khi current candidate pass live qualification. Runtime không query model catalog khi startup hoặc mỗi request.
 
 `AI_PROVIDERS__OPENROUTER__BASE_URL` dùng chung current endpoint contract giữa runtime và retained qualification probe, default `https://openrouter.ai/api/v1`.
 
@@ -202,7 +192,7 @@ Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md
 
 ## Cài đặt nhanh
 
-Yêu cầu: Docker Engine + Docker Compose plugin, Telegram bot token, ít nhất một Chainnode API key cho primary route; Python 3.12 (khớp image) nếu chạy helper scripts trực tiếp ngoài container. Trên VPS Ubuntu/Debian, cài Docker theo [hướng dẫn chính thức](https://docs.docker.com/engine/install/ubuntu/) (hoặc nhanh: `curl -fsSL https://get.docker.com | sh` rồi `sudo usermod -aG docker "$USER"`).
+Yêu cầu: Docker Engine + Docker Compose plugin, Telegram bot token, ít nhất một OpenCode API key cho primary route (OpenRouter là optional); Python 3.12 (khớp image) nếu chạy helper scripts trực tiếp ngoài container. Trên VPS Ubuntu/Debian, cài Docker theo [hướng dẫn chính thức](https://docs.docker.com/engine/install/ubuntu/) (hoặc nhanh: `curl -fsSL https://get.docker.com | sh` rồi `sudo usermod -aG docker "$USER"`).
 
 ```bash
 git clone https://github.com/vanphandinh/fucking-cool-ai-bot.git
@@ -229,16 +219,16 @@ Cấu hình tối thiểu:
 
 ```env
 BOT_TOKEN=...
-AI_PROVIDERS__CHAINNODE__API_KEYS=...
-AI_PROVIDERS__CHAINNODE__TEXT_MODELS=cl/cline-free/deepseek-v4.1-flash
-AI_PROVIDERS__CHAINNODE__VISION_MODELS=cl/cline-free/muse-spark-1.3-contributor
-TEXT_PROVIDER_ORDER=chainnode,openrouter,opencode
-VISION_PROVIDER_ORDER=chainnode,openrouter,opencode
+AI_PROVIDERS__OPENCODE__API_KEYS=...
+AI_PROVIDERS__OPENCODE__TEXT_MODELS=deepseek-v4.1-flash
+AI_PROVIDERS__OPENCODE__VISION_MODELS=deepseek-v4-flash-vision-exp
+TEXT_PROVIDER_ORDER=opencode,openrouter
+VISION_PROVIDER_ORDER=opencode,openrouter
 ADMIN_IDS=...
 ALLOWED_GROUP_IDS=...
 ```
 
-Không cần OpenRouter credential để Chainnode hoạt động. Khi `AI_PROVIDERS__OPENROUTER__API_KEYS` trống, OpenRouter có zero active targets.
+Không cần OpenRouter credential để OpenCode hoạt động. Khi `AI_PROVIDERS__OPENROUTER__API_KEYS` trống, OpenRouter có zero active targets.
 
 ## Production smoke
 
@@ -247,16 +237,16 @@ Sau deploy:
 1. chạy `python scripts/sync_env.py` và yêu cầu exit `0`;
 2. chạy lần hai, xác nhận không rewrite;
 3. rebuild/restart bot;
-4. smoke text request qua Chainnode primary;
-5. smoke one-image request qua Chainnode vision primary;
+4. smoke text request qua OpenCode primary;
+5. smoke one-image request qua OpenCode vision primary;
 6. smoke structured tools/continuation;
-7. nếu OpenRouter hoặc OpenCode đã qualified/configured, thực hiện controlled fallback rồi khôi phục Chainnode.
+7. nếu OpenRouter đã qualified/configured, thực hiện controlled fallback rồi khôi phục OpenCode.
 
 Operational rollback để tắt OpenRouter fallback:
 
 ```env
-TEXT_PROVIDER_ORDER=chainnode
-VISION_PROVIDER_ORDER=chainnode
+TEXT_PROVIDER_ORDER=opencode
+VISION_PROVIDER_ORDER=opencode
 ```
 
 ## Development verification

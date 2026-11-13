@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     learn_group_id_mode: bool = False
 
     ai_providers: dict[str, ProviderRuntimeSettings] = Field(default_factory=dict)
-    text_provider_order: str = "chainnode,openrouter,opencode"
+    text_provider_order: str = "opencode,openrouter"
     provider_retry_max_consecutive: int = Field(default=2, ge=1, le=5)
     provider_retry_max_per_provider: int = Field(default=3, ge=1, le=10)
     provider_retry_max_per_request: int = Field(default=5, ge=1, le=20)
@@ -111,7 +111,7 @@ class Settings(BaseSettings):
 
     # Vision input. Each provider slot remains the source of truth for its limits.
     vision_enabled: bool = True
-    vision_provider_order: str = "chainnode,openrouter,opencode"
+    vision_provider_order: str = "opencode,openrouter"
     max_images_per_request: int = Field(default=1, ge=1)
     max_image_bytes: int = Field(default=8388608, ge=1)
     max_total_image_bytes: int = Field(default=12582912, ge=1)

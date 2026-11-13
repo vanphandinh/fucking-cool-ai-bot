@@ -1,4 +1,4 @@
-"""Regression tests for Chainnode-primary, OpenRouter and OpenCode fallback defaults."""
+"""Regression tests for OpenCode-primary and optional OpenRouter fallback defaults."""
 
 from __future__ import annotations
 
@@ -10,16 +10,16 @@ from app.config import Settings
 
 
 class ProviderDeploymentDefaultsTests(unittest.TestCase):
-    def test_defaults_keep_chainnode_primary_openrouter_and_opencode_fallback(self) -> None:
+    def test_defaults_keep_opencode_primary_and_openrouter_optional_fallback(self) -> None:
         settings = Settings(_env_file=None)
 
         self.assertEqual(
             settings.text_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
         self.assertEqual(
             settings.vision_provider_order_list,
-            ["chainnode", "openrouter", "opencode"],
+            ["opencode", "openrouter"],
         )
         self.assertEqual(settings.max_images_per_request, 1)
         self.assertEqual(settings.max_context_turns, 6)
@@ -32,43 +32,43 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
             self.assertEqual(router.configured_provider_names(True), ())
             self.assertEqual(
                 router.provider_order(False),
-                ("chainnode", "openrouter", "opencode"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(
                 router.provider_order(True),
-                ("chainnode", "openrouter", "opencode"),
+                ("opencode", "openrouter"),
             )
         finally:
             asyncio.run(_close_router(router))
 
-    def test_chainnode_only_credentials_activate_only_chainnode(self) -> None:
+    def test_opencode_only_credentials_activate_only_opencode(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
-                        "api_keys": "test-chainnode-key",
-                        "text_models": "test-chainnode-text",
-                        "vision_models": "test-chainnode-vision",
+                    "opencode": {
+                        "api_keys": "test-opencode-key",
+                        "text_models": "test-opencode-text",
+                        "vision_models": "test-opencode-vision",
                     }
                 },
             )
         )
         try:
-            self.assertEqual(router.configured_provider_names(False), ("chainnode",))
-            self.assertEqual(router.configured_provider_names(True), ("chainnode",))
+            self.assertEqual(router.configured_provider_names(False), ("opencode",))
+            self.assertEqual(router.configured_provider_names(True), ("opencode",))
         finally:
             asyncio.run(_close_router(router))
 
-    def test_both_credentials_activate_chainnode_then_openrouter(self) -> None:
+    def test_both_credentials_activate_opencode_then_openrouter(self) -> None:
         router = build_provider_router(
             Settings(
                 _env_file=None,
                 ai_providers={
-                    "chainnode": {
-                        "api_keys": "test-chainnode-key",
-                        "text_models": "test-chainnode-text",
-                        "vision_models": "test-chainnode-vision",
+                    "opencode": {
+                        "api_keys": "test-opencode-key",
+                        "text_models": "test-opencode-text",
+                        "vision_models": "test-opencode-vision",
                     },
                     "openrouter": {
                         "api_keys": "test-openrouter-key",
@@ -81,11 +81,11 @@ class ProviderDeploymentDefaultsTests(unittest.TestCase):
         try:
             self.assertEqual(
                 router.configured_provider_names(False),
-                ("chainnode", "openrouter"),
+                ("opencode", "openrouter"),
             )
             self.assertEqual(
                 router.configured_provider_names(True),
-                ("chainnode", "openrouter"),
+                ("opencode", "openrouter"),
             )
         finally:
             asyncio.run(_close_router(router))

@@ -8,9 +8,8 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 
 - [`../README.md`](../README.md) — kiến trúc tổng quan, cấu hình chính, quick start và verification.
 - [`../DEPLOY_SEARXNG_VPS.md`](../DEPLOY_SEARXNG_VPS.md) — triển khai SearXNG private trên VPS.
-- [`OPENROUTER.md`](OPENROUTER.md) — OpenRouter declarative provider profile, live qualification, rollout và rollback.
-- [`OPENCODE.md`](OPENCODE.md) — optional OpenCode (Go hoặc Zen) OpenAI-compatible profile, endpoint constraint, enrollment và rollback.
-- [`CHAINNODE.md`](CHAINNODE.md) — Chainnode declarative primary profile, model pools và operational probes.
+- [`OPENCODE.md`](OPENCODE.md) — OpenCode primary (Go hoặc Zen) OpenAI-compatible profile, endpoint constraint, enrollment và rollback.
+- [`OPENROUTER.md`](OPENROUTER.md) — OpenRouter optional fallback declarative profile, live qualification, rollout và rollback.
 - [`telegram-vision-input.md`](telegram-vision-input.md) — Telegram image input, limits và capability-aware vision routing.
 - [`TELEGRAM_FORMATTING.md`](TELEGRAM_FORMATTING.md) — Telegram-native HTML formatting, splitting và delivery fallback.
 - [`QUESTION_CONTROLS.md`](QUESTION_CONTROLS.md) — renewable Telegram jobs, consent/Stop semantics, local bounds, rollout và rollback.
@@ -41,11 +40,11 @@ Active documentation không được dạy superseded environment/provider contr
 
 ## Current runtime snapshot
 
-- Text provider order mặc định: `chainnode,openrouter,opencode`; Chainnode primary, OpenRouter rồi OpenCode fallback khi có credential + qualified model pool.
-- Vision provider order mặc định: `chainnode,openrouter,opencode`; current vision targets advertise tối đa một image/request.
-- Chainnode production defaults dùng `AI_PROVIDERS__CHAINNODE__API_KEYS`, `AI_PROVIDERS__CHAINNODE__TEXT_MODELS` và `AI_PROVIDERS__CHAINNODE__VISION_MODELS`.
+- Text provider order mặc định: `opencode,openrouter`; OpenCode primary, OpenRouter là optional fallback khi có credential + qualified model pool.
+- Vision provider order mặc định: `opencode,openrouter`; current vision targets advertise tối đa một image/request.
+- OpenCode production defaults dùng `AI_PROVIDERS__OPENCODE__API_KEYS`, `AI_PROVIDERS__OPENCODE__TEXT_MODELS` và `AI_PROVIDERS__OPENCODE__VISION_MODELS`; OpenRouter pools để trống cho tới khi live-qualified.
 - OpenRouter runtime và qualification probe dùng canonical `AI_PROVIDERS__OPENROUTER__API_KEYS`; runtime còn dùng `AI_PROVIDERS__OPENROUTER__TEXT_MODELS`, `AI_PROVIDERS__OPENROUTER__VISION_MODELS`, shared `AI_PROVIDERS__OPENROUTER__BASE_URL` và allowlist `AI_PROVIDERS__OPENROUTER__PROVIDER` (trống = routing mặc định của OpenRouter); runtime model IDs không hard-code trong source.
-- OpenCode (Go hoặc Zen) là third fallback profile (`AI_PROVIDERS__OPENCODE__*`), zero active targets khi credential pool trống, nằm cuối default provider orders với qualified chat/completions model pools.
+- OpenCode (Go hoặc Zen) là default primary profile (`AI_PROVIDERS__OPENCODE__*`), zero active targets khi credential pool trống, nằm đầu default provider orders với qualified chat/completions model pools.
 - Canonical retry fields là `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST`; recovery-hop field là `PROVIDER_RECOVERY_MAX_HOPS_PER_REQUEST`.
 - `QUESTION_CONTROLS_ENABLED=0` là default rollback-safe; khi bật, renewable jobs vẫn giữ bounded leaf operations.
 - Controlled multipart delivery có terminal `PARTIALLY_DELIVERED` khi Telegram xác nhận một số phần, nhưng chưa đủ; lưu prefix có đánh dấu và chỉ đếm partial metric. Không có auto-replay.
@@ -56,7 +55,7 @@ Active documentation không được dạy superseded environment/provider contr
 - Auto-fetch dùng một coordinator request-scoped cho cả câu hỏi: deadline monotonic, reservation canonical URL bằng lock (tổng <= 2 nguồn dù có nhiều `web_search` đồng thời) và semaphore 2 lượt đọc song song. Delimiter hệ thống trong nội dung không đáng tin bị vô hiệu hóa (chống prompt injection/đóng khung giả).
 - Direct URL reading và search discovery là hai pipeline riêng; X/Twitter có specialized resolver, Crawl4AI là optional rendering backend trước generic reader.
 - `.env.example` là complete supported key schema. `scripts/sync_env.py` không migrate/infer/rename/copy key values; unknown `.env` assignments làm sync exit `2` trước rewrite. Ba key đã retire — `WEB_EVIDENCE_V2_ENABLED`, `WEB_EVIDENCE_V2_GROUP_IDS`, `WEB_AUTO_FETCH_ENABLED` — phải bị xóa khỏi `.env` trước khi sync.
-- Operational provider rollback là Chainnode-only bằng `TEXT_PROVIDER_ORDER=chainnode` và `VISION_PROVIDER_ORDER=chainnode`.
+- Operational provider rollback là OpenCode-only bằng `TEXT_PROVIDER_ORDER=opencode` và `VISION_PROVIDER_ORDER=opencode`.
 
 ## Documentation sync checklist
 

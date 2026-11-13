@@ -199,20 +199,20 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raced.call_count, 2)
         self.assertEqual(len(same_key_other_model.requests), 0)
 
-    async def test_chainnode_older_success_cannot_clear_newer_model_cooldown(self) -> None:
+    async def test_primary_older_success_cannot_clear_newer_model_cooldown(self) -> None:
         raced = _BlockingRateLimitProvider(
-            "chainnode",
+            "primary",
             model="model-a",
             credential_id="cred-1",
         )
         same_model_other_key = _target(
-            ScriptedProvider("chainnode", [ChatResponse(content="must-not-run")]),
+            ScriptedProvider("primary", [ChatResponse(content="must-not-run")]),
             model="model-a",
             credential_id="cred-2",
         )
         sibling_model = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     ChatResponse(content="b-sibling"),
                     ChatResponse(content="c-sibling"),
@@ -223,7 +223,7 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
         router = AIProviderRouter(
             [raced, same_model_other_key, sibling_model],
-            text_provider_order=("chainnode",),
+            text_provider_order=("primary",),
             vision_provider_order=(),
         )
         raced_identity = provider_target_identity(raced)
@@ -243,7 +243,7 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(
             model_health.available(),
-            "older success must not erase the newer Chainnode model cooldown",
+            "older success must not erase the newer Primary model cooldown",
         )
         self.assertFalse(
             raced.health.available(),
@@ -320,18 +320,18 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         first_error = ProviderError("target-one read timeout", transient=True)
         first_error.transport_kind = "read_timeout"
         target_one = _target(
-            ScriptedProvider("chainnode", [first_error]),
+            ScriptedProvider("primary", [first_error]),
             model="model-a",
             credential_id="cred-1",
         )
         target_two = _target(
-            ScriptedProvider("chainnode", [ChatResponse(content="sibling-success")]),
+            ScriptedProvider("primary", [ChatResponse(content="sibling-success")]),
             model="model-b",
             credential_id="cred-1",
         )
         vision_same_model = _target(
             ScriptedProvider(
-                "chainnode",
+                "primary",
                 [
                     ProviderError(
                         "concurrent model cooldown",
@@ -346,7 +346,7 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             model="model-a",
             credential_id="cred-1",
         )
-        vision_same_model.target_id = "chainnode:vision:model-a:cred-1"
+        vision_same_model.target_id = "primary:vision:model-a:cred-1"
         bridge = _target(
             _BlockingFailureProvider("bridge"),
             model="bridge-model",
@@ -354,8 +354,8 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
         router = AIProviderRouter(
             [target_one, target_two, vision_same_model, bridge],
-            text_provider_order=("chainnode", "bridge"),
-            vision_provider_order=("chainnode",),
+            text_provider_order=("primary", "bridge"),
+            vision_provider_order=("primary",),
         )
 
         request_a = asyncio.create_task(router.complete(_request(), noop_tool))
@@ -380,7 +380,7 @@ class ProviderHealthConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         result = await request_a
 
         self.assertEqual(result.content, "sibling-success")
-        self.assertEqual(result.provider, "chainnode")
+        self.assertEqual(result.provider, "primary")
         self.assertEqual(len(target_one.requests), 1)
         self.assertEqual(len(target_two.requests), 1)
         self.assertEqual(len(vision_same_model.requests), 1)

@@ -288,7 +288,7 @@ class OpenRouterProviderRoutingPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("provider", captured[0])
 
     async def test_non_opted_in_target_omits_provider_field(self) -> None:
-        target = make_catalog_target("chainnode")
+        target = make_catalog_target("opencode")
         captured: list[dict] = []
 
         def respond(request: httpx.Request) -> httpx.Response:

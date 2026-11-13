@@ -23,16 +23,16 @@ class ProviderTargetBuilderTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "KeyOne,KeyTwo",
                     "text_models": "ModelA,ModelB",
                     "vision_models": "VisionA",
                 }
             },
-            text_provider_order="chainnode",
-            vision_provider_order="chainnode",
+            text_provider_order="opencode",
+            vision_provider_order="opencode",
         )
-        targets = build_provider_targets(settings, ["chainnode"])
+        targets = build_provider_targets(settings, ["opencode"])
         try:
             self.assertEqual(
                 [
@@ -45,37 +45,58 @@ class ProviderTargetBuilderTests(unittest.TestCase):
                     for t in targets
                 ],
                 [
-                    ("text", "ModelA", "cred-1", "chainnode:text:m1:c1"),
-                    ("text", "ModelA", "cred-2", "chainnode:text:m1:c2"),
-                    ("text", "ModelB", "cred-1", "chainnode:text:m2:c1"),
-                    ("text", "ModelB", "cred-2", "chainnode:text:m2:c2"),
-                    ("vision", "VisionA", "cred-1", "chainnode:vision:m1:c1"),
-                    ("vision", "VisionA", "cred-2", "chainnode:vision:m1:c2"),
+                    ("text", "ModelA", "cred-1", "opencode:text:m1:c1"),
+                    ("text", "ModelA", "cred-2", "opencode:text:m1:c2"),
+                    ("text", "ModelB", "cred-1", "opencode:text:m2:c1"),
+                    ("text", "ModelB", "cred-2", "opencode:text:m2:c2"),
+                    ("vision", "VisionA", "cred-1", "opencode:vision:m1:c1"),
+                    ("vision", "VisionA", "cred-2", "opencode:vision:m1:c2"),
                 ],
             )
         finally:
             self._close(targets)
 
     def test_no_credentials_builds_zero_targets(self) -> None:
-        settings = Settings(_env_file=None, text_provider_order="chainnode")
-        self.assertEqual(build_provider_targets(settings, ["chainnode"]), [])
+        settings = Settings(_env_file=None, text_provider_order="opencode")
+        self.assertEqual(build_provider_targets(settings, ["opencode"]), [])
 
     def test_provider_absent_from_route_order_builds_no_targets_for_that_route(self) -> None:
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "Key",
                     "text_models": "Text",
                     "vision_models": "Vision",
                 }
             },
-            text_provider_order="chainnode",
+            text_provider_order="opencode",
             vision_provider_order="openrouter",
         )
-        targets = build_provider_targets(settings, ["chainnode"])
+        targets = build_provider_targets(settings, ["opencode"])
         try:
             self.assertEqual([target.spec.identity.route for target in targets], ["text"])
+        finally:
+            self._close(targets)
+
+    def test_vision_route_can_be_selected_without_text(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            ai_providers={
+                "opencode": {
+                    "api_keys": "Key",
+                    "vision_models": "VisionA",
+                }
+            },
+            text_provider_order="openrouter",
+            vision_provider_order="opencode",
+        )
+        targets = build_provider_targets(settings, ["opencode"])
+        try:
+            self.assertEqual(
+                [target.spec.identity.route for target in targets],
+                ["vision"],
+            )
         finally:
             self._close(targets)
 
@@ -85,23 +106,23 @@ class ProviderTargetBuilderTests(unittest.TestCase):
 
     def test_blank_base_url_uses_catalog_default_and_override_wins(self) -> None:
         for configured, expected in (
-            ("", "https://dn.chainno.de/v1"),
+            ("", "https://opencode.ai/zen/go/v1"),
             ("https://gateway.example/v1", "https://gateway.example/v1"),
         ):
             with self.subTest(configured=configured):
                 settings = Settings(
                     _env_file=None,
                     ai_providers={
-                        "chainnode": {
+                        "opencode": {
                             "api_keys": "Key",
                             "text_models": "Model",
                             "base_url": configured,
                         }
                     },
-                    text_provider_order="chainnode",
+                    text_provider_order="opencode",
                     vision_enabled=False,
                 )
-                targets = build_provider_targets(settings, ["chainnode"])
+                targets = build_provider_targets(settings, ["opencode"])
                 try:
                     self.assertEqual(targets[0].spec.base_url, expected)
                 finally:
@@ -111,20 +132,20 @@ class ProviderTargetBuilderTests(unittest.TestCase):
         settings = Settings(
             _env_file=None,
             ai_providers={
-                "chainnode": {
+                "opencode": {
                     "api_keys": "KeyOne",
                     "text_models": "OnlyValidatedModel",
                 }
             },
-            text_provider_order="chainnode",
+            text_provider_order="opencode",
             vision_enabled=False,
         )
-        settings.ai_providers["chainnode"].text_models = ",".join(
+        settings.ai_providers["opencode"].text_models = ",".join(
             f"Model{index}" for index in range(65)
         )
 
         with self.assertRaisesRegex(ValueError, "64"):
-            build_provider_targets(settings, ["chainnode"])
+            build_provider_targets(settings, ["opencode"])
 
     def test_catalog_route_can_disable_tool_support(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
