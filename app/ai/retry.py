@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 
 from .base import ProviderError, TransportFailureKind
 
@@ -36,12 +35,6 @@ class ProviderAttemptState:
     same_provider_retry_consumed: bool = False
 
 
-class TransportRetryAction(str, Enum):
-    RETRY_SAME = "retry_same"
-    ROTATE = "rotate"
-    STOP = "stop"
-
-
 @dataclass
 class RequestRetryState:
     policy: ProviderRetryPolicy
@@ -52,10 +45,6 @@ class RequestRetryState:
 
     def family_state(self, family: str) -> ProviderAttemptState:
         return self.providers.setdefault(family, ProviderAttemptState())
-
-    # Backward-compatible name retained for existing retry-state tests/callers.
-    def provider_state(self, provider_name: str) -> ProviderAttemptState:
-        return self.family_state(provider_name)
 
     def record_transport_failure(
         self,
@@ -104,10 +93,6 @@ class RequestRetryState:
 
     def block_family(self, family: str) -> None:
         self.family_state(family).blocked_for_request = True
-
-    # Compatibility alias: the historical provider key was the family name.
-    def block_provider(self, provider_name: str) -> None:
-        self.block_family(provider_name)
 
     def block_target(self, target_id: str) -> None:
         self.blocked_targets.add(target_id)

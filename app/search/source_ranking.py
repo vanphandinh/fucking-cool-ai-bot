@@ -86,11 +86,6 @@ def _coverage(wanted: set[str], text: str) -> float:
     return len(wanted & terms(text)) / len(wanted)
 
 
-def title_score(query: str, item: dict) -> float:
-    """Normalized query coverage of the result title."""
-    return _coverage(terms(query), str(item.get("title") or ""))
-
-
 def snippet_score(query: str, item: dict) -> float:
     """Normalized query coverage of the result snippet."""
     return _coverage(terms(query), str(item.get("snippet") or ""))

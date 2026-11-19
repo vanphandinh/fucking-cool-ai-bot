@@ -2,8 +2,9 @@
 
 import unittest
 
-from app.core.formatting import canonicalize_source_url, format_sources, source_family_key
+from app.core.formatting import format_sources
 from app.core.orchestrator import _dedupe_sources
+from app.core.source_policy import canonicalize_source_url, source_site_key
 
 
 _RAWDATA_SOURCES = [
@@ -43,19 +44,19 @@ _RAWDATA_SOURCES = [
 class SourceDedupeTests(unittest.TestCase):
     def test_source_family_uses_registrable_domain_for_arbitrary_subdomains(self):
         self.assertEqual(
-            source_family_key("https://news.shop.example.co.uk/story"),
+            source_site_key("https://news.shop.example.co.uk/story"),
             "example.co.uk",
         )
         self.assertEqual(
-            source_family_key("https://m.example.co.uk/another"),
+            source_site_key("https://m.example.co.uk/another"),
             "example.co.uk",
         )
         self.assertEqual(
-            source_family_key("https://cdn.example.com.au/file"),
+            source_site_key("https://cdn.example.com.au/file"),
             "example.com.au",
         )
         self.assertEqual(
-            source_family_key("https://news.alice.github.io/story"),
+            source_site_key("https://news.alice.github.io/story"),
             "alice.github.io",
         )
 

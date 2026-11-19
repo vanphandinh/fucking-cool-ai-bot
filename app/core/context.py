@@ -81,22 +81,6 @@ class ChatMemory:
         if len(entries) > max_entries:
             del entries[:-max_entries]
 
-    def push(self, conversation_key: ConversationKey, role: str, content: str) -> None:
-        content = (content or "").strip()
-        if not content:
-            return
-        self._touch(conversation_key, create=True)
-        self._store[conversation_key].append(
-            {
-                "role": role,
-                "content": content[:4000],
-                "_sequence": self._next_sequence(),
-                "_order_key": None,
-                "_order_part": 0,
-            }
-        )
-        self._prune(conversation_key)
-
     def push_exchange(
         self,
         conversation_key: ConversationKey,

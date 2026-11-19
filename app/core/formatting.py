@@ -6,11 +6,7 @@ import html
 import re
 from urllib.parse import urlsplit
 
-from .source_policy import (
-    canonicalize_source_url as _canonicalize_source_url,
-    select_diverse_sources,
-    source_site_key,
-)
+from .source_policy import select_diverse_sources
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -31,70 +27,6 @@ def clean_question(text: str, username: str) -> str:
 def _utf16_len(text: str) -> int:
     """Độ dài theo UTF-16 code unit — Telegram đếm 4096 theo đơn vị này, không phải len()."""
     return len(text.encode("utf-16-le")) // 2
-
-
-def _prefix_fitting(text: str, limit: int) -> int:
-    """Chỉ số Python lớn nhất i sao cho utf16_len(text[:i]) <= limit."""
-    if limit <= 0:
-        return 0
-    if _utf16_len(text) <= limit:
-        return len(text)
-    raw = text.encode("utf-16-le")
-    byte_limit = limit * 2
-    chunk = raw[:byte_limit]
-    if len(chunk) >= 2:
-        last = int.from_bytes(chunk[-2:], "little")
-        if 0xD800 <= last <= 0xDBFF:  # high surrogate lẻ — không cắt giữa cặp
-            chunk = chunk[:-2]
-    return len(chunk.decode("utf-16-le"))
-
-
-def split_plain(text: str, limit: int = 3900) -> list[str]:
-    """Cắt text dài (> giới hạn Telegram 4096 UTF-16) thành nhiều phần an toàn."""
-    text = text.strip()
-    if not text:
-        return []
-    if _utf16_len(text) <= limit:
-        return [text]
-
-    parts: list[str] = []
-    rest = text
-    while _utf16_len(rest) > limit:
-        cut = _find_cut(rest, limit)
-        if cut <= 0:
-            cut = max(_prefix_fitting(rest, limit), 1)
-        chunk = rest[:cut].strip()
-        if chunk:
-            parts.append(chunk)
-        rest = rest[cut:].strip()
-        if not rest:
-            break
-    if rest:
-        parts.append(rest)
-    return parts or [text]
-
-
-def _find_cut(text: str, limit: int) -> int:
-    """Tìm vị trí cắt gần limit nhất (theo UTF-16), ưu tiên ranh giới đoạn/câu."""
-    max_i = _prefix_fitting(text, limit)
-    if max_i <= 0:
-        return 0
-    delimiters = ["\n\n", "\n", ". ", "? ", "! "]
-    for delim in delimiters:
-        pos = text.rfind(delim, 0, max_i)
-        if pos != -1 and max_i - pos <= 600:
-            return pos + len(delim)
-    return max_i
-
-
-def canonicalize_source_url(value: object) -> str:
-    """Backward-compatible wrapper for generic source URL canonicalization."""
-    return _canonicalize_source_url(value)
-
-
-def source_family_key(url: str) -> str:
-    """Backward-compatible alias for the registrable source-site key."""
-    return source_site_key(url)
 
 
 def _hostname(url: str) -> str:

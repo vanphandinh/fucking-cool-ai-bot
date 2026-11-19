@@ -33,7 +33,7 @@ class ProviderRetryStateTests(unittest.TestCase):
         )
         self.state.record_chat_success("primary")
 
-        slot = self.state.provider_state("primary")
+        slot = self.state.family_state("primary")
         self.assertEqual(slot.consecutive_transport_failures, 0)
         self.assertEqual(slot.total_transport_failures, 1)
         self.assertEqual(self.state.total_transport_failures, 1)
