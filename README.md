@@ -188,7 +188,7 @@ python -m scripts.web_evidence_benchmark --config v2 --fixture tests/fixtures/we
 python -m scripts.web_evidence_benchmark --auto-fetch
 ```
 
-Kết quả aggregate nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md); các bảng V1/chars cũ chỉ là hồ sơ lịch sử, không còn chạy được. Quyết định phát hành và phần chấm chất lượng model thật nằm ở [`RELEASE_DECISION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) và [`QUALITY_EVALUATION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md); bộ câu live và cách chấm ở [`docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật. Hồ sơ cũ ghi V2 thấp hơn V1 1 câu trên bộ 21; cutover này chấp nhận rủi ro đó và không còn A/B runtime.
+Kết quả aggregate hiện hành nằm trong [`docs/benchmarks/`](docs/benchmarks/README.md); các bảng V1/chars và archive trước cutover nằm trong Git history, không còn chạy được. Quyết định phát hành và phần chấm chất lượng model thật nằm ở [`RELEASE_DECISION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md) và [`QUALITY_EVALUATION.md`](docs/acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md); bộ câu live và cách chấm ở [`docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md`](docs/WEB_EVIDENCE_V2_LIVE_SMOKE_TEST.md). Đây là **offline extractive proxy**, không phải chất lượng câu trả lời của model thật. Hồ sơ cũ ghi V2 thấp hơn V1 1 câu trên bộ 21; cutover này chấp nhận rủi ro đó và không còn A/B runtime.
 
 ## Cài đặt nhanh
 

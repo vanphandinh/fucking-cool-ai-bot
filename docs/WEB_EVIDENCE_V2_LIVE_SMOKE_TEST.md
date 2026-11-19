@@ -5,8 +5,7 @@ Kết quả chạy model thật (2026-10-16) và verdict phát hành nằm ở
 và [QUALITY_EVALUATION.md](acceptance/web_evidence_v2_independent_validation_20261016/QUALITY_EVALUATION.md).
 V2 hiện **chưa đạt điều kiện pilot**: bản kiểm định 2026-10-16 ghi Q6 sai 3/3
 lượt và Q15 claim phụ sai; hai lượt P2 ngày 2026-10-18 vẫn sai Q6 0/2 và Q15
-1/2 (chi tiết ở `docs/acceptance/web_evidence_v2_live_validation_20261018/EVALUATION.md`,
-mục 8).
+1/2. Artifact chi tiết của hai lượt P2 nằm trong Git history.
 
 **Mục đích:** chạy bộ 21 câu trên pipeline V2 duy nhất, có provider và mạng thật. Tài liệu
 này là **bộ test + hướng dẫn**, không phải kết quả. Các lần chạy cũ (2026-10-14/16) là hồ

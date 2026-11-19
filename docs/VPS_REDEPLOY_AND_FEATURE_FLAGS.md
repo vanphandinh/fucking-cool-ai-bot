@@ -1,6 +1,6 @@
 # VPS — chạy lại toàn bộ gate và redeploy
 
-Runbook vận hành cho deployment Docker Compose trên VPS Linux. Mốc tham chiếu: `main` sau cutover V2-only — bộ gate offline tại cutover: 913 test OK (skipped=11) và `ruff check` sạch. CI (`Audit checks`) chạy cùng các bước đó trên 3.11 / 3.12 / 3.13, kèm audit, docker build và smoke config image; xem trạng thái workflow của revision đang deploy trước khi lên production.
+Runbook vận hành cho deployment Docker Compose trên VPS Linux. Mốc tham chiếu: `main` sau cutover V2-only — bộ gate offline chạy toàn bộ unittest suite và `ruff check` sạch. CI (`Audit checks`) chạy cùng các bước đó trên 3.11 / 3.12 / 3.13, kèm audit, docker build và smoke config image; xem trạng thái workflow của revision đang deploy trước khi lên production.
 
 Tài liệu này **không** thay thế [RELEASE_DECISION](acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md). Web Evidence V2 là pipeline duy nhất; không còn cờ bật/tắt, canary hay rollback V1 trong runtime.
 
@@ -127,7 +127,7 @@ web_evidence policy=v2 auto_fetch=always
 
 Nếu không thấy dòng `web_evidence policy=…`, bot đang chạy image cũ — rebuild lại, `restart` không áp dụng env/image mới.
 
-### 3.1 Lifecycle search runtime (từ `892e40d`)
+### 3.1 Lifecycle search runtime
 
 Runtime search (breaker + cache + single-flight) khoá theo **giá trị cấu hình**: mọi `Settings` có cùng cấu hình chia sẻ đúng một runtime, và `runtime.namespace` ổn định thay `id(settings)` trong breaker key. Không còn `Settings.for_chat`/copy per-chat của canary.
 
@@ -278,152 +278,16 @@ docker compose logs --tail=20 bot | grep web_evidence
 
 ---
 
-## 10. Nâng cấp từ image cũ hơn (trước cutover V2)
+## 10. Nâng cấp từ image cũ hơn
 
-Dùng khi VPS đang chạy image build từ commit cũ và bạn muốn lên `main` hiện tại. Không có migration DB: context chat, job renewable và cache đều nằm trong RAM nên mất khi recreate — làm ngoài giờ cao điểm.
+Không có migration DB: context, job và cache đều nằm trong RAM nên mất khi
+recreate — làm ngoài giờ cao điểm.
 
-### 10.1 Nhận diện bản đang chạy
+1. Backup `.env`, `searxng/settings.yml` và image hiện tại ra ngoài repo.
+2. `git pull`, chạy `python scripts/sync_env.py`; nếu sync báo key lạ, xóa hoặc
+   đổi các key đó theo `.env.example` rồi chạy lại đến khi exit `0`.
+3. `docker compose --profile searxng up -d --build --force-recreate`.
+4. Smoke theo mục 4; nếu lỗi, rollback bằng image cũ đã tag và backup `.env`.
 
-Image không mang nhãn version, nên nhận diện bằng dấu hiệu runtime:
-
-```bash
-cd /srv/fucking-cool-ai-bot
-git rev-parse --short HEAD
-docker compose images bot
-docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' fcai-bot
-docker compose logs bot | grep -E 'web_evidence policy|Text providers|Question mode'
-docker compose exec -T bot python - <<'PY'
-from app.config import Settings
-s = Settings()
-for name in ("ai_providers", "crawl4ai_egress_proxy_url", "web_auto_fetch_max_sources"):
-    print(f"{name}: {hasattr(s, name)}")
-PY
-```
-
-| Dấu hiệu | Image cũ hơn mốc |
-| --- | --- |
-| Log không có `web_evidence policy=v2 auto_fetch=always` | `fb6c86d` (2026-10-17), chưa V2-only |
-| Inspect trả `no-healthcheck` | `d6bcacc` (2026-10-16) |
-| `web_auto_fetch_max_sources: False` | `9fcdd28` (2026-10-14) |
-| `crawl4ai_egress_proxy_url: False` | `05efd0b` (2026-10-12) |
-| `ai_providers: False` | `cef8c9b` (2026-09-18), `.env` còn vocabulary phẳng |
-
-`ai_providers: False` là trường hợp nặng nhất: `.env` **phải** viết lại tay ở 10.3, vì `scripts/sync_env.py` không rename key — nó chỉ giữ value cho key trùng tên, thêm key thiếu và từ chối key lạ.
-
-### 10.2 Chụp trạng thái để rollback
-
-```bash
-set -eu
-cd /srv/fucking-cool-ai-bot
-umask 077
-STAMP=$(date +%Y%m%d%H%M)
-OLD_SHA=$(git rev-parse --short HEAD)
-IMAGE_ID=$(docker inspect --format '{{.Image}}' fcai-bot)
-echo "old_sha=$OLD_SHA image=$IMAGE_ID"
-
-cp .env "$HOME/fcai-env-$STAMP.bak"
-cp searxng/settings.yml "$HOME/fcai-searxng-$STAMP.bak"
-docker compose --profile searxng config > "$HOME/fcai-compose-$STAMP.bak.yml"
-docker tag "$IMAGE_ID" "fcai-bot:pre-upgrade-$STAMP"
-
-git status --short
-git diff > "$HOME/fcai-tracked-changes-$STAMP.patch"
-```
-
-- `.env` và `searxng/settings.yml` là file ignore, nên backup nằm ngoài repo như trên.
-- Có thay đổi ở file tracked: lưu patch rồi `git stash push -m "pre-upgrade-$STAMP"`, pull, xem lại patch và áp dụng có chủ đích. Không `git checkout -- .` hay `git reset --hard` khi chưa chắc.
-- `docker compose config` in ra cả secret đã resolve; file này chỉ để ở `$HOME` (mode 0600), không commit và không dán vào chat.
-
-### 10.3 Viết lại `.env` theo vocabulary hiện tại
-
-| Dạng cũ | Viết lại thành |
-| --- | --- |
-| Mỗi provider một credential + một model, tên phẳng không namespace | `AI_PROVIDERS__<ID>__API_KEYS`, `__BASE_URL`, `__TEXT_MODELS`, `__VISION_MODELS`, `__REQUEST_TIMEOUT_SEC`; pool nhiều giá trị ngăn bằng dấu phẩy |
-| Key retry có hậu tố `_FAILURES*` (trước canonical) | `PROVIDER_RETRY_MAX_CONSECUTIVE`, `PROVIDER_RETRY_MAX_PER_PROVIDER`, `PROVIDER_RETRY_MAX_PER_REQUEST` |
-| `TEXT_PROVIDER_ORDER` / `VISION_PROVIDER_ORDER` còn id provider đã bỏ | chỉ giữ provider còn trong `config/ai-providers.toml` (`opencode,openrouter`) |
-| `WEB_EVIDENCE_V2_ENABLED`, `WEB_EVIDENCE_V2_GROUP_IDS`, `WEB_AUTO_FETCH_ENABLED` | xóa |
-| Key chỉ phục vụ compose cũ (ví dụ biến port host của SearXNG) | xóa, compose hiện tại không publish port |
-
-> **Nâng cấp từ bản có Chainnode:** xóa `AI_PROVIDERS__CHAINNODE__*` (hoặc mọi key phẳng `CHAINNODE_*` còn sót); đổi `TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` thành `opencode,openrouter` (hoặc chỉ `opencode` nếu không dùng fallback). Chỉ làm bước này sau khi có ít nhất một provider active: `AI_PROVIDERS__OPENCODE__API_KEYS` đã có giá trị, hoặc OpenRouter đã configured nếu dùng fallback; nếu không bot sẽ khởi động với zero active provider. `sync_env.py` sẽ exit `2` nếu còn key Chainnode.
-
-Liệt kê key lạ trước khi sửa (chỉ đọc, không ghi file):
-
-```bash
-comm -23 \
-  <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' .env | sort -u) \
-  <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' .env.example | sort -u)
-```
-
-Mỗi dòng in ra phải được xử lý xong — đổi sang key canonical hoặc xóa — rồi mới sync:
-
-```bash
-python scripts/sync_env.py; echo "sync_exit=$?"   # phải 0
-md5sum .env
-python scripts/sync_env.py; echo "sync_exit=$?"   # lần hai không rewrite
-md5sum .env                                       # giống lần trước
-stat -c '%a %n' .env                              # 600
-```
-
-### 10.4 Preflight trên image mới, chưa đổi traffic
-
-```bash
-git fetch origin
-git checkout main
-git log --oneline HEAD..origin/main | head        # xem sẽ nhận gì
-git pull --ff-only
-SHA=$(git rev-parse --short HEAD); echo "release=$SHA"
-
-python scripts/sync_env.py                        # 0
-python scripts/check_searxng_settings.py
-docker compose --profile searxng config --quiet
-
-docker build -t "fcai-bot:$SHA" .
-docker run --rm -i --env-file .env "fcai-bot:$SHA" python - <<'PY'
-from app.ai.router import build_provider_router
-from app.config import Settings
-
-settings = Settings()
-router = build_provider_router(settings)          # ValueError = .env chưa đúng
-print("text:", router.configured_provider_names(False))
-print("vision:", router.configured_provider_names(True))
-print("auto-fetch:", settings.web_auto_fetch_max_sources, settings.web_auto_fetch_budget_sec)
-PY
-```
-
-Lệnh `docker run` exit non-zero nghĩa là `.env` còn thiếu credential/model hoặc provider order còn id lạ — sửa `.env` rồi chạy lại, **chưa** recreate bot. Nếu `check_searxng_settings.py` exit `1`, merge các invariant từ `searxng/settings.example.yml` vào file thật (giữ `secret_key`), rồi mới deploy.
-
-### 10.5 Deploy
-
-```bash
-docker compose --profile searxng pull searxng
-docker compose --profile searxng build bot
-docker compose --profile searxng up -d --no-deps --force-recreate bot searxng
-```
-
-- `pull searxng` là bắt buộc khi tag pin trong `.env.example` đã đổi; `build` chỉ build image bot, không pull image khác.
-- Chỉ `--force-recreate` mới áp code/env mới; `restart` thì không.
-- Downtime bằng thời gian recreate (image đã build ở 10.4), nhưng mọi job/context đang giữ trong RAM sẽ mất.
-
-### 10.6 Xác nhận đúng bản mới
-
-```bash
-docker compose logs --tail=80 bot | grep -E 'web_evidence policy|Text providers|Kết nối Telegram'
-docker inspect --format '{{.State.Health.Status}}' fcai-bot        # healthy sau start_period 90s
-docker compose exec -T bot python -m app.core.liveness; echo "liveness_exit=$?"
-test "$(docker inspect --format '{{.Image}}' fcai-bot)" = \
-     "$(docker image inspect --format '{{.Id}}' "fcai-bot:$SHA")" && echo "running=$SHA"
-```
-
-Sau đó chạy lại §3.1 (search runtime dùng chung), §4 (SearXNG JSON + Telegram) và §5 (citation/nguồn). Thiếu dòng `web_evidence policy=...` hoặc không in `running=` nghĩa là container vẫn là image cũ — kiểm `docker compose images bot` rồi build lại.
-
-Nếu bot vào vòng restart (`docker compose ps` hiện `Restarting`), xem `docker compose logs --tail=40 bot`: `Cấu hình AI provider không hợp lệ` hoặc `Không có AI provider text nào...` là lỗi `.env`, không phải lỗi image. `restart: unless-stopped` sẽ lặp mãi, nên đừng đọc trạng thái "Up" là đã ổn.
-
-### 10.7 Rollback
-
-```bash
-git checkout "$OLD_SHA"
-cp "$HOME/fcai-env-$STAMP.bak" .env
-docker compose --profile searxng up -d --build --force-recreate bot searxng
-```
-
-Image cũ vẫn còn tag `fcai-bot:pre-upgrade-$STAMP` để đối chiếu. Không cần rollback DB/schema — bot không persist ngoài RAM. Sau rollback, `.env` phải khớp vocabulary của image cũ đang chạy.
+Không chạy `sync_env.py` trên `.env` production khi chưa backup. `restart`
+không áp dụng image/env mới; phải `up -d --build --force-recreate`.

@@ -171,215 +171,23 @@ this runbook does not authorize a production reboot, firewall change, or
 deployment. Further detail: [DNS and egress verification](CRAWL4AI_DNS_EGRESS.md)
 and [verification gates](#verification-gates).
 
-### Crawl4AI 0.9.3 REST compatibility gate (October 2026)
+### Isolation evidence
 
-An isolated Docker Desktop test with the pinned image reproduced HTTP 400 for
-`CrawlerRunConfig.proxy_config`. Removing that field alone still returned HTTP
-400 for `BrowserConfig.proxy_config`. Both are forbidden by the REST API's
-`Provenance.UNTRUSTED` boundary. The REST client now omits both fields.
+Các kết luận dưới đây là lý do cấu hình hiện tại; log/audit chi tiết nằm trong
+Git history.
 
-Source inspection confirmed the image's `/app/api.py` calls `enforce_egress()`
-on the `/crawl` browser configuration, and `/app/server.py` starts a localhost
-DNS-pinning proxy first. `/app/egress_broker.py` assigns that proxy to new
-browser configs; `/app/egress_proxy.py` resolves and pins each destination,
-then sends absolute-form HTTP requests or pinned-IP HTTPS tunnels to Squid.
-The permanent browser created at startup does not visibly call
-`enforce_egress()`, so this additional path must be treated cautiously.
-On the VPS, run one read-only diagnostic command from the repository root:
-
-```bash
-sudo bash scripts/verify_crawl4ai_security.sh
-```
-
-This produces a private report with `PASS`, `FAIL` and `UNVERIFIED` items.
-The command does not restart containers, modify firewall rules or reboot the VPS.
-To eliminate the observed boot-time window, the three Crawl4AI containers now
-use `restart: "no"`. After a host reboot they remain **stopped** by design;
-the report then says `SAFE DORMANT` and does not claim live egress was tested.
-The bot continues normally with `CRAWL4AI_ENABLED=0`. Previously created VPS
-containers retain their old restart policies until updated explicitly. After
-pulling the new commit onto the VPS, run **one command** to update their
-policies and collect the read-only security report:
-
-```bash
-sudo bash scripts/apply_crawl4ai_safe_boot.sh
-```
-
-This opt-in command changes only the existing three Docker restart policies;
-it refuses partial startup and fails if the running bot has Crawl4AI enabled.
-It neither restarts containers, alters firewall rules, nor reboots the host.
-It then runs `verify_crawl4ai_security.sh` and prints the private report path.
-The original `verify_crawl4ai_security.sh` remains read-only.
-Never enable Crawl4AI just because the boot window is removed: manual container
-startup still requires firewall reapplication and independent SSRF evidence.
-`UNVERIFIED` items (controlled SSRF fixtures, Docker startup interval) still
-require separate controlled evidence; they are not authorization to enable
-Crawl4AI. The older `check_crawl4ai_report.sh` entry point remains supported.
-Run disruptive restart/recreate fault tests only in a disposable Docker engine.
-
-Keep `CRAWL4AI_ENABLED=0` until the full staging SSRF test suite passes,
-including zero unexpected internal sink requests and browser reloads.
-
-The isolated firewall check succeeds with an explicit rule allowing only
-established return packets from the uplink to Squid. Testing from the
-Docker-in-Docker host itself is not a valid substitute for testing from the
-crawler container: the separate host INPUT guard also blocks host-originated
-responses.
-
-### Observed Docker Desktop isolation results (2026-10-12)
-
-The pinned image was recreated inside an isolated Docker-in-Docker engine with
-`CRAWL4AI_UPSTREAM_PROXY=http://crawl4ai-proxy:3128`. The test client used the
-real `POST /crawl` endpoint. All URLs belonged to disposable fixtures within
-that engine. No production containers or external websites were tested.
-
-| Test | Observed result |
-| --- | --- |
-| Public fixture (`11.23.0.50:80`) through Squid | `/crawl` success, extracted fixture text |
-| Private IP, loopback, metadata IP | REST seed validation rejected each (`400`) |
-| Public fixture redirecting to private sink | `/crawl` returned `success=False` |
-| Public fixture with private image/iframe | `/crawl` returned `success=False` |
-| Direct crawler-to-private connection bypassing proxy | Connection timed out |
-| Squid stopped during public `/crawl` | `success=False`, no direct-connect fallback observed |
-| Squid restarted, firewall reapplied and checked | Public `/crawl` succeeded again |
-| `read_url()` during a real Squid outage | Routed once to `generic_reader` with a controlled stub, returned `ok=True` |
-| Controlled DNS name resolving public, then private | Two distinct DNS A responses observed; `/crawl` failed, sink received no request |
-| Crawler restarted, firewall rechecked | Healthy; public `/crawl` succeeded again, private redirect/subresource crawls failed |
-| Private sink after these probes | No unexpected requests in container log |
-
-The documented observations are specific to the isolated iptables backend.
-The rebinding fixture recorded `rebinda.fcai.test` resolving first to the
-controlled public fixture (`11.23.0.50`) and then to the private sink
-(`172.19.0.4`) with zero TTL; the crawler rejected the request before the
-private sink received HTTP. This is evidence for the tested resolution sequence,
-not a substitute for repeating the probe on the actual staging host. The
-original Docker resolver was restored before the restart probes. The direct
-Squid probe returned `403` for the private sink. A failed crawl of
-the HTML subresource fixture demonstrates refusal, but does **not** establish
-that harmless page content can still be extracted when a blocked resource is
-present. The permanent browser pool needs additional coverage for reuse across
-multiple pages, even though post-restart REST checks passed.
-
-The bot-level outage probe imported the project `Settings` and `read_url()`
-inside the isolated Crawl4AI image and contacted its actual `/crawl` endpoint.
-With Squid stopped, Crawl4AI returned `crawl_failed`; the generic-reader
-function was replaced by a controlled `AsyncMock`, which ran exactly once and
-returned a successful `UrlReadResult`. With Squid restored, `read_url()` used
-the real crawler and never called that stub. This proves fallback dispatch,
-**not** successful live generic HTTP retrieval on the staging bot network.
-
-### Extended isolated smoke checks (2026-10-12)
-
-A disposable test fixture (`scripts/crawl4ai_varied_fixture.py`) supplied
-**20 distinct routes** on the isolated Docker-in-Docker uplink: 12 static HTML,
-four pages with rendered JavaScript, two pages loading public image/iframe
-resources, and two public redirects. The pinned REST `/crawl` API successfully
-extracted the required marker from **20/20** pages (p50 **0.65 s**, p95
-**0.75 s**, wall-clock per probe). A separate crawl confirmed that the
-JavaScript-injected `FCAI JS RENDERED` text appeared in Markdown. Server logs
-recorded actual `GET /image.png` and `GET /frame` requests. Crawl4AI logs
-confirmed repeated reuse of the same **hot pool** browser.
-
-After reuse, a controlled redirect and a page with private image/iframe URLs
-were rejected by `/crawl` (`success=False`). The private request sink log had
-**no additional requests**, and `crawl4ai_firewall.sh check` continued to pass
-with iptables. At the resource snapshot, the crawler used **505.5 MiB RAM**.
-The disposable bot test container had to be restarted after its scheduled
-`sleep 3600` command ended; the firewall check failed closed while that bot
-was absent and passed again once it was restarted.
-
-The 20 routes exercise distinct local page behaviors, **not 20 independent
-representative websites**. They are not a substitute for the full staging
-acceptance test against diverse public sites. The isolated host uses the
-iptables backend; nftables remains unverified on the intended VPS.
-
-A further end-to-end run built the current production `Dockerfile` into an
-isolated, disposable bot image, then executed the actual
-`scripts/smoke_crawl4ai.py --urls-file` runner from the running bot network
-namespace (with `CRAWL4AI_ENABLED=0`). All **20/20 controlled URLs passed**:
-p50 **0.339 s**, p95 **0.398 s**, maximum **0.973 s**. The image's
-`python -m pip check` reported `No broken requirements found`. The Windows
-host's unrelated Python 3.13 install has a `virtualenv`/`filelock` conflict;
-its global `pip check` result is not an image dependency failure.
-
-**2026-10-13 independent public-site smoke (Docker Desktop):** the manually
-run `scripts/check_crawl4ai_public_sites.ps1` invoked the real Crawl4AI 0.9.3
-`/crawl` endpoint from an isolated bot-image container in the disposable
-Docker-in-Docker network. All **20/20 distinct public websites passed**,
-including Python documentation, SQLite, Rust, Go, PostgreSQL, Debian, Docker
-documentation, MDN, Wikipedia, Cloudflare and W3Schools. Every result returned
-nonempty Markdown; `smoke_crawl4ai.py` reported p50 **1.115 s**, p95
-**2.475 s**, minimum **0.586 s** and maximum **8.902 s**. The Linux
-`crawl4ai_firewall.sh check` reported **PASS (iptables)** immediately before
-and after the crawl. The generated report is
-`fcai-public-smoke-20261013-004525-005.txt` (user's Windows TEMP directory).
-The test did **not** change the bot's `CRAWL4AI_ENABLED=0` setting or touch
-production. It demonstrates public-site rendering on Docker Desktop, **not**
-firewall persistence or SSRF isolation on the target Linux VPS; the staging
-gate still requires its own run of these 20 representative URLs.
-
-An additional **live generic-reader failover** check ran `read_url()` from
-the same disposable bot image with `CRAWL4AI_ENABLED=1` supplied to the test
-process only. The isolated bot network had independent, ordinary outbound
-access; Squid was stopped in the disposable engine. Crawl4AI returned
-`http_400`, after which `read_url("https://example.com")` returned
-`backend=generic_reader`, `ok=True`, with 171 characters of real fetched
-content. The earlier baseline with Crawl4AI disabled also read the page
-successfully. Squid was restarted, a controlled fixture crawl succeeded
-again, and the iptables firewall check passed. The private sink's log had
-no new HTTP request. This confirms live fallback in the Docker Desktop
-test topology; staging networking and latency still require verification.
-
-The independent **Docker nftables backend** was also exercised in a second,
-disposable Docker-in-Docker engine (Docker 29.9.0, nftables 1.1.6). Three
-project-named bridge networks and small Python HTTP fixture containers
-represented the bot, crawler and proxy; the actual Crawl4AI image and Squid
-were **not** launched in this nftables-only check. The firewall script's
-`apply` and `check` commands both passed. The bot reached the crawler's
-port 11235, the crawler reached the proxy's port 3128, and the proxy loaded
-`https://example.com` over public HTTPS. Attempts from the crawler to the
-bot (11235) and proxy (80), and from the proxy to the bot's private address
-or the metadata address 169.254.169.254, timed out. The bot fixture's access
-log remained empty. Direct crawler access to public IP 1.1.1.1:80 returned
-`Network unreachable`. Following a crawler-container restart, `check` passed
-and the allowed proxy connection still worked. This establishes that the
-generated nftables rules can be applied and enforce these selected packet
-paths in Docker Desktop; a real Crawl4AI/Squid run and the chosen VPS
-firewall backend must still pass the full isolated staging suite.
-
-For a disposable *existing* Docker-in-Docker test network, create the varied
-fixture with `--host 0.0.0.0` inside its own container. The fixture binds only
-to loopback by default when started outside Docker. Generate its manifest with:
-
-```bash
-python scripts/crawl4ai_varied_fixture.py --manifest-base http://11.23.0.51
-```
-
-`11.23.0.51` is an **isolated test-network address only**; never direct a
-production crawler or a test run on the public Internet to that address.
-
-**Still required:** repeat DNS rebinding and positive/negative subresource
-instrumentation on the target staging host, validate the actual VPS firewall
-backend (including nftables if selected), repeat live generic-reader
-proxy-outage fallback on
-staging, verify pool reuse on the staging host, and run the representative
-20-URL smoke test against real sites **on staging**. The Docker Desktop
-20/20 public-site smoke, hot-pool reuse and live fallback checks are complete;
-these do not prove the permanent
-browser's egress posture or availability on staging.
-Keep `CRAWL4AI_ENABLED=0` until these gates pass.
-
-For the existing isolated Docker-in-Docker setup on Windows, collect further
-read-only evidence with:
-
-```powershell
-pwsh -NoProfile -File .\scripts\crawl4ai_docker_diagnostics.ps1
-```
-
-The report excerpts `/app/egress_broker.py`, `/app/egress_proxy.py`,
-`/app/api.py`, `/app/crawler_pool.py` and server startup from the image.
-Review it for secrets before sharing.
-This source inspection is separate from the mandatory network isolation tests.
+- Crawl4AI 0.9.3 từ chối `CrawlerRunConfig.proxy_config` và
+  `BrowserConfig.proxy_config` qua REST (HTTP 400). Client gửi payload cố định,
+  không có proxy field.
+- Image tự chạy egress broker: resolve/pin DNS rồi chuyển request qua Squid nội
+  bộ (`CRAWL4AI_UPSTREAM_PROXY`).
+- Ba container crawler dùng `restart: "no"` để sau reboot host chúng vẫn stopped;
+  bot tiếp tục chạy với generic reader.
+- `scripts/verify_crawl4ai_security.sh` tạo report PASS/FAIL/UNVERIFIED, không
+  restart container, không sửa firewall.
+- Docker Desktop chỉ dùng để kiểm tra isolation; nó không chứng minh firewall
+  của VPS thật. Controlled DNS-rebinding fixture và kiểm tra firewall trên VPS
+  vẫn là gate bắt buộc.
 
 ## Deploy
 

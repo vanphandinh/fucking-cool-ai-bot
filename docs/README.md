@@ -15,6 +15,7 @@ Khi có khác biệt, áp dụng thứ tự source-of-truth bên dưới; source
 - [`QUESTION_CONTROLS.md`](QUESTION_CONTROLS.md) — renewable Telegram jobs, consent/Stop semantics, local bounds, rollout và rollback.
 - [`SEARCH_RESILIENCE.md`](SEARCH_RESILIENCE.md) — search routing, circuit breaker, cache, singleflight và cancellation semantics.
 - [`CRAWL4AI_INTEGRATION.md`](CRAWL4AI_INTEGRATION.md) — optional Crawl4AI URL rendering backend, gated production activation and rollback runbook.
+- [`CRAWL4AI_DNS_EGRESS.md`](CRAWL4AI_DNS_EGRESS.md) — DNS/egress topology và các kiểm tra bắt buộc trước khi bật crawler.
 - [`X_CONTENT_FETCHING.md`](X_CONTENT_FETCHING.md) — direct X/Twitter status/thread fetching.
 - [`ENV_SYNC.md`](ENV_SYNC.md) — strict `.env` synchronization, canonical provider contract và secret-file permissions.
 - [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) — nâng cấp từ image cũ hơn, chạy lại toàn bộ gate trên VPS, redeploy và các điểm kiểm tra sau cutover.

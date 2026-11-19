@@ -54,9 +54,6 @@ Một phần tử trong plural pool là hợp lệ. Khi có nhiều model và cr
 2. Populate all canonical settings required by the deployment.
 3. Remove every assignment that is not present in the deployed `.env.example`.
 4. Confirm text/vision provider orders contain only current registered providers.
-
-   Khi nâng cấp từ bản có Chainnode, làm migration `.env` ở mục 10.3 của [`VPS_REDEPLOY_AND_FEATURE_FLAGS.md`](VPS_REDEPLOY_AND_FEATURE_FLAGS.md) trước khi sync.
-
 5. Deploy the canonical-only revision.
 6. Run `python scripts/sync_env.py` and require exit `0`.
 7. Run it again and verify no content rewrite.

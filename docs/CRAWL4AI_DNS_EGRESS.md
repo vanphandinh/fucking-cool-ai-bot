@@ -59,42 +59,9 @@ be verified **before** `CRAWL4AI_ENABLED=1` on production.
 8. Repeat host firewall checks on the actual VPS, including the nftables
    backend if Docker uses nftables. Only then decide whether to enable.
 
-## Local Docker-in-Docker observations (2026-10-12)
-
-On isolated Linux Docker-in-Docker in Docker Desktop, the 0.9.3 crawler
-originally failed to resolve `example.com` with Docker's internal DNS.
-Adding CoreDNS 1.12.4, forwarding to the Docker stub and suppressing AAAA
-queries resolved the hostname to public IPv4 under the **applied** iptables
-policy. `crawl4ai_firewall.sh apply` and `check` passed; direct socket probes
-to the private sink, metadata IP, public `1.1.1.1:443`, DNS service port 80
-and Docker bridge gateway were blocked. The isolated private-sink log still
-showed only the earlier positive control request after the URL, redirect and
-subresource probes: the private sink received zero additional requests.
-
-The first real-site set passed 17/20 URLs. `https://www.w3.org/` presented a
-Cloudflare challenge, `https://www.gnu.org/` produced a crawler failure, and
-`https://ubuntu.com/` timed out. These were recorded as failures, not counted
-as successes. The revised **20 distinct public URL** manifest in
-`scripts/crawl4ai_smoke_urls.txt` passed **20/20** in the isolated Docker
-environment on 2026-10-12: p50 0.910 s, p95 2.164 s, min 0.456 s, max
-2.411 s. This measures successful page extraction, not permission to enable
-production.
-
-The previously fetched `https://example.com/` page remained available from
-the crawler while Squid was stopped, so this URL could not prove fallback.
-The subsequent fresh-URL outage probe succeeded on isolated Docker-in-Docker:
-with Squid stopped, `CRAWL4AI_ENABLED=1` and `crawl4ai_ready=True`, a single
-`read_url()` call on a unique, uncached HTTPS URL logged
-`Crawl4AI URL read failed (crawl_failed); fallback generic reader` and
-returned `backend=generic_reader`, `ok=True`, with 3,845 characters. The
-test bot was given a disposable Internet bridge so its generic reader could
-reach the public page; that bridge was removed after the probe. Squid was
-restarted and the firewall `check` remained successful.
-
-Controlled DNS-rebinding fixture, nftables if used on the VPS, and the
-actual VPS firewall check remain mandatory. Keep `CRAWL4AI_ENABLED=0` until
-those staging checks pass. These observations do not validate the host
-firewall of the production VPS.
+Controlled DNS-rebinding fixture, nftables nếu VPS dùng, và kiểm tra firewall
+trên VPS thật vẫn là gate bắt buộc. Giữ `CRAWL4AI_ENABLED=0` cho tới khi các
+check đó pass.
 
 ## Rollback
 
