@@ -182,7 +182,12 @@ Git history.
 - Image tự chạy egress broker: resolve/pin DNS rồi chuyển request qua Squid nội
   bộ (`CRAWL4AI_UPSTREAM_PROXY`).
 - Ba container crawler dùng `restart: "no"` để sau reboot host chúng vẫn stopped;
-  bot tiếp tục chạy với generic reader.
+  bot tiếp tục chạy với generic reader. Container đã tạo từ bản cũ vẫn giữ
+  restart policy cũ cho tới khi chạy `scripts/apply_crawl4ai_safe_boot.sh`;
+  thay đổi trong compose chỉ áp dụng cho container mới hoặc được recreate.
+- Image có permanent startup browser riêng; đường egress đó chưa được chứng minh
+  là luôn đi qua `enforce_egress()`. Coi đây là đường chưa được xác minh cho tới
+  khi staging startup-boundary gate pass.
 - `scripts/verify_crawl4ai_security.sh` tạo report PASS/FAIL/UNVERIFIED, không
   restart container, không sửa firewall.
 - Docker Desktop chỉ dùng để kiểm tra isolation; nó không chứng minh firewall
