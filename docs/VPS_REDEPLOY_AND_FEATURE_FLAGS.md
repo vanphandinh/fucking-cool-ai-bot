@@ -299,22 +299,55 @@ recreate — làm ngoài giờ cao điểm.
    fi
    ```
 
-2. `git pull`, rồi bảo đảm `TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` chỉ
-   chứa provider còn trong `config/ai-providers.toml` và có ít nhất một
-   credential hợp lệ. Xóa/đổi key cũ theo `.env.example` trước khi sync; nếu
-   không bot có thể khởi động với zero active provider.
-3. Chạy `python scripts/sync_env.py` đến khi exit `0`, rồi preflight cấu hình
-   trên image mới trước khi thay traffic:
+2. Cập nhật code với working tree sạch:
+
+   ```bash
+   git status --short          # phải rỗng; nếu không, commit/stash trước
+   git pull --ff-only
+   ```
+
+3. Bảo đảm `TEXT_PROVIDER_ORDER` và `VISION_PROVIDER_ORDER` chỉ chứa provider
+   còn trong `config/ai-providers.toml` và có ít nhất một credential hợp lệ.
+   Xóa/đổi key cũ theo `.env.example` trước khi sync; nếu không bot có thể khởi
+   động với zero active provider.
+
+4. Đồng bộ env và kiểm tra SearXNG config:
+
+   ```bash
+   python scripts/sync_env.py                  # phải exit 0
+   python scripts/check_searxng_settings.py   # phải exit 0 nếu dùng profile searxng
+   docker compose --profile searxng config --quiet
+   ```
+
+5. Build bot và preflight cấu hình trên image mới trước khi thay traffic:
 
    ```bash
    docker compose build bot
    docker compose run --rm --no-deps bot python -c \
-     "from app.config import Settings; s=Settings(); print(s.text_provider_order_list, s.vision_provider_order_list)"
+     "from app.ai.router import build_provider_router; from app.config import Settings; r=build_provider_router(Settings()); print(r.configured_provider_names(False), r.configured_provider_names(True))"
    ```
 
-4. `docker compose --profile searxng up -d --build --force-recreate`.
-5. Smoke theo mục 4. Nếu lỗi, rollback theo mục 7 bằng commit cũ, hoặc dùng tag
-   `fcai-bot:pre-upgrade-$STAMP` đã tạo ở bước 1.
+   `text` phải có ít nhất một provider; nếu rỗng, dừng lại và sửa `.env`.
+
+6. Pull image SearXNG đã pin (nếu tag đổi), rồi recreate bot + searxng:
+
+   ```bash
+   docker compose --profile searxng pull searxng
+   docker compose --profile searxng up -d --build --force-recreate bot searxng
+   ```
+
+7. Xác nhận đúng bản mới và smoke:
+
+   ```bash
+   docker compose logs --tail=80 bot | grep -E 'web_evidence policy|Text providers|Kết nối Telegram'
+   docker inspect --format '{{.State.Health.Status}}' fcai-bot   # healthy sau start_period 90s
+   docker compose exec -T bot python -m app.core.liveness
+   ```
+
+   Sau đó chạy smoke ở mục 4. Nếu lỗi, rollback theo mục 7 bằng commit cũ; khôi
+   phục `.env` từ `$BACKUP/env` trước khi recreate vì image cũ có thể dùng
+   vocabulary khác. Tag `fcai-bot:pre-upgrade-$STAMP` ở bước 1 chỉ để đối chiếu
+   image.
 
 Không chạy `sync_env.py` trên `.env` production khi chưa backup. `restart`
 không áp dụng image/env mới; phải `up -d --build --force-recreate`.

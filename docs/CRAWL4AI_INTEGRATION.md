@@ -171,28 +171,14 @@ this runbook does not authorize a production reboot, firewall change, or
 deployment. Further detail: [DNS and egress verification](CRAWL4AI_DNS_EGRESS.md)
 and [verification gates](#verification-gates).
 
-### Isolation evidence
+### Known limitations
 
-Các kết luận dưới đây là lý do cấu hình hiện tại; log/audit chi tiết nằm trong
-Git history.
-
-- Crawl4AI 0.9.3 từ chối `CrawlerRunConfig.proxy_config` và
-  `BrowserConfig.proxy_config` qua REST (HTTP 400). Client gửi payload cố định,
-  không có proxy field.
-- Image tự chạy egress broker: resolve/pin DNS rồi chuyển request qua Squid nội
-  bộ (`CRAWL4AI_UPSTREAM_PROXY`).
-- Ba container crawler dùng `restart: "no"` để sau reboot host chúng vẫn stopped;
-  bot tiếp tục chạy với generic reader. Container đã tạo từ bản cũ vẫn giữ
-  restart policy cũ cho tới khi chạy `scripts/apply_crawl4ai_safe_boot.sh`;
-  thay đổi trong compose chỉ áp dụng cho container mới hoặc được recreate.
+- Container đã tạo từ bản cũ vẫn giữ restart policy cũ cho tới khi chạy
+  `scripts/apply_crawl4ai_safe_boot.sh`; thay đổi trong compose chỉ áp dụng cho
+  container mới hoặc được recreate.
 - Image có permanent startup browser riêng; đường egress đó chưa được chứng minh
   là luôn đi qua `enforce_egress()`. Coi đây là đường chưa được xác minh cho tới
   khi staging startup-boundary gate pass.
-- `scripts/verify_crawl4ai_security.sh` tạo report PASS/FAIL/UNVERIFIED, không
-  restart container, không sửa firewall.
-- Docker Desktop chỉ dùng để kiểm tra isolation; nó không chứng minh firewall
-  của VPS thật. Controlled DNS-rebinding fixture và kiểm tra firewall trên VPS
-  vẫn là gate bắt buộc.
 
 ## Deploy
 
@@ -207,6 +193,8 @@ docker compose ps
 ```
 
 The firewall script selects Docker's iptables or nftables backend and checks the network attachments. Re-run `check` **after restarting/recreating containers**; configure firewall persistence in VPS boot provisioning. If backend detection, bridging, rules, or restart verification fails, do **not** enable Crawl4AI.
+
+The older `check_crawl4ai_report.sh` entry point remains supported; `verify_crawl4ai_security.sh` wraps it.
 
 On an existing Linux VPS with `CRAWL4AI_ENABLED=0`, run this additional
 **non-disruptive live egress probe** without stopping or recreating services:

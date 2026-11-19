@@ -45,7 +45,10 @@ tool/URL khác, nên đây là proxy chứ không phải hành vi production.
   khác nhau: URL tìm thấy có thể không mang evidence.
 - `answer_accuracy_extractive_proxy`, `citation_precision_extractive_proxy` và
   `unsupported_claim_rate_extractive_proxy` dùng extractor synthetic, không
-  phải model answer. Điểm cao không chứng minh chất lượng model.
+  phải model answer. Điểm cao không chứng minh chất lượng model. Các proxy
+  metric này không phải rollout acceptance criteria; release decision và human
+  review nằm ở
+  [`RELEASE_DECISION.md`](../acceptance/web_evidence_v2_independent_validation_20261016/RELEASE_DECISION.md).
 - `fixture_sha256` định danh dataset. Các lần chạy lặp phải khớp case results
   và non-timing metrics; wall-clock latency có thể đổi.
 - Benchmark phải chạy với network requests bằng **0**.
