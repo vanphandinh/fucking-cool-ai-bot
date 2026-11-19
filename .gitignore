@@ -14,6 +14,9 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# GitNexus local index
+.gitnexus/
+
 # SearXNG config thật (chứa secret_key / local overrides) — dùng bản mẫu *.example.yml
 searxng/settings.yml
 # Backup file thật cũng chứa secret (hướng dẫn nâng cấp dùng settings.yml.bak)
